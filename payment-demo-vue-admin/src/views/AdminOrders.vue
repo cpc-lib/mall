@@ -20,13 +20,35 @@
       <el-table-column label="订单状态" width="90"><template slot-scope="s">{{s.row.order.orderStatus}}</template></el-table-column>
       <el-table-column label="履约" width="80"><template slot-scope="s">{{fulfillmentLabel(s.row.order.fulfillmentStatus)}}</template></el-table-column>
       <el-table-column label="退款" width="80"><template slot-scope="s">{{s.row.order.refundStatus==='NONE'?'':s.row.order.refundStatus}}</template></el-table-column>
-      <el-table-column label="操作" width="100">
+      <el-table-column label="操作" width="170">
         <template slot-scope="s">
           <el-button size="mini" @click="openDetail(s.row)">详情</el-button>
+          <el-button size="mini" type="primary" plain @click="channelQuery(s.row.order.orderNo)">渠道查单</el-button>
         </template>
       </el-table-column>
     </el-table>
     </div>
+
+    <el-dialog :title="channelQueryRow ? '渠道查单 - ' + channelQueryRow.orderNo : '渠道查单'" :visible.sync="channelQueryVisible" width="640px">
+      <div v-loading="channelQueryLoading">
+        <el-descriptions v-if="channelQueryRow" :column="2" border size="small">
+          <el-descriptions-item label="渠道">{{channelQueryRow.channelCode}}</el-descriptions-item>
+          <el-descriptions-item label="渠道状态">{{channelQueryRow.channelTradeState}}</el-descriptions-item>
+          <el-descriptions-item label="状态说明" :span="2">{{channelQueryRow.channelTradeStateDesc}}</el-descriptions-item>
+          <el-descriptions-item label="本地订单状态">{{channelQueryRow.localOrderStatusBefore}} → {{channelQueryRow.localOrderStatusAfter}}</el-descriptions-item>
+          <el-descriptions-item label="查单后支付状态">{{channelQueryRow.localPayStatusAfter}}</el-descriptions-item>
+          <el-descriptions-item label="是否同步" :span="2"><el-tag :type="channelQueryRow.synced?'success':'info'" size="small">{{channelQueryRow.synced?'已推进本地订单':'本地状态未变更'}}</el-tag></el-descriptions-item>
+        </el-descriptions>
+        <div v-if="channelQueryRow && channelQueryRow.channelRawBody">
+          <h4>渠道原始报文</h4>
+          <pre style="max-height:260px;overflow:auto;background:#f5f7fa;padding:8px;font-size:12px;border-radius:4px">{{prettyRaw(channelQueryRow.channelRawBody)}}</pre>
+        </div>
+      </div>
+      <div slot="footer">
+        <el-button @click="channelQueryVisible = false">关闭</el-button>
+        <el-button v-if="channelQueryRow" type="primary" :loading="channelQueryLoading" @click="channelQuery(channelQueryRow.orderNo)">重新查单</el-button>
+      </div>
+    </el-dialog>
 
     <el-drawer :title="detailRow ? '订单详情 - ' + detailRow.order.orderNo : '订单详情'" :visible.sync="detailVisible" size="760px" direction="rtl"
       :before-close="closeDetail">
@@ -74,7 +96,7 @@ import shipmentApi from '../api/shipment'
 import refundApi from '../api/refundApply'
 import { PAY_LABEL, FULFILLMENT_LABEL } from '../utils/statusLabels'
 export default {
-  data() { return { allOrders: [], orderFilter: { payStatus: '', orderStatus: '', fulfillmentStatus: '', orderNo: '', userId: '' }, dateRange: null, detailVisible: false, detailRow: null, detailLoading: false, paAmount: 0, paReason: '差价补偿' } },
+  data() { return { allOrders: [], orderFilter: { payStatus: '', orderStatus: '', fulfillmentStatus: '', orderNo: '', userId: '' }, dateRange: null, detailVisible: false, detailRow: null, detailLoading: false, paAmount: 0, paReason: '差价补偿', channelQueryVisible: false, channelQueryLoading: false, channelQueryRow: null } },
   computed: {
     canClose() { const o = this.detailRow && this.detailRow.order; return o && o.payStatus === 'UNPAID' && (o.orderStatus === '未支付' || o.orderStatus === '超时已关闭') },
     canMarkPaid() { const o = this.detailRow && this.detailRow.order; return o && o.payStatus === 'UNPAID' && o.orderStatus === '未支付' }
@@ -106,6 +128,15 @@ export default {
     closeDetail() { this.detailVisible = false },
     async forceClose(orderNo) { try { await this.$confirm('将关闭未支付订单并释放预占库存，确认操作？', '强制关单'); await shipmentApi.forceClose(orderNo); this.$message.success('订单已强制关闭'); this.loadAllOrders() } catch (e) { /* 取消 */ } },
     async markPaid(orderNo) { try { await this.$confirm('将手动标记该未支付订单为已支付并提交预占库存，确认操作？', '标记支付成功'); await shipmentApi.markPaid(orderNo); this.$message.success('订单已标记为支付成功'); this.loadAllOrders() } catch (e) { /* 取消 */ } },
+    async channelQuery(orderNo) {
+      this.channelQueryVisible = true; this.channelQueryLoading = true; this.channelQueryRow = null
+      try {
+        const r = await shipmentApi.channelQuery(orderNo)
+        this.channelQueryRow = r.data
+        this.loadAllOrders()
+      } finally { this.channelQueryLoading = false }
+    },
+    prettyRaw(raw) { try { return JSON.stringify(JSON.parse(raw), null, 2) } catch (e) { return raw } },
     async submitPriceAdjust() {
       if (!this.paAmount) return this.$message.error('请填写退款金额（分）')
       await refundApi.priceAdjustment({ orderNo: this.detailRow.order.orderNo.trim(), amount: Number(this.paAmount), reason: (this.paReason || '差价补偿').trim() })

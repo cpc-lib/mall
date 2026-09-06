@@ -37,6 +37,16 @@ export default function AdminOrders() {
   useEffect(loadAllOrders, [])
   const forceClose = async orderNo => { Modal.confirm({ title: '强制关单', content: '将关闭未支付订单并释放预占库存，确认操作？', onOk: async () => { await shipmentApi.forceClose(orderNo); message.success('订单已强制关闭'); loadAllOrders() } }) }
   const markPaid = async orderNo => { Modal.confirm({ title: '标记支付成功', content: '将手动标记该未支付订单为已支付并提交预占库存，确认操作？', onOk: async () => { await shipmentApi.markPaid(orderNo); message.success('订单已标记为支付成功'); loadAllOrders() } }) }
+  // 渠道查单：主动向微信/支付宝查单，渠道已支付成功则同步本地订单（幂等），不自动关单
+  const channelQuery = async orderNo => {
+    setChannelQueryRow(null); setChannelQueryLoading(true)
+    try {
+      const r = await shipmentApi.channelQuery(orderNo)
+      setChannelQueryRow(r.data)
+      loadAllOrders()
+    } finally { setChannelQueryLoading(false) }
+  }
+  const prettyRaw = raw => { try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw } }
   const openDetail = d => { setDetailRow(d); setPaAmount(0); setPaReason('差价补偿') }
   const submitPriceAdjust = async () => {
     if (!detailRow || !Number(paAmount)) { message.error('请填写退款金额（分）'); return }

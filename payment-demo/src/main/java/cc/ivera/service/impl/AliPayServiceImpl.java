@@ -19,6 +19,7 @@ import cc.ivera.service.RefundInfoService;
 import cc.ivera.service.refund.RefundStatusSyncResult;
 import cc.ivera.util.JsonUtils;
 import cc.ivera.util.MoneyUtils;
+import cc.ivera.vo.ChannelOrderQueryVO;
 import com.alipay.api.AlipayApiException;
 import com.alipay.api.AlipayClient;
 import com.alipay.api.AlipayConfig;
@@ -334,6 +335,70 @@ public class AliPayServiceImpl implements AliPayService {
                 paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
             }
         }
+    }
+
+    @Override
+    public ChannelOrderQueryVO queryAndSyncStatus(String orderNo) {
+        OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
+        if (orderInfo == null) {
+            throw new BizException("订单不存在，orderNo=" + orderNo);
+        }
+        if (!PayType.ALIPAY.getType().equals(orderInfo.getPaymentType())) {
+            throw new BizException("订单不是支付宝订单，orderNo=" + orderNo);
+        }
+
+        String localStatusBefore = orderInfo.getLegacyStatus();
+
+        String body = queryOrder(orderNo);
+        String tradeStatus = null;
+        String tradeStatusDesc;
+        if (body == null) {
+            // 查单无法获得明确渠道状态：本地状态保持，等待重试，避免单边账。
+            tradeStatusDesc = "渠道查询无明确结果，请稍后重试";
+            log.info("支付宝管理端查单无明确结果，本地状态保持，orderNo={}", orderNo);
+        } else {
+            Map<String, Object> resultMap = JsonUtils.toObjectMap(body);
+            Map<String, Object> alipayTradeQueryResponse = JsonUtils.toObjectMap(resultMap.get("alipay_trade_query_response"));
+            if (alipayTradeQueryResponse == null) {
+                tradeStatusDesc = "渠道响应缺少交易信息";
+            } else {
+                tradeStatus = (String) alipayTradeQueryResponse.get("trade_status");
+                String subCode = (String) alipayTradeQueryResponse.get("sub_code");
+                if (tradeStatus == null && ALIPAY_SUB_CODE_TRADE_NOT_EXIST.equals(subCode)) {
+                    // 渠道侧从无此交易（从未发起支付）：仅展示，不关单（关单由超时对账/强制关单负责）。
+                    tradeStatusDesc = "渠道无此交易（从未发起支付）";
+                } else if (AliPayTradeState.SUCCESS.getType().equals(tradeStatus)) {
+                    tradeStatusDesc = "交易支付成功";
+                    // V2：查单确认支付成功走统一支付成功处理器（幂等）。
+                    String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
+                    String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
+                    Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
+                    boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
+                            orderNo, PaymentConfigLoader.CHANNEL_ALIPAY, tradeNo, paidAmount);
+                    if (firstSettled) {
+                        paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
+                    }
+                } else if (AliPayTradeState.FINISHED.getType().equals(tradeStatus)) {
+                    tradeStatusDesc = "交易结束，不可退款";
+                } else if (AliPayTradeState.CLOSED.getType().equals(tradeStatus)) {
+                    tradeStatusDesc = "交易已关闭";
+                } else {
+                    tradeStatusDesc = "未支付";
+                }
+            }
+        }
+
+        ChannelOrderQueryVO vo = new ChannelOrderQueryVO();
+        vo.setOrderNo(orderNo);
+        vo.setChannelCode(PaymentConfigLoader.CHANNEL_ALIPAY);
+        vo.setChannelTradeState(tradeStatus == null ? "UNKNOWN" : tradeStatus);
+        vo.setChannelTradeStateDesc(tradeStatusDesc);
+        vo.setLocalOrderStatusBefore(localStatusBefore);
+        vo.setLocalOrderStatusAfter(orderInfoService.getOrderStatus(orderNo));
+        vo.setLocalPayStatusAfter(orderInfoService.getOrderByOrderNo(orderNo).getPayStatus());
+        vo.setSynced(!String.valueOf(localStatusBefore).equals(String.valueOf(vo.getLocalOrderStatusAfter())));
+        vo.setChannelRawBody(body);
+        return vo;
     }
 
     @Override

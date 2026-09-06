@@ -1,23 +1,34 @@
 package cc.ivera.controller;
 
+import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.entity.OrderShipment;
 import cc.ivera.enums.FulfillmentStatus;
 import cc.ivera.enums.OrderStatus;
 import cc.ivera.enums.PayStatus;
+import cc.ivera.enums.PayType;
+import cc.ivera.exception.BizException;
 import cc.ivera.mapper.OrderInfoMapper;
+import cc.ivera.service.AliPayService;
 import cc.ivera.service.CheckoutService;
 import cc.ivera.service.OrderInfoService;
 import cc.ivera.service.ShipmentService;
+import cc.ivera.service.wxpay.WxPayOrderFacade;
+import cc.ivera.util.JsonUtils;
+import cc.ivera.vo.ChannelOrderQueryVO;
 import cc.ivera.vo.OrderDetailVO;
 import cc.ivera.vo.R;
+import cc.ivera.vo.WxPayStatusVO;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import javax.validation.constraints.NotBlank;
+import javax.validation.constraints.Size;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 管理员订单履约（V2）：待发货订单列表 + 模拟物流发货 + 全部订单管理 + 异常处理。
@@ -33,15 +44,21 @@ public class AdminOrderShipmentController {
     private final OrderInfoMapper orderInfoMapper;
     private final CheckoutService checkoutService;
     private final OrderInfoService orderInfoService;
+    private final WxPayOrderFacade wxPayOrderFacade;
+    private final AliPayService aliPayService;
 
     public AdminOrderShipmentController(ShipmentService shipmentService,
                                        OrderInfoMapper orderInfoMapper,
                                        CheckoutService checkoutService,
-                                       OrderInfoService orderInfoService) {
+                                       OrderInfoService orderInfoService,
+                                       WxPayOrderFacade wxPayOrderFacade,
+                                       AliPayService aliPayService) {
         this.shipmentService = shipmentService;
         this.orderInfoMapper = orderInfoMapper;
         this.checkoutService = checkoutService;
         this.orderInfoService = orderInfoService;
+        this.wxPayOrderFacade = wxPayOrderFacade;
+        this.aliPayService = aliPayService;
     }
 
     @ApiOperation("待发货订单列表（已支付未发货）")
@@ -100,5 +117,36 @@ public class AdminOrderShipmentController {
     public R<OrderShipment> ship(@PathVariable String orderNo) {
         OrderShipment shipment = shipmentService.ship(orderNo);
         return R.ok(shipment).setMessage("发货成功，运单号 " + shipment.getTrackingNo());
+    }
+
+    @ApiOperation("渠道订单查询（主动向微信/支付宝查单，已支付成功则同步本地订单；不自动关单）")
+    @GetMapping("/{orderNo}/channel-query")
+    public R<ChannelOrderQueryVO> channelQuery(
+            @PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException("订单不存在");
+        }
+
+        ChannelOrderQueryVO vo;
+        if (PayType.WXPAY.getType().equals(order.getPaymentType())) {
+            WxPayStatusVO wx = wxPayOrderFacade.queryPaymentStatus(orderNo);
+            vo = new ChannelOrderQueryVO();
+            vo.setOrderNo(orderNo);
+            vo.setChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
+            vo.setChannelTradeState(wx.getTradeState());
+            vo.setChannelTradeStateDesc(wx.getTradeStateDesc());
+            vo.setLocalOrderStatusBefore(wx.getLocalStatusBefore());
+            vo.setLocalOrderStatusAfter(wx.getLocalStatus());
+            OrderInfo after = orderInfoService.getOrderByOrderNo(orderNo);
+            vo.setLocalPayStatusAfter(after == null ? null : after.getPayStatus());
+            vo.setSynced(!Objects.equals(wx.getLocalStatusBefore(), wx.getLocalStatus()));
+            vo.setChannelRawBody(wx.getWxPayResult() == null ? null : JsonUtils.toJson(wx.getWxPayResult()));
+        } else if (PayType.ALIPAY.getType().equals(order.getPaymentType())) {
+            vo = aliPayService.queryAndSyncStatus(orderNo);
+        } else {
+            throw new BizException("该订单无支付渠道，无法查询渠道订单");
+        }
+        return R.ok(vo);
     }
 }

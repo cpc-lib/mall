@@ -23,6 +23,11 @@ public enum AliPayTradeState {
     CLOSED("TRADE_CLOSED"),
 
     /**
+     * 交易结束（不可退款）
+     */
+    FINISHED("TRADE_FINISHED"),
+
+    /**
      * 退款成功
      */
     REFUND_SUCCESS("REFUND_SUCCESS"),
