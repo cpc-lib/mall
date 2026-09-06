@@ -1,0 +1,4 @@
+# Shell scripts and DM8 init SQL are executed inside Linux containers;
+# CRLF endings break `set -euo pipefail` and disql. Enforce LF.
+*.sh text eol=lf
+*.sql text eol=lf

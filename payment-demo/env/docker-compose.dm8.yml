@@ -1,0 +1,77 @@
+name: payment-demo-dameng
+
+services:
+  dm8:
+    image: ${DM_IMAGE:-registry.cn-hangzhou.aliyuncs.com/snow-io/dm8:latest}
+    container_name: payment-demo-dm8
+    restart: unless-stopped
+    privileged: true
+
+    environment:
+      TZ: Asia/Shanghai
+
+      # SYSDBA 密码：达梦初始化要求 9-48 位。
+      SYSDBA_PWD: "${DM_SYSDBA_PWD:-Cpc2026#@Dm}"
+
+      # 兼容不同 DM8 镜像的安装路径。
+      # 当前 snow-io/dm8 镜像中 disql 常见路径为 /home/dmdba/dmdbms/bin/disql。
+      DM_HOME: "${DM_HOME:-/home/dmdba/dmdbms}"
+      LD_LIBRARY_PATH: "/home/dmdba/dmdbms/bin:/home/dmdba/dmdbms/lib:/opt/dmdbms/bin:/opt/dmdbms/lib"
+
+      # SQL 初始化目录。脚本会读取该变量，也可通过宿主机环境变量 DM_SQL_DIR 覆盖。
+      DM_SQL_DIR: "${DM_SQL_DIR:-/dm8-init}"
+
+      # 初始化参数：仅首次创建 dm8-data 数据卷时生效。
+      PAGE_SIZE: "${DM_PAGE_SIZE:-16}"
+      EXTENT_SIZE: "${DM_EXTENT_SIZE:-32}"
+      LOG_SIZE: "${DM_LOG_SIZE:-1024}"
+
+      # 字符集：1 = UTF-8；同时保留 UNICODE_FLAG 兼容部分镜像入口脚本。
+      CHARSET: "${DM_CHARSET:-1}"
+      UNICODE_FLAG: "${DM_UNICODE_FLAG:-1}"
+
+      # 0 = 大小写不敏感；项目 SQL/Mapper 使用非引号表名，建议保持 0。
+      CASE_SENSITIVE: "${DM_CASE_SENSITIVE:-0}"
+
+      # 1 = VARCHAR 长度按字符计算。
+      LENGTH_IN_CHAR: "${DM_LENGTH_IN_CHAR:-1}"
+
+      INSTANCE_NAME: "${DM_INSTANCE_NAME:-DMSERVER}"
+
+    ports:
+      - "${DM_PORT:-5236}:5236"
+
+    volumes:
+      # 达梦数据目录。不要随意删除该 volume，否则数据库数据会丢失。
+      - dm8-data:/opt/dmdbms/data
+
+      # 初始化 SQL 目录，只读挂载。脚本默认执行 /dm8-init 下的 *.sql。
+      #- ./sql/dm8:/dm8-init:ro
+
+    shm_size: 1g
+
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      nproc:
+        soft: 65536
+        hard: 65536
+
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -v grep | grep dmserver >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+    networks:
+      - payment-demo-net
+
+volumes:
+  dm8-data:
+    driver: local
+
+networks:
+  payment-demo-net:
+    driver: bridge

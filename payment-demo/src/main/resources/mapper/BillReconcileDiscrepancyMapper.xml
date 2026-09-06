@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.bill.BillReconcileDiscrepancyMapper">
+
+    <!-- 批次差异列表：importId 必填，bizType/discrepancyType/status 非空时分别过滤，id 升序 -->
+    <select id="selectDiscrepanciesByImport" resultType="cc.ivera.entity.bill.BillReconcileDiscrepancy">
+        select *
+        from t_bill_reconcile_discrepancy
+        where import_id = #{importId}
+        <if test="bizType != null and bizType != ''">
+            and biz_type = #{bizType}
+        </if>
+        <if test="discrepancyType != null and discrepancyType != ''">
+            and discrepancy_type = #{discrepancyType}
+        </if>
+        <if test="status != null and status != ''">
+            and status = #{status}
+        </if>
+        order by id asc
+    </select>
+
+</mapper>

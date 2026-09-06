@@ -1,0 +1,43 @@
+/* ================= 管理后台主题（taste-skill：token 化 + 一致骨架） ================= */
+:root {
+  --adm-primary: #409EFF;
+  --adm-primary-deep: #2F6FE0;
+  --adm-dark: #262626;
+  --adm-muted: #8C8C8C;
+  --adm-bg: #F5F6F8;
+  --adm-line: #EBEEF5;
+}
+
+body { font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif; }
+
+/* ---------- Element 主色统一（避免绿/蓝混用） ---------- */
+.el-button--primary { background-color: var(--adm-primary); border-color: var(--adm-primary); }
+.el-button--primary:hover, .el-button--primary:focus { background: var(--adm-primary-deep); border-color: var(--adm-primary-deep); color: #fff; }
+.el-button { border-radius: 4px; }
+.el-button--mini, .el-button--small { border-radius: 3px; }
+.el-input__inner:focus, .el-textarea__inner:focus { border-color: var(--adm-primary); }
+.el-checkbox__input.is-checked .el-checkbox__inner, .el-radio__input.is-checked .el-radio__inner { background-color: var(--adm-primary); border-color: var(--adm-primary); }
+.el-switch.is-checked .el-switch__core { background-color: var(--adm-primary); border-color: var(--adm-primary); }
+.el-tabs__item.is-active, .el-tabs__item:hover, .el-pagination .el-pager li.active, .el-pagination button:hover, .el-pagination .el-pager li:hover { color: var(--adm-primary); }
+.el-tabs__active-bar { background-color: var(--adm-primary); }
+a { color: var(--adm-primary); }
+
+/* ---------- 焦点可达性（taste：细节打磨） ---------- */
+a:focus-visible, button:focus-visible { outline: 2px solid rgba(64, 158, 255, .45); outline-offset: 2px; border-radius: 2px; }
+
+/* ---------- 统一页面骨架：页标题 + 白卡（taste：一致性） ---------- */
+.adm-page-title { display: flex; align-items: center; font-size: 17px; font-weight: 600; color: var(--adm-dark); line-height: 1.4; margin: 0 0 16px; }
+.adm-page-title::before { content: ''; width: 4px; height: 16px; border-radius: 2px; background: var(--adm-primary); margin-right: 10px; }
+.adm-page-title .adm-title-extra { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--adm-muted); }
+
+.adm-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0, 0, 0, .04); }
+.adm-card + .adm-card { margin-top: 16px; }
+
+/* ---------- 卡片头（taste：层次） ---------- */
+.adm-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 16px; }
+.adm-card-title { font-size: 15px; font-weight: 600; color: var(--adm-dark); }
+.adm-card-sub { font-size: 12px; color: var(--adm-muted); }
+
+/* ---------- 表格（taste：层次与密度） ---------- */
+.adm-card .el-table th { background: #FAFAFA; color: var(--adm-muted); font-weight: 500; }
+.adm-card .el-table td { font-variant-numeric: tabular-nums; }

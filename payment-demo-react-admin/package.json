@@ -1,0 +1,31 @@
+{
+  "name": "payment-demo-react-admin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3002",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3002",
+    "test:logic": "node tests/refresh-single-flight.test.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "antd": "^5.21.6",
+    "axios": "^1.7.7",
+    "dayjs": "^1.11.13",
+    "qrcode.react": "^4.0.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.26.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "vite": "^5.4.8"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

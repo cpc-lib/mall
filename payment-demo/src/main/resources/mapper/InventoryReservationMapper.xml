@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.InventoryReservationMapper">
+
+    <update id="casTransition">
+        update t_inventory_reservation
+        set status = #{to},
+            <choose>
+                <when test="timeColumn == 'commitTime'">commit_time = CURRENT_TIMESTAMP,</when>
+                <otherwise>release_time = CURRENT_TIMESTAMP,</otherwise>
+            </choose>
+            update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and status = #{from}
+    </update>
+
+</mapper>

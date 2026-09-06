@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.RefundItemMapper">
+  <!-- 占用中额度：APPLYING/APPROVED/REFUNDING 均已冻结订单/明细额度 -->
+  <select id="sumOccupiedQuantity" resultType="java.lang.Integer">
+    select COALESCE(sum(i.refund_qty),0)
+    from t_refund_item i join t_refund_order a on a.refund_no=i.refund_no
+    where i.order_item_id=#{orderItemId}
+      and a.status in ('APPLYING','APPROVED','REFUNDING')
+      <if test="excludeRefundNo != null">and a.refund_no &lt;&gt; #{excludeRefundNo}</if>
+  </select>
+  <select id="sumSuccessfulQuantity" resultType="java.lang.Integer">
+    select COALESCE(sum(i.refund_qty),0)
+    from t_refund_item i
+    join t_refund_order a on a.refund_no=i.refund_no
+    left join t_refund_info r on r.refund_no=i.refund_no
+    where i.order_item_id=#{orderItemId}
+      and (a.status='SUCCESS' or r.refund_status='SUCCESS')
+      <if test="excludeRefundNo != null">and a.refund_no &lt;&gt; #{excludeRefundNo}</if>
+  </select>
+</mapper>

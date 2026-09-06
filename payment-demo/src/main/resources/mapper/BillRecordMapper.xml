@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.bill.BillRecordMapper">
+
+    <!-- 批次明细列表：importId 必填，recordType 非空时过滤，id 升序 -->
+    <select id="selectRecordsByImport" resultType="cc.ivera.entity.bill.BillRecord">
+        select *
+        from t_bill_record
+        where import_id = #{importId}
+        <if test="recordType != null and recordType != ''">
+            and record_type = #{recordType}
+        </if>
+        order by id asc
+    </select>
+
+</mapper>

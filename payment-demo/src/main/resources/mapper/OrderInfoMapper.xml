@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.OrderInfoMapper">
+
+    <!-- 管理员全部订单动态条件查询：条件全部可选，按创建时间倒序 -->
+    <select id="selectAdminOrderList" resultType="cc.ivera.entity.OrderInfo">
+        select *
+        from t_order_info
+        <where>
+            <if test="payStatus != null and payStatus != ''">
+                and pay_status = #{payStatus}
+            </if>
+            <if test="orderStatus != null and orderStatus != ''">
+                and order_status = #{orderStatus}
+            </if>
+            <if test="fulfillmentStatus != null and fulfillmentStatus != ''">
+                and fulfillment_status = #{fulfillmentStatus}
+            </if>
+            <if test="orderNoLike != null">
+                and order_no like #{orderNoLike}
+            </if>
+            <if test="userId != null">
+                and user_id = #{userId}
+            </if>
+            <if test="startTime != null">
+                and create_time &gt;= #{startTime}
+            </if>
+            <if test="endTime != null">
+                and create_time &lt;= #{endTime}
+            </if>
+        </where>
+        order by create_time desc
+    </select>
+
+    <select id="selectByOrderNoForUpdate" resultType="cc.ivera.entity.OrderInfo">
+        select *
+        from t_order_info
+        where order_no = #{orderNo}
+        for update
+    </select>
+
+    <select id="selectNoPayOrderForUpdate" resultType="cc.ivera.entity.OrderInfo">
+        select *
+        from t_order_info
+        where id = (
+            select id
+            from (
+                select id
+                from t_order_info
+                where product_id = #{productId}
+                  and payment_type = #{paymentType}
+                  and legacy_status = #{orderStatus}
+                  <choose>
+                      <when test="paymentAppId != null">
+                          and payment_app_id = #{paymentAppId}
+                      </when>
+                      <otherwise>
+                          and payment_app_id is null
+                      </otherwise>
+                  </choose>
+                order by create_time desc, id desc
+            ) latest_order
+            where rownum &lt;= 1
+        )
+        for update
+    </select>
+
+    <!-- 支付成功 CAS：仅 WAIT_PAY 订单可转入 ACTIVE，同时落支付状态/实付/支付时间 -->
+    <update id="casWaitPayToActive">
+        update t_order_info
+        set order_status = 'ACTIVE',
+            pay_status = 'PAID',
+            paid_amount = #{paidAmount},
+            paid_time = CURRENT_TIMESTAMP,
+            update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and order_status = 'WAIT_PAY'
+    </update>
+
+    <!-- 超时关单 CAS：仅 WAIT_PAY 订单可关闭 -->
+    <update id="casWaitPayToClosed">
+        update t_order_info
+        set order_status = 'CLOSED',
+            fulfillment_status = 'CANCELLED',
+            update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and order_status = 'WAIT_PAY'
+    </update>
+
+    <!-- 订单层退款冻结：已退+冻结+本次 不超过实付 -->
+    <update id="freezeOrderRefund">
+        update t_order_info
+        set refund_frozen_amount = refund_frozen_amount + #{amount}, update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and paid_amount - refunded_amount - refund_frozen_amount &gt;= #{amount}
+    </update>
+
+    <!-- 释放订单层退款冻结（拒绝/撤回） -->
+    <update id="releaseOrderRefundFreeze">
+        update t_order_info
+        set refund_frozen_amount = refund_frozen_amount - #{amount}, update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and refund_frozen_amount &gt;= #{amount}
+    </update>
+
+    <!-- 订单层退款结转：冻结转已退 -->
+    <update id="settleOrderRefund">
+        update t_order_info
+        set refund_frozen_amount = refund_frozen_amount - #{amount},
+            refunded_amount = refunded_amount + #{amount},
+            update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and refund_frozen_amount &gt;= #{amount}
+    </update>
+
+    <!-- 按明细汇总回写订单退款汇总状态（幂等，可反复调用） -->
+    <update id="applyOrderRefundStatus">
+        update t_order_info o
+        set o.refund_status = (
+            select case
+                       when coalesce(sum(i.refund_frozen_amount), 0) &gt; 0 then 'REFUNDING'
+                       when coalesce(sum(i.refunded_amount), 0) &lt;= 0 then 'NONE'
+                       when coalesce(sum(i.refunded_amount), 0) &gt;= o.paid_amount then 'FULL_REFUNDED'
+                       else 'PARTIAL_REFUNDED'
+                   end
+            from t_order_item i
+            where i.order_no = o.order_no
+        ),
+        o.update_time = CURRENT_TIMESTAMP
+        where o.order_no = #{orderNo}
+    </update>
+
+</mapper>

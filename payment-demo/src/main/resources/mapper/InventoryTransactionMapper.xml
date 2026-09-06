@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.InventoryTransactionMapper">
+
+    <sql id="transactionFilter">
+        <where>
+            <if test="productId != null">
+                and product_id = #{productId}
+            </if>
+            <if test="bizType != null and bizType != ''">
+                and biz_type = #{bizType}
+            </if>
+            <if test="status != null and status != ''">
+                and operation_status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <!-- 库存流水总数：商品/业务类型/操作状态均为可选过滤条件 -->
+    <select id="countTransactions" resultType="java.lang.Long">
+        select count(*)
+        from t_inventory_transaction
+        <include refid="transactionFilter"/>
+    </select>
+
+    <!-- 库存流水分页：条件可选，创建时间、id 倒序，LIMIT/OFFSET 手动分页 -->
+    <select id="selectTransactionPage" resultType="cc.ivera.entity.InventoryTransaction">
+        select *
+        from t_inventory_transaction
+        <include refid="transactionFilter"/>
+        order by create_time desc, id desc
+        limit #{limit} offset #{offset}
+    </select>
+
+</mapper>

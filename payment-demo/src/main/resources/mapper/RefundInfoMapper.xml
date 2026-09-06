@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.mapper.RefundInfoMapper">
+
+    <select id="sumRefundAmountByOrderNoAndStatuses" resultType="java.lang.Integer">
+        select coalesce(sum(refund), 0)
+        from t_refund_info
+        where order_no = #{orderNo}
+          and refund_status in
+          <foreach collection="statuses" item="status" open="(" separator="," close=")">
+              #{status}
+          </foreach>
+    </select>
+
+    <select id="sumRefundAmountByOrderNoAndApprovalStatuses" resultType="java.lang.Integer">
+        select coalesce(sum(refund), 0)
+        from t_refund_info
+        where order_no = #{orderNo}
+          and approval_status in
+          <foreach collection="approvalStatuses" item="approvalStatus" open="(" separator="," close=")">
+              #{approvalStatus}
+          </foreach>
+    </select>
+
+    <select id="selectByRefundNoForUpdate" resultType="cc.ivera.entity.RefundInfo">
+        select *
+        from t_refund_info
+        where refund_no = #{refundNo}
+        for update
+    </select>
+
+</mapper>
