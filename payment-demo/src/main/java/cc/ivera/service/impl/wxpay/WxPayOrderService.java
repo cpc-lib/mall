@@ -2,7 +2,6 @@ package cc.ivera.service.impl.wxpay;
 
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.enums.OrderStatus;
 import cc.ivera.enums.PayType;
@@ -18,6 +17,7 @@ import cc.ivera.service.PaymentSuccessService;
 import cc.ivera.service.wxpay.WxPayOrderFacade;
 import cc.ivera.util.HttpClientUtils;
 import cc.ivera.util.JsonUtils;
+import cc.ivera.util.WxPayPrivateKeyUtil;
 import cc.ivera.vo.WxPayJsapiVO;
 import cc.ivera.vo.WxPayNativeVO;
 import cc.ivera.vo.WxPayStatusVO;
@@ -51,7 +51,6 @@ public class WxPayOrderService implements WxPayOrderFacade {
      */
     private static final String WX_ERR_CODE_ORDER_NOT_EXIST = "ORDER_NOT_EXIST";
 
-    private final WxPayConfig wxPayConfig;
     private final PaymentConfigLoader paymentConfigLoader;
     private final OrderInfoService orderInfoService;
     private final PaymentInfoService paymentInfoService;
@@ -62,8 +61,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     private final DistributedLockTemplate distributedLockTemplate;
     private final TransactionTemplate transactionTemplate;
 
-    public WxPayOrderService(WxPayConfig wxPayConfig,
-                             PaymentConfigLoader paymentConfigLoader,
+    public WxPayOrderService(PaymentConfigLoader paymentConfigLoader,
                              OrderInfoService orderInfoService,
                              PaymentInfoService paymentInfoService,
                              PaymentOrderService paymentOrderService,
@@ -72,7 +70,6 @@ public class WxPayOrderService implements WxPayOrderFacade {
                              WxPayNotificationDecoder wxPayNotificationDecoder,
                              DistributedLockTemplate distributedLockTemplate,
                              TransactionTemplate transactionTemplate) {
-        this.wxPayConfig = wxPayConfig;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
         this.paymentInfoService = paymentInfoService;
@@ -520,7 +517,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
                 return getPayment("prepay_id=" + prepayId,
                         required(payConfig.getAppid(), "微信appid未配置"),
-                        wxPayConfig.getPrivateKey(required(payConfig.getPrivateKeyPath(), "微信私钥文件路径未配置")));
+                        WxPayPrivateKeyUtil.load(required(payConfig.getPrivateKey(), "微信商户私钥内容未配置")));
             } catch (Exception e) {
                 throw new BizException("支付失败" + e.getMessage(), e);
             }
@@ -646,7 +643,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
                 ? paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY)
                 : paymentConfigLoader.getRequiredAppConfig(paymentAppId);
         if (config == null) {
-            return buildDefaultWxPayConfig();
+            throw new BizException("微信支付渠道未配置或未启用");
         }
         if (!PaymentConfigLoader.CHANNEL_WXPAY.equals(config.getChannelCode())) {
             throw new BizException("支付应用不是微信支付渠道");
@@ -657,20 +654,6 @@ public class WxPayOrderService implements WxPayOrderFacade {
     private PaymentAppConfig resolveWxPayConfigByOrderNo(String orderNo) {
         OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
         return resolveWxPayConfig(orderInfo == null ? null : orderInfo.getPaymentAppId());
-    }
-
-    private PaymentAppConfig buildDefaultWxPayConfig() {
-        PaymentAppConfig config = new PaymentAppConfig();
-        config.setChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
-        config.setAppid(wxPayConfig.getAppid());
-        config.setMchId(wxPayConfig.getMchId());
-        config.setMchSerialNo(wxPayConfig.getMchSerialNo());
-        config.setPrivateKeyPath(wxPayConfig.getPrivateKeyPath());
-        config.setApiV3Key(wxPayConfig.getApiV3Key());
-        config.setPartnerKey(wxPayConfig.getPartnerKey());
-        config.setDomain(wxPayConfig.getDomain());
-        config.setNotifyUrl(wxPayConfig.getNotifyDomain());
-        return config;
     }
 
     private String buildNotifyUrl(PaymentAppConfig config, WxNotifyType notifyType) {

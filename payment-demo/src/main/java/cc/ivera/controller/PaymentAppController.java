@@ -139,9 +139,6 @@ public class PaymentAppController {
             vo.setChannelCode(channel == null ? null : channel.getChannelCode());
             vo.setChannelName(channel == null ? null : channel.getChannelName());
             vo.setAppDesc(app.getAppDesc());
-            if (!onlyEnabledChannel) {
-                vo.setAppConfig(app.getAppConfig());
-            }
             vo.setSortOrder(app.getSortOrder());
             vo.setCreateTime(app.getCreateTime());
             vo.setUpdateTime(app.getUpdateTime());

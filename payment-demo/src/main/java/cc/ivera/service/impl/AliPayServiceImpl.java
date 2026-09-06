@@ -1,6 +1,5 @@
 package cc.ivera.service.impl;
 
-import cc.ivera.config.AlipayProperties;
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.entity.OrderInfo;
@@ -48,10 +47,6 @@ public class AliPayServiceImpl implements AliPayService {
 
     private final OrderInfoService orderInfoService;
 
-    private final AlipayClient alipayClient;
-
-    private final AlipayProperties alipayProperties;
-
     private final PaymentConfigLoader paymentConfigLoader;
 
     private final PaymentInfoService paymentInfoService;
@@ -68,8 +63,6 @@ public class AliPayServiceImpl implements AliPayService {
 
     public AliPayServiceImpl(
         OrderInfoService orderInfoService,
-        AlipayClient alipayClient,
-        AlipayProperties alipayProperties,
         PaymentConfigLoader paymentConfigLoader,
         PaymentInfoService paymentInfoService,
         RefundInfoService refundInfoService,
@@ -79,8 +72,6 @@ public class AliPayServiceImpl implements AliPayService {
         TransactionTemplate transactionTemplate
     ) {
         this.orderInfoService = orderInfoService;
-        this.alipayClient = alipayClient;
-        this.alipayProperties = alipayProperties;
         this.paymentConfigLoader = paymentConfigLoader;
         this.paymentInfoService = paymentInfoService;
         this.refundInfoService = refundInfoService;
@@ -500,7 +491,7 @@ public class AliPayServiceImpl implements AliPayService {
                 ? paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_ALIPAY)
                 : paymentConfigLoader.getRequiredAppConfig(paymentAppId);
         if (config == null) {
-            return buildDefaultAliPayConfig();
+            throw new BizException("支付宝渠道未配置或未启用");
         }
         if (!PaymentConfigLoader.CHANNEL_ALIPAY.equals(config.getChannelCode())) {
             throw new BizException("支付应用不是支付宝渠道");
@@ -511,20 +502,6 @@ public class AliPayServiceImpl implements AliPayService {
     private PaymentAppConfig resolveAliPayConfigByOrderNo(String orderNo) {
         OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
         return resolveAliPayConfig(orderInfo == null ? null : orderInfo.getPaymentAppId());
-    }
-
-    private PaymentAppConfig buildDefaultAliPayConfig() {
-        PaymentAppConfig config = new PaymentAppConfig();
-        config.setChannelCode(PaymentConfigLoader.CHANNEL_ALIPAY);
-        config.setAlipayAppId(alipayProperties.getAppId());
-        config.setSellerId(alipayProperties.getSellerId());
-        config.setGatewayUrl(alipayProperties.getGatewayUrl());
-        config.setMerchantPrivateKey(alipayProperties.getMerchantPrivateKey());
-        config.setAlipayPublicKey(alipayProperties.getAlipayPublicKey());
-        config.setContentKey(alipayProperties.getContentKey());
-        config.setReturnUrl(alipayProperties.getReturnUrl());
-        config.setAlipayNotifyUrl(alipayProperties.getNotifyUrl());
-        return config;
     }
 
     private AlipayClient buildAlipayClient(PaymentAppConfig payConfig) throws AlipayApiException {

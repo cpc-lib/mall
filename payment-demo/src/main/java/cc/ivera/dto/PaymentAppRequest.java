@@ -26,10 +26,5 @@ public class PaymentAppRequest {
     @Size(max = 255, message = "应用描述长度不能超过255个字符")
     private String appDesc;
 
-    /**
-     * 应用级参数，JSON 对象字符串。字段由具体渠道决定，不做 mock 默认值。
-     */
-    private String appConfig;
-
     private Integer sortOrder;
 }

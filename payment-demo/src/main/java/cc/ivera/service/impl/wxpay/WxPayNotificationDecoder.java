@@ -2,7 +2,6 @@ package cc.ivera.service.impl.wxpay;
 
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.util.JsonUtils;
 import com.wechat.pay.contrib.apache.httpclient.util.AesUtil;
 import lombok.extern.slf4j.Slf4j;
@@ -19,12 +18,9 @@ import java.util.Map;
 @Slf4j
 public class WxPayNotificationDecoder {
 
-    private final WxPayConfig wxPayConfig;
     private final PaymentConfigLoader paymentConfigLoader;
 
-    public WxPayNotificationDecoder(WxPayConfig wxPayConfig,
-                                    PaymentConfigLoader paymentConfigLoader) {
-        this.wxPayConfig = wxPayConfig;
+    public WxPayNotificationDecoder(PaymentConfigLoader paymentConfigLoader) {
         this.paymentConfigLoader = paymentConfigLoader;
     }
 
@@ -63,9 +59,6 @@ public class WxPayNotificationDecoder {
             if (StringUtils.hasText(config.getApiV3Key()) && !keys.contains(config.getApiV3Key())) {
                 keys.add(config.getApiV3Key());
             }
-        }
-        if (StringUtils.hasText(wxPayConfig.getApiV3Key()) && !keys.contains(wxPayConfig.getApiV3Key())) {
-            keys.add(wxPayConfig.getApiV3Key());
         }
         return keys;
     }

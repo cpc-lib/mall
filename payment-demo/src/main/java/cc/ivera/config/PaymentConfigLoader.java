@@ -25,8 +25,8 @@ import java.util.stream.Collectors;
  *
  * <p>说明：</p>
  * <ul>
- *   <li>渠道配置表保存渠道级公共参数，例如微信/支付宝网关域名。</li>
- *   <li>应用配置表保存商户/应用维度参数，例如 appId、mchId、密钥、通知地址。</li>
+ *   <li>渠道表保存渠道级公共参数（domain/gatewayUrl/contentKey/notifyUrl/returnUrl）与商户凭证（appid、商户号、证书序列号、私钥内容、API密钥）。</li>
+ *   <li>应用表只保存应用业务信息（名称/编码/状态/描述/排序/所属渠道），不保存商户密钥。</li>
  *   <li>运行期只读取 ENABLED 配置，管理端变更后会主动 reload。</li>
  * </ul>
  */
@@ -119,29 +119,28 @@ public class PaymentConfigLoader {
         config.setChannelCode(channel.getChannelCode());
 
         Map<String, String> channelConfig = parseJsonObject(channel.getConfigParams(), "支付渠道配置JSON格式错误，channelId=" + channel.getId());
-        Map<String, String> appConfig = parseJsonObject(app.getAppConfig(), "支付应用配置JSON格式错误，appId=" + app.getId());
 
-        // 渠道公共参数
+        // 渠道公共参数（domain/gatewayUrl/contentKey/notifyUrl/returnUrl）
         config.setDomain(channelConfig.get("domain"));
         config.setGatewayUrl(channelConfig.get("gatewayUrl"));
         config.setContentKey(channelConfig.get("contentKey"));
+        config.setNotifyUrl(channelConfig.get("notifyUrl"));
+        config.setReturnUrl(channelConfig.get("returnUrl"));
 
-        // 微信支付应用参数
-        config.setAppid(appConfig.get("appid"));
-        config.setMchId(appConfig.get("mchId"));
-        config.setMchSerialNo(appConfig.get("mchSerialNo"));
-        config.setPrivateKeyPath(appConfig.get("privateKeyPath"));
-        config.setApiV3Key(firstNonBlank(appConfig.get("apiV3Key"), channelConfig.get("apiV3Key")));
-        config.setPartnerKey(firstNonBlank(appConfig.get("partnerKey"), channelConfig.get("partnerKey")));
-        config.setNotifyUrl(firstNonBlank(appConfig.get("notifyUrl"), channelConfig.get("notifyUrl")));
+        // 微信商户信息（来自渠道表）
+        config.setAppid(channel.getAppid());
+        config.setMchId(channel.getMchId());
+        config.setMchSerialNo(channel.getMchSerialNo());
+        config.setPrivateKey(channel.getPrivateKey());
+        config.setApiV3Key(channel.getApiV3Key());
+        config.setPartnerKey(channel.getPartnerKey());
 
-        // 支付宝应用参数
-        config.setAlipayAppId(firstNonBlank(appConfig.get("appId"), appConfig.get("alipayAppId")));
-        config.setSellerId(appConfig.get("sellerId"));
-        config.setMerchantPrivateKey(appConfig.get("merchantPrivateKey"));
-        config.setAlipayPublicKey(appConfig.get("alipayPublicKey"));
-        config.setReturnUrl(appConfig.get("returnUrl"));
-        config.setAlipayNotifyUrl(firstNonBlank(appConfig.get("notifyUrl"), channelConfig.get("notifyUrl")));
+        // 支付宝商户信息（来自渠道表）
+        config.setAlipayAppId(channel.getAlipayAppId());
+        config.setSellerId(channel.getSellerId());
+        config.setMerchantPrivateKey(channel.getMerchantPrivateKey());
+        config.setAlipayPublicKey(channel.getAlipayPublicKey());
+        config.setAlipayNotifyUrl(channelConfig.get("notifyUrl"));
 
         return config;
     }
@@ -240,10 +239,6 @@ public class PaymentConfigLoader {
         } catch (Exception e) {
             throw new BizException(errorMessage, e);
         }
-    }
-
-    private String firstNonBlank(String primary, String fallback) {
-        return StringUtils.hasText(primary) ? primary : fallback;
     }
 
     private String rootCauseMessage(DataAccessException e) {

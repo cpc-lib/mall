@@ -181,6 +181,6 @@ cd payment-demo-vue-admin   && npm run build
 项目使用 `spec/` 目录作为公共行为与架构契约的状态账本（规则详见 [AGENTS.md](AGENTS.md)）：
 
 - `spec/governance/` — 治理规范（issue 分类、PR 检查清单）
-- `spec/implemented/` — 已落地行为（交易模型 V2、管理端 UI 隔离、库存导入存储、UI 品味重设计等）
+- `spec/implemented/` — 已落地行为（交易模型 V2、管理端 UI 隔离、库存导入存储、支付渠道商户配置重构、UI 品味重设计等）
 - `spec/planned/` — 规划中变更
 - `spec/archived/` — 废弃/归档决策

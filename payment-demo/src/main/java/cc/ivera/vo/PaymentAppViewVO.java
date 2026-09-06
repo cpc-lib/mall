@@ -26,9 +26,6 @@ public class PaymentAppViewVO {
 
     private String appDesc;
 
-    /** 仅管理端列表返回，前端支付页不返回 */
-    private String appConfig;
-
     private Integer sortOrder;
 
     private Date createTime;

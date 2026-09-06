@@ -2,7 +2,6 @@ package cc.ivera.service.impl.wxpay;
 
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.enums.wxpay.WxApiType;
 import cc.ivera.exception.BizException;
 import cc.ivera.service.wxpay.WxPayBillFacade;
@@ -30,18 +29,14 @@ public class WxPayBillService implements WxPayBillFacade {
 
     private static final String BILL_CATEGORY_FUND_FLOW = "fundflowbill";
 
-    private final WxPayConfig wxPayConfig;
-
     private final PaymentConfigLoader paymentConfigLoader;
 
     private final WxPayHttpClient wxPayHttpClient;
 
     public WxPayBillService(
-        WxPayConfig wxPayConfig,
         PaymentConfigLoader paymentConfigLoader,
         WxPayHttpClient wxPayHttpClient
     ) {
-        this.wxPayConfig = wxPayConfig;
         this.paymentConfigLoader = paymentConfigLoader;
         this.wxPayHttpClient = wxPayHttpClient;
     }
@@ -135,20 +130,10 @@ public class WxPayBillService implements WxPayBillFacade {
 
     private PaymentAppConfig resolveWxPayConfig() {
         PaymentAppConfig config = paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
-        if (config != null) {
-            return config;
+        if (config == null) {
+            throw new BizException("微信支付渠道未配置或未启用");
         }
-        PaymentAppConfig fallback = new PaymentAppConfig();
-        fallback.setChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
-        fallback.setAppid(wxPayConfig.getAppid());
-        fallback.setMchId(wxPayConfig.getMchId());
-        fallback.setMchSerialNo(wxPayConfig.getMchSerialNo());
-        fallback.setPrivateKeyPath(wxPayConfig.getPrivateKeyPath());
-        fallback.setApiV3Key(wxPayConfig.getApiV3Key());
-        fallback.setPartnerKey(wxPayConfig.getPartnerKey());
-        fallback.setDomain(wxPayConfig.getDomain());
-        fallback.setNotifyUrl(wxPayConfig.getNotifyDomain());
-        return fallback;
+        return config;
     }
 
     private String required(String value, String message) {

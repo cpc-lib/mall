@@ -1,6 +1,7 @@
 package cc.ivera.controller;
 
-import cc.ivera.config.WxPayConfig;
+import cc.ivera.config.PaymentAppConfig;
+import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.enums.OrderStatus;
 import cc.ivera.enums.PayType;
@@ -42,7 +43,7 @@ public class WxPayV2Controller {
 
     private final WxPayOrderFacade wxPayOrderFacade;
 
-    private final WxPayConfig wxPayConfig;
+    private final PaymentConfigLoader paymentConfigLoader;
 
     private final OrderInfoService orderInfoService;
 
@@ -58,7 +59,7 @@ public class WxPayV2Controller {
 
     public WxPayV2Controller(
         WxPayOrderFacade wxPayOrderFacade,
-        WxPayConfig wxPayConfig,
+        PaymentConfigLoader paymentConfigLoader,
         OrderInfoService orderInfoService,
         PaymentInfoService paymentInfoService,
         PaymentSuccessService paymentSuccessService,
@@ -67,7 +68,7 @@ public class WxPayV2Controller {
         StringRedisTemplate stringRedisTemplate
     ) {
         this.wxPayOrderFacade = wxPayOrderFacade;
-        this.wxPayConfig = wxPayConfig;
+        this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
         this.paymentInfoService = paymentInfoService;
         this.paymentSuccessService = paymentSuccessService;
@@ -121,9 +122,12 @@ public class WxPayV2Controller {
             }
 
             try {
-                //验签
-                if (!WXPayUtil.isSignatureValid(body,
-                        wxPayConfig.getPartnerKey())) {
+                //获取商户订单号（先解析用于确定验签密钥来源）
+                String orderNo = notifyMap.get("out_trade_no");
+
+                //验签：partnerKey 来自渠道表，按 订单→支付应用→渠道默认 链路解析
+                String partnerKey = resolvePartnerKey(orderNo);
+                if (!WXPayUtil.isSignatureValid(body, partnerKey)) {
                     log.error("通知验签失败");
                     releaseNotifyLock(transactionId);
                     return wxNotifyFail("验签失败");
@@ -136,8 +140,6 @@ public class WxPayV2Controller {
                     return wxNotifyFail("失败");
                 }
 
-                //获取商户订单号
-                String orderNo = notifyMap.get("out_trade_no");
                 if (orderNo == null || orderNo.trim().isEmpty()) {
                     log.error("微信支付v2通知缺少商户订单号");
                     releaseNotifyLock(transactionId);
@@ -173,6 +175,26 @@ public class WxPayV2Controller {
             log.error("处理微信支付v2通知失败", e);
             return wxNotifyFail("失败");
         }
+    }
+
+    /**
+     * V2 回调验签密钥解析：订单绑定的支付应用优先，否则取微信渠道默认应用；密钥均来自渠道表 partner_key。
+     */
+    private String resolvePartnerKey(String orderNo) {
+        PaymentAppConfig config = null;
+        if (orderNo != null && !orderNo.trim().isEmpty()) {
+            OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
+            if (orderInfo != null && orderInfo.getPaymentAppId() != null) {
+                config = paymentConfigLoader.getAppConfig(orderInfo.getPaymentAppId());
+            }
+        }
+        if (config == null) {
+            config = paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
+        }
+        if (config == null || config.getPartnerKey() == null || config.getPartnerKey().trim().isEmpty()) {
+            throw new BizException("微信APIv2密钥partnerKey未配置");
+        }
+        return config.getPartnerKey();
     }
 
     private boolean tryAcquireNotifyLock(String transactionId) {

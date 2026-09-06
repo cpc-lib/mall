@@ -1,8 +1,8 @@
 package cc.ivera.service.impl.wxpay;
 
 import cc.ivera.config.PaymentAppConfig;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.exception.BizException;
+import cc.ivera.util.WxPayPrivateKeyUtil;
 import com.wechat.pay.contrib.apache.httpclient.WechatPayHttpClientBuilder;
 import com.wechat.pay.contrib.apache.httpclient.auth.PrivateKeySigner;
 import com.wechat.pay.contrib.apache.httpclient.auth.ScheduledUpdateCertificatesVerifier;
@@ -18,7 +18,6 @@ import org.apache.http.client.methods.HttpUriRequest;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.util.EntityUtils;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -26,17 +25,15 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.PrivateKey;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * 微信支付 HTTP 客户端：按渠道商户配置（PaymentAppConfig，商户信息来自渠道表）构建并缓存签名/无签名客户端。
+ */
 @Component
 @Slf4j
 public class WxPayHttpClient {
-
-    private final CloseableHttpClient wxPayClient;
-
-    private final CloseableHttpClient wxPayNoSignClient;
-
-    private final WxPayConfig wxPayConfig;
 
     /**
      * 多支付应用场景下，按商户号/证书序列号/私钥/APIv3密钥维度缓存真实微信 V3 HttpClient。
@@ -45,32 +42,10 @@ public class WxPayHttpClient {
 
     private final Map<String, CloseableHttpClient> noSignClientCache = new ConcurrentHashMap<>();
 
-    public WxPayHttpClient(
-        @Qualifier("wxPayClient") CloseableHttpClient wxPayClient,
-        @Qualifier("wxPayNoSignClient") CloseableHttpClient wxPayNoSignClient,
-        WxPayConfig wxPayConfig
-    ) {
-        this.wxPayClient = wxPayClient;
-        this.wxPayNoSignClient = wxPayNoSignClient;
-        this.wxPayConfig = wxPayConfig;
-    }
-
-    public String get(String url, String failureMessage) throws IOException {
-        HttpGet httpGet = new HttpGet(url);
-        httpGet.setHeader("Accept", "application/json");
-        return executeForSuccess(wxPayClient, httpGet, failureMessage);
-    }
-
     public String get(PaymentAppConfig payConfig, String url, String failureMessage) throws IOException {
         HttpGet httpGet = new HttpGet(url);
         httpGet.setHeader("Accept", "application/json");
         return executeForSuccess(getSignedClient(payConfig), httpGet, failureMessage);
-    }
-
-    public String getNoSign(String url, String failureMessage) throws IOException {
-        HttpGet httpGet = new HttpGet(url);
-        httpGet.setHeader("Accept", "application/json");
-        return executeForSuccess(wxPayNoSignClient, httpGet, failureMessage);
     }
 
     public String getNoSign(PaymentAppConfig payConfig, String url, String failureMessage) throws IOException {
@@ -79,25 +54,12 @@ public class WxPayHttpClient {
         return executeForSuccess(getNoSignClient(payConfig), httpGet, failureMessage);
     }
 
-    public String postJson(String url, String jsonParams, String failureMessage) throws IOException {
-        WxPayHttpResponse response = postJsonForResponse(url, jsonParams);
-        if (!response.isSuccessful()) {
-            throw new IOException(failureMessage + ", 响应码 = " + response.getStatusCode() + ", 返回结果 = " + response.getBody());
-        }
-        return response.getBody();
-    }
-
     public String postJson(PaymentAppConfig payConfig, String url, String jsonParams, String failureMessage) throws IOException {
         WxPayHttpResponse response = postJsonForResponse(payConfig, url, jsonParams);
         if (!response.isSuccessful()) {
             throw new IOException(failureMessage + ", 响应码 = " + response.getStatusCode() + ", 返回结果 = " + response.getBody());
         }
         return response.getBody();
-    }
-
-    public WxPayHttpResponse postJsonForResponse(String url, String jsonParams) throws IOException {
-        HttpPost httpPost = buildJsonPost(url, jsonParams);
-        return execute(wxPayClient, httpPost);
     }
 
     public WxPayHttpResponse postJsonForResponse(PaymentAppConfig payConfig, String url, String jsonParams) throws IOException {
@@ -125,7 +87,7 @@ public class WxPayHttpClient {
     }
 
     private CloseableHttpClient buildSignedClient(PaymentAppConfig payConfig) {
-        PrivateKey privateKey = wxPayConfig.getPrivateKey(required(payConfig.getPrivateKeyPath(), "微信私钥文件路径未配置"));
+        PrivateKey privateKey = WxPayPrivateKeyUtil.load(required(payConfig.getPrivateKey(), "微信商户私钥内容未配置"));
         PrivateKeySigner privateKeySigner = new PrivateKeySigner(required(payConfig.getMchSerialNo(), "微信商户API证书序列号未配置"), privateKey);
         WechatPay2Credentials credentials = new WechatPay2Credentials(required(payConfig.getMchId(), "微信商户号未配置"), privateKeySigner);
         ScheduledUpdateCertificatesVerifier verifier = new ScheduledUpdateCertificatesVerifier(
@@ -138,7 +100,7 @@ public class WxPayHttpClient {
     }
 
     private CloseableHttpClient buildNoSignClient(PaymentAppConfig payConfig) {
-        PrivateKey privateKey = wxPayConfig.getPrivateKey(required(payConfig.getPrivateKeyPath(), "微信私钥文件路径未配置"));
+        PrivateKey privateKey = WxPayPrivateKeyUtil.load(required(payConfig.getPrivateKey(), "微信商户私钥内容未配置"));
         return WechatPayHttpClientBuilder.create()
                 .withMerchant(required(payConfig.getMchId(), "微信商户号未配置"),
                         required(payConfig.getMchSerialNo(), "微信商户API证书序列号未配置"),
@@ -150,7 +112,7 @@ public class WxPayHttpClient {
     private String buildClientCacheKey(PaymentAppConfig payConfig) {
         return required(payConfig.getMchId(), "微信商户号未配置") + ":"
                 + required(payConfig.getMchSerialNo(), "微信商户API证书序列号未配置") + ":"
-                + required(payConfig.getPrivateKeyPath(), "微信私钥文件路径未配置") + ":"
+                + Objects.hashCode(payConfig.getPrivateKey()) + ":"
                 + required(payConfig.getApiV3Key(), "微信APIv3密钥未配置").hashCode();
     }
 

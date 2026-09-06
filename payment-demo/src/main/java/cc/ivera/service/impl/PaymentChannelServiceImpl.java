@@ -130,6 +130,18 @@ public class PaymentChannelServiceImpl extends ServiceImpl<PaymentChannelMapper,
         channel.setChannelStatus(defaultStatus(request.getChannelStatus()));
         channel.setChannelDesc(trimToNull(request.getChannelDesc()));
         channel.setConfigParams(trimToNull(request.getConfigParams()));
+        // 微信商户信息
+        channel.setAppid(trimToNull(request.getAppid()));
+        channel.setMchId(trimToNull(request.getMchId()));
+        channel.setMchSerialNo(trimToNull(request.getMchSerialNo()));
+        channel.setPrivateKey(trimToNull(request.getPrivateKey()));
+        channel.setApiV3Key(trimToNull(request.getApiV3Key()));
+        channel.setPartnerKey(trimToNull(request.getPartnerKey()));
+        // 支付宝商户信息
+        channel.setAlipayAppId(trimToNull(request.getAlipayAppId()));
+        channel.setSellerId(trimToNull(request.getSellerId()));
+        channel.setMerchantPrivateKey(trimToNull(request.getMerchantPrivateKey()));
+        channel.setAlipayPublicKey(trimToNull(request.getAlipayPublicKey()));
         channel.setSortOrder(request.getSortOrder() == null ? 0 : request.getSortOrder());
     }
 

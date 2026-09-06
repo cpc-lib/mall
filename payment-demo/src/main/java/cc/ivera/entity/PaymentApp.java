@@ -33,11 +33,6 @@ public class PaymentApp extends BaseEntity {
     private String appDesc;
 
     /**
-     * 应用配置（JSON格式，包含具体渠道的配置信息）
-     */
-    private String appConfig;
-
-    /**
      * 排序号
      */
     private Integer sortOrder;

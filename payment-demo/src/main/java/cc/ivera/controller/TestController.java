@@ -1,6 +1,7 @@
 package cc.ivera.controller;
 
-import cc.ivera.config.WxPayConfig;
+import cc.ivera.config.PaymentAppConfig;
+import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.vo.R;
 import io.swagger.annotations.Api;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -12,16 +13,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/test")
 public class TestController {
 
-    private final WxPayConfig wxPayConfig;
+    private final PaymentConfigLoader paymentConfigLoader;
 
-    public TestController(
-        WxPayConfig wxPayConfig
-    ) {
-        this.wxPayConfig = wxPayConfig;
+    public TestController(PaymentConfigLoader paymentConfigLoader) {
+        this.paymentConfigLoader = paymentConfigLoader;
     }
 
     @GetMapping
     public R<String> getWxPayConfig() {
-        return R.ok(wxPayConfig.getMchId());
+        PaymentAppConfig config = paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
+        return R.ok(config == null ? null : config.getMchId());
     }
 }

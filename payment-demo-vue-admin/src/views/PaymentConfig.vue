@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div>
     <h2 class="adm-page-title">支付配置</h2>
 
@@ -133,13 +133,12 @@
         <el-form-item label="描述">
           <el-input v-model="appForm.appDesc"></el-input>
         </el-form-item>
-        <el-form-item label="应用参数JSON">
-          <el-input
-            v-model="appForm.appConfig"
-            type="textarea"
-            :rows="12"
-            placeholder='微信示例：{"appid":"...","mchId":"...","apiV3Key":"...","notifyUrl":"..."}'></el-input>
-        </el-form-item>
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="商户参数（appid/商户号/密钥等）统一在「支付渠道配置」中维护"
+          style="margin-bottom:8px"></el-alert>
       </el-form>
       <div slot="footer" style="text-align:right">
         <el-button @click="appDialogVisible = false">取消</el-button>
@@ -169,7 +168,6 @@ const defaultAppForm = () => ({
   appStatus: 'ENABLED',
   channelId: null,
   appDesc: '',
-  appConfig: '',
   sortOrder: 0
 })
 
@@ -266,7 +264,7 @@ export default {
 
     submitApp() {
       this.$refs.appForm.validate(valid => {
-        if (!valid || !this.validateJson(this.appForm.appConfig)) {
+        if (!valid) {
           return
         }
         const request = this.appForm.id

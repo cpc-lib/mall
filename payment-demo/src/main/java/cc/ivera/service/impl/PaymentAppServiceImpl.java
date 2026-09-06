@@ -143,7 +143,6 @@ public class PaymentAppServiceImpl extends ServiceImpl<PaymentAppMapper, Payment
         }
         String status = defaultStatus(request.getAppStatus());
         validateStatus(status);
-        validateJsonObject(request.getAppConfig(), "应用配置参数必须是JSON对象");
 
         LambdaQueryWrapper<PaymentApp> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(PaymentApp::getAppCode, request.getAppCode().trim());
@@ -159,7 +158,6 @@ public class PaymentAppServiceImpl extends ServiceImpl<PaymentAppMapper, Payment
         app.setAppStatus(defaultStatus(request.getAppStatus()));
         app.setChannelId(request.getChannelId());
         app.setAppDesc(trimToNull(request.getAppDesc()));
-        app.setAppConfig(trimToNull(request.getAppConfig()));
         app.setSortOrder(request.getSortOrder() == null ? 0 : request.getSortOrder());
     }
 
@@ -170,19 +168,6 @@ public class PaymentAppServiceImpl extends ServiceImpl<PaymentAppMapper, Payment
     private void validateStatus(String status) {
         if (!ENABLED.equals(status) && !DISABLED.equals(status)) {
             throw new BizException("状态只能是ENABLED或DISABLED");
-        }
-    }
-
-    private void validateJsonObject(String json, String message) {
-        if (!StringUtils.hasText(json)) {
-            return;
-        }
-        try {
-            if (!objectMapper.readTree(json).isObject()) {
-                throw new BizException(message);
-            }
-        } catch (IOException e) {
-            throw new BizException(message, e);
         }
     }
 

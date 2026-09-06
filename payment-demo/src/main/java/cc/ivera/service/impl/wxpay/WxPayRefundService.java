@@ -2,7 +2,6 @@ package cc.ivera.service.impl.wxpay;
 
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.entity.RefundInfo;
 import cc.ivera.enums.RefundStatus;
@@ -31,8 +30,6 @@ import java.util.*;
 @Slf4j
 public class WxPayRefundService implements WxPayRefundFacade {
 
-    private final WxPayConfig wxPayConfig;
-
     private final PaymentConfigLoader paymentConfigLoader;
 
     private final OrderInfoService orderInfoService;
@@ -48,7 +45,6 @@ public class WxPayRefundService implements WxPayRefundFacade {
     private final TransactionTemplate transactionTemplate;
 
     public WxPayRefundService(
-        WxPayConfig wxPayConfig,
         PaymentConfigLoader paymentConfigLoader,
         OrderInfoService orderInfoService,
         RefundInfoService refundInfoService,
@@ -57,7 +53,6 @@ public class WxPayRefundService implements WxPayRefundFacade {
         DistributedLockTemplate distributedLockTemplate,
         TransactionTemplate transactionTemplate
     ) {
-        this.wxPayConfig = wxPayConfig;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
         this.refundInfoService = refundInfoService;
@@ -322,25 +317,11 @@ public class WxPayRefundService implements WxPayRefundFacade {
                 ? paymentConfigLoader.getDefaultAppConfigByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY)
                 : paymentConfigLoader.getAppConfig(orderInfo.getPaymentAppId());
         if (config == null) {
-            return buildDefaultWxPayConfig();
+            throw new BizException("微信支付渠道未配置或未启用");
         }
         if (!PaymentConfigLoader.CHANNEL_WXPAY.equals(config.getChannelCode())) {
             throw new BizException("订单绑定的支付应用不是微信支付渠道，orderNo=" + orderNo);
         }
-        return config;
-    }
-
-    private PaymentAppConfig buildDefaultWxPayConfig() {
-        PaymentAppConfig config = new PaymentAppConfig();
-        config.setChannelCode(PaymentConfigLoader.CHANNEL_WXPAY);
-        config.setAppid(wxPayConfig.getAppid());
-        config.setMchId(wxPayConfig.getMchId());
-        config.setMchSerialNo(wxPayConfig.getMchSerialNo());
-        config.setPrivateKeyPath(wxPayConfig.getPrivateKeyPath());
-        config.setApiV3Key(wxPayConfig.getApiV3Key());
-        config.setPartnerKey(wxPayConfig.getPartnerKey());
-        config.setDomain(wxPayConfig.getDomain());
-        config.setNotifyUrl(wxPayConfig.getNotifyDomain());
         return config;
     }
 

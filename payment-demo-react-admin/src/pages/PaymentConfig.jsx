@@ -19,7 +19,6 @@ const defaultAppForm = () => ({
   appStatus: 'ENABLED',
   channelId: null,
   appDesc: '',
-  appConfig: '',
   sortOrder: 0
 })
 
@@ -122,15 +121,6 @@ export default function PaymentConfig() {
 
   const submitApp = () => {
     appForm.validateFields().then((values) => {
-      if (values.appConfig) {
-        try {
-          JSON.parse(values.appConfig)
-        } catch {
-          message.error('应用参数JSON格式错误')
-          return
-        }
-      }
-
       const request = editingApp
         ? paymentConfigApi.updateApp(editingApp.id, values)
         : paymentConfigApi.createApp(values)
@@ -360,9 +350,12 @@ export default function PaymentConfig() {
           <Form.Item label="描述" name="appDesc">
             <Input />
           </Form.Item>
-          <Form.Item label="应用参数JSON" name="appConfig">
-            <Input.TextArea rows={12} placeholder='微信示例：{"appid":"...","mchId":"...","apiV3Key":"...","notifyUrl":"..."}' />
-          </Form.Item>
+          <Alert
+            type="info"
+            showIcon
+            message="商户参数（appid/商户号/密钥等）统一在「支付渠道配置」中维护"
+            style={{ marginBottom: 8 }}
+          />
         </Form>
       </Drawer>
     </div>

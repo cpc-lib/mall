@@ -2,11 +2,11 @@ package cc.ivera.controller.support;
 
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
-import cc.ivera.config.WxPayConfig;
 import cc.ivera.exception.BizException;
 import cc.ivera.util.HttpUtils;
 import cc.ivera.util.JsonUtils;
 import cc.ivera.util.WechatPay2ValidatorForRequest;
+import cc.ivera.util.WxPayPrivateKeyUtil;
 import com.wechat.pay.contrib.apache.httpclient.auth.PrivateKeySigner;
 import com.wechat.pay.contrib.apache.httpclient.auth.ScheduledUpdateCertificatesVerifier;
 import com.wechat.pay.contrib.apache.httpclient.auth.Verifier;
@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -36,22 +37,14 @@ public class WxPayNotifyHandler {
 
     private static final long NOTIFY_IDEMPOTENT_EXPIRE_HOURS = 24L;
 
-    private final Verifier defaultVerifier;
-
-    private final WxPayConfig wxPayConfig;
-
     private final PaymentConfigLoader paymentConfigLoader;
 
     private final StringRedisTemplate stringRedisTemplate;
 
     private final Map<String, Verifier> verifierCache = new ConcurrentHashMap<>();
 
-    public WxPayNotifyHandler(Verifier verifier,
-                              WxPayConfig wxPayConfig,
-                              PaymentConfigLoader paymentConfigLoader,
+    public WxPayNotifyHandler(PaymentConfigLoader paymentConfigLoader,
                               StringRedisTemplate stringRedisTemplate) {
-        this.defaultVerifier = verifier;
-        this.wxPayConfig = wxPayConfig;
         this.paymentConfigLoader = paymentConfigLoader;
         this.stringRedisTemplate = stringRedisTemplate;
     }
@@ -112,7 +105,6 @@ public class WxPayNotifyHandler {
 
     private List<Verifier> resolveCandidateVerifiers() {
         List<Verifier> verifiers = new ArrayList<>();
-        verifiers.add(defaultVerifier);
         for (PaymentAppConfig config : paymentConfigLoader.listAppConfigsByChannelCode(PaymentConfigLoader.CHANNEL_WXPAY)) {
             if (isValidWxVerifierConfig(config)) {
                 verifiers.add(verifierCache.computeIfAbsent(buildVerifierCacheKey(config), ignored -> buildVerifier(config)));
@@ -125,12 +117,12 @@ public class WxPayNotifyHandler {
         return config != null
                 && StringUtils.hasText(config.getMchId())
                 && StringUtils.hasText(config.getMchSerialNo())
-                && StringUtils.hasText(config.getPrivateKeyPath())
+                && StringUtils.hasText(config.getPrivateKey())
                 && StringUtils.hasText(config.getApiV3Key());
     }
 
     private Verifier buildVerifier(PaymentAppConfig config) {
-        PrivateKey privateKey = wxPayConfig.getPrivateKey(config.getPrivateKeyPath());
+        PrivateKey privateKey = WxPayPrivateKeyUtil.load(config.getPrivateKey());
         PrivateKeySigner privateKeySigner = new PrivateKeySigner(config.getMchSerialNo(), privateKey);
         WechatPay2Credentials credentials = new WechatPay2Credentials(config.getMchId(), privateKeySigner);
         return new ScheduledUpdateCertificatesVerifier(credentials, config.getApiV3Key().getBytes(StandardCharsets.UTF_8));
@@ -139,7 +131,7 @@ public class WxPayNotifyHandler {
     private String buildVerifierCacheKey(PaymentAppConfig config) {
         return required(config.getMchId(), "微信商户号未配置") + ":"
                 + required(config.getMchSerialNo(), "微信商户API证书序列号未配置") + ":"
-                + required(config.getPrivateKeyPath(), "微信私钥文件路径未配置") + ":"
+                + Objects.hashCode(config.getPrivateKey()) + ":"
                 + required(config.getApiV3Key(), "微信APIv3密钥未配置").hashCode();
     }
 

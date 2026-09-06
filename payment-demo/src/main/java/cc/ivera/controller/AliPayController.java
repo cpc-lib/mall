@@ -1,9 +1,9 @@
 package cc.ivera.controller;
 
-import cc.ivera.config.AlipayProperties;
 import cc.ivera.config.PaymentAppConfig;
 import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.entity.OrderInfo;
+import cc.ivera.exception.BizException;
 import cc.ivera.service.AliPayService;
 import cc.ivera.service.OrderInfoService;
 import cc.ivera.util.MoneyUtils;
@@ -35,20 +35,16 @@ public class AliPayController {
 
     private final AliPayService aliPayService;
 
-    private final AlipayProperties alipayProperties;
-
     private final PaymentConfigLoader paymentConfigLoader;
 
     private final OrderInfoService orderInfoService;
 
     public AliPayController(
         AliPayService aliPayService,
-        AlipayProperties alipayProperties,
         PaymentConfigLoader paymentConfigLoader,
         OrderInfoService orderInfoService
     ) {
         this.aliPayService = aliPayService;
-        this.alipayProperties = alipayProperties;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
     }
@@ -224,12 +220,7 @@ public class AliPayController {
         if (config != null) {
             return config;
         }
-        PaymentAppConfig fallback = new PaymentAppConfig();
-        fallback.setChannelCode(PaymentConfigLoader.CHANNEL_ALIPAY);
-        fallback.setAlipayAppId(alipayProperties.getAppId());
-        fallback.setSellerId(alipayProperties.getSellerId());
-        fallback.setAlipayPublicKey(alipayProperties.getAlipayPublicKey());
-        return fallback;
+        throw new BizException("支付宝支付渠道未配置或未启用");
     }
 
 }

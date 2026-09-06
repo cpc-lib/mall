@@ -48,9 +48,9 @@ public class PaymentAppConfig {
     private String mchSerialNo;
 
     /**
-     * 商户私钥文件路径
+     * 商户私钥PEM内容（来自渠道表private_key列）
      */
-    private String privateKeyPath;
+    private String privateKey;
 
     /**
      * APIv3密钥
@@ -180,12 +180,12 @@ public class PaymentAppConfig {
         this.mchSerialNo = mchSerialNo;
     }
 
-    public String getPrivateKeyPath() {
-        return privateKeyPath;
+    public String getPrivateKey() {
+        return privateKey;
     }
 
-    public void setPrivateKeyPath(String privateKeyPath) {
-        this.privateKeyPath = privateKeyPath;
+    public void setPrivateKey(String privateKey) {
+        this.privateKey = privateKey;
     }
 
     public String getApiV3Key() {
