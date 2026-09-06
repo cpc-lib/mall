@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Button, Form, Input, Modal, Tabs, message } from 'antd'
+import { Button, Form, Input, Modal, message } from 'antd'
 import { useLocation, useNavigate } from 'react-router-dom'
 import authApi from '@/api/auth'
 import { saveAuth } from '@/utils/authStore'
 
-// 淘宝风格登录页：橙红渐变底 + 居中白卡（登录 / 注册 / 忘记密码）
+// 精致现代风登录页：品牌渐变 Hero + 悬浮白卡（登录 / 注册 / 忘记密码）
 export default function Login() {
+  const [mode, setMode] = useState('login') // login | register
   const [loading, setLoading] = useState(false)
   const [fpVisible, setFpVisible] = useState(false)
   const [fpForm, setFpForm] = useState({ username: '', remark: '' })
@@ -23,8 +24,11 @@ export default function Login() {
   }
   const register = async (values) => {
     setLoading(true)
-    try { await authApi.register(values); message.success('注册成功，请登录') }
-    finally { setLoading(false) }
+    try {
+      await authApi.register(values)
+      message.success('注册成功，请登录')
+      setMode('login')
+    } finally { setLoading(false) }
   }
   const submitForgot = async () => {
     if (!fpForm.username.trim()) { message.error('请输入用户名'); return }
@@ -34,21 +38,56 @@ export default function Login() {
       setFpVisible(false); setFpForm({ username: '', remark: '' })
     } catch (e) { /* 错误提示由请求拦截器统一弹出 */ }
   }
-  const form = (onFinish, button) => <Form layout="vertical" onFinish={onFinish}>
-    <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}><Input autoComplete="username" /></Form.Item>
-    <Form.Item name="password" label="密码" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}><Input.Password autoComplete="current-password" /></Form.Item>
-    <Button htmlType="submit" type="primary" loading={loading} block style={{ height: 42, fontSize: 15 }}>{button}</Button>
-  </Form>
-  return <div className="tb-login-wrap">
-    <div className="tb-login-card">
-      <div className="tb-login-head">淘支付商城 · 欢迎登录</div>
-      <div className="tb-login-body">
-        <Tabs items={[
-          { key: 'login', label: '登 录', children: <div>{form(login, '登录')}<Button type="link" style={{ padding: 0, marginTop: 8 }} onClick={() => setFpVisible(true)}>忘记密码？</Button></div> },
-          { key: 'register', label: '免费注册', children: form(register, '注 册') }
-        ]} />
+
+  const usernameField = (
+    <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+      <Input size="large" autoComplete="username" placeholder="请输入用户名" prefix={<span className="tb-auth-ico">👤</span>} />
+    </Form.Item>
+  )
+  const passwordField = (
+    <Form.Item name="password" label="密码" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}>
+      <Input.Password size="large" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="请输入密码（至少 8 位）" prefix={<span className="tb-auth-ico">🔒</span>} />
+    </Form.Item>
+  )
+
+  return <div className="tb-auth">
+    <div className="tb-auth-hero">
+      <div className="tb-auth-deco tb-auth-deco-a" />
+      <div className="tb-auth-deco tb-auth-deco-b" />
+      <div className="tb-auth-brand">
+        <div className="tb-auth-logo">淘</div>
+        <div className="tb-auth-name">淘支付<small>演示商城</small></div>
       </div>
+      <p className="tb-auth-tagline">安全 · 便捷 · 极速的支付演示体验</p>
     </div>
+
+    <div className="tb-auth-card">
+      <div className="tb-auth-switch">
+        <button type="button" className={mode === 'login' ? 'on' : ''} onClick={() => setMode('login')}>登 录</button>
+        <button type="button" className={mode === 'register' ? 'on' : ''} onClick={() => setMode('register')}>免费注册</button>
+      </div>
+
+      {mode === 'login' ? (
+        <Form layout="vertical" onFinish={login} requiredMark={false} className="tb-auth-form">
+          {usernameField}
+          {passwordField}
+          <Button htmlType="submit" type="primary" size="large" loading={loading} block className="tb-auth-submit">登 录</Button>
+          <div className="tb-auth-forgot">
+            <Button type="link" onClick={() => setFpVisible(true)}>忘记密码？</Button>
+          </div>
+        </Form>
+      ) : (
+        <Form layout="vertical" onFinish={register} requiredMark={false} className="tb-auth-form">
+          {usernameField}
+          {passwordField}
+          <Button htmlType="submit" type="primary" size="large" loading={loading} block className="tb-auth-submit">注 册</Button>
+          <div className="tb-auth-tip">注册即代表同意演示环境使用规范，账号数据仅用于本地演示</div>
+        </Form>
+      )}
+    </div>
+
+    <p className="tb-auth-foot">淘支付 · 支付能力演示 Demo</p>
+
     <Modal open={fpVisible} title="找回密码" onOk={submitForgot} onCancel={() => { setFpVisible(false); setFpForm({ username: '', remark: '' }) }} okText="提交申请">
       <p style={{ color: '#999', fontSize: 12 }}>提交后请联系管理员处理，管理员将为你重置新密码。</p>
       <div style={{ marginBottom: 12 }}><Input placeholder="用户名（必填）" value={fpForm.username} onChange={e => setFpForm({ ...fpForm, username: e.target.value })} /></div>

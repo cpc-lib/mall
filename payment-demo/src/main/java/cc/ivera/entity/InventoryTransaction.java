@@ -27,6 +27,8 @@ public class InventoryTransaction extends BaseEntity {
 
     private Integer lockedDelta;//锁定库存变化量
 
+    private Integer soldDelta;//已售库存变化量
+
     private String operationStatus;//SUCCESS-已生效，FAILED-调整申请被拒绝
 
     private String errorMessage;//失败原因（FAILED 时记录申请调整量与拒绝原因）

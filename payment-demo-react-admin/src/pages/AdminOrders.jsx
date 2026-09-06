@@ -14,6 +14,9 @@ export default function AdminOrders() {
   const [detailRow, setDetailRow] = useState(null)
   const [paAmount, setPaAmount] = useState(0)
   const [paReason, setPaReason] = useState('差价补偿')
+  const [channelQueryRow, setChannelQueryRow] = useState(null)
+  const [channelQueryLoading, setChannelQueryLoading] = useState(false)
+  const [payAttempts, setPayAttempts] = useState([])
   const loadAllOrders = () => {
     const params = {}
     if (orderFilter.payStatus) params.payStatus = orderFilter.payStatus
@@ -37,16 +40,32 @@ export default function AdminOrders() {
   useEffect(loadAllOrders, [])
   const forceClose = async orderNo => { Modal.confirm({ title: '强制关单', content: '将关闭未支付订单并释放预占库存，确认操作？', onOk: async () => { await shipmentApi.forceClose(orderNo); message.success('订单已强制关闭'); loadAllOrders() } }) }
   const markPaid = async orderNo => { Modal.confirm({ title: '标记支付成功', content: '将手动标记该未支付订单为已支付并提交预占库存，确认操作？', onOk: async () => { await shipmentApi.markPaid(orderNo); message.success('订单已标记为支付成功'); loadAllOrders() } }) }
-  // 渠道查单：主动向微信/支付宝查单，渠道已支付成功则同步本地订单（幂等），不自动关单
+  // 渠道查单：主动向微信/支付宝查单，渠道已支付成功则同步本地订单（幂等），不自动关单；
+  // 同时加载本订单全部渠道支付尝试记录（t_payment_order）
   const channelQuery = async orderNo => {
-    setChannelQueryRow(null); setChannelQueryLoading(true)
+    setChannelQueryRow(null); setChannelQueryLoading(true); setPayAttempts([])
     try {
       const r = await shipmentApi.channelQuery(orderNo)
       setChannelQueryRow(r.data)
+      shipmentApi.paymentOrders(orderNo).then(pr => setPayAttempts(pr.data || []))
       loadAllOrders()
     } finally { setChannelQueryLoading(false) }
   }
   const prettyRaw = raw => { try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw } }
+  // 支付尝试记录列（t_payment_order）：一次渠道支付尝试一行
+  const poCols = [
+    { title: '支付单号', dataIndex: 'paymentNo', width: 170 },
+    { title: '渠道', dataIndex: 'channel', width: 80 },
+    {
+      title: '状态', dataIndex: 'status', width: 90,
+      render: s => <Tag color={s === 'SUCCESS' ? 'green' : s === 'PAYING' ? 'orange' : undefined}>{s}</Tag>
+    },
+    { title: '渠道交易号', dataIndex: 'channelOrderNo', render: v => v || '-', ellipsis: true },
+    { title: '请求金额', width: 90, render: (_, r) => `¥${((r.requestAmount || 0) / 100).toFixed(2)}` },
+    { title: '实付金额', width: 90, render: (_, r) => r.paidAmount ? `¥${(r.paidAmount / 100).toFixed(2)}` : '-' },
+    { title: '发起时间', width: 150, render: (_, r) => r.createTime ? new Date(r.createTime).toLocaleString() : '-' },
+    { title: '支付时间', width: 150, render: (_, r) => r.paidTime ? new Date(r.paidTime).toLocaleString() : '-' }
+  ]
   const openDetail = d => { setDetailRow(d); setPaAmount(0); setPaReason('差价补偿') }
   const submitPriceAdjust = async () => {
     if (!detailRow || !Number(paAmount)) { message.error('请填写退款金额（分）'); return }
@@ -71,6 +90,7 @@ export default function AdminOrders() {
           <Button size="small" onClick={() => openDetail(d)}>详情</Button>
           {canClose && <Button danger size="small" onClick={() => forceClose(d.order.orderNo)}>强制关单</Button>}
           {canMarkPaid && <Button type="primary" size="small" onClick={() => markPaid(d.order.orderNo)}>标记已付</Button>}
+          <Button size="small" type="primary" ghost onClick={() => channelQuery(d.order.orderNo)}>渠道查单</Button>
         </Space>
       }
     }
@@ -143,6 +163,35 @@ export default function AdminOrders() {
         </Space>
       </div>}
     </Drawer>
+    <Modal
+      open={!!channelQueryRow || channelQueryLoading}
+      width={860}
+      title={channelQueryRow ? `渠道查单 - ${channelQueryRow.orderNo}` : '渠道查单'}
+      onCancel={() => setChannelQueryRow(null)}
+      footer={<Space>
+        <Button onClick={() => setChannelQueryRow(null)}>关闭</Button>
+        {channelQueryRow && <Button type="primary" loading={channelQueryLoading} onClick={() => channelQuery(channelQueryRow.orderNo)}>重新查单</Button>}
+      </Space>}
+    >
+      {channelQueryRow && <div>
+        <h4 style={{ marginTop: 0 }}>支付尝试记录（本订单全部渠道支付单）</h4>
+        <Table rowKey="id" dataSource={payAttempts} columns={poCols} pagination={false} size="small" style={{ marginBottom: 16 }} />
+        <Descriptions column={2} bordered size="small">
+          <Descriptions.Item label="渠道">{channelQueryRow.channelCode}</Descriptions.Item>
+          <Descriptions.Item label="渠道状态">{channelQueryRow.channelTradeState}</Descriptions.Item>
+          <Descriptions.Item label="状态说明" span={2}>{channelQueryRow.channelTradeStateDesc}</Descriptions.Item>
+          <Descriptions.Item label="本地订单状态">{channelQueryRow.localOrderStatusBefore} → {channelQueryRow.localOrderStatusAfter}</Descriptions.Item>
+          <Descriptions.Item label="查单后支付状态">{channelQueryRow.localPayStatusAfter}</Descriptions.Item>
+          <Descriptions.Item label="是否同步" span={2}>
+            <Tag color={channelQueryRow.synced ? 'green' : 'default'}>{channelQueryRow.synced ? '已推进本地订单' : '本地状态未变更'}</Tag>
+          </Descriptions.Item>
+        </Descriptions>
+        {channelQueryRow.channelRawBody && <div>
+          <h4>渠道原始报文</h4>
+          <pre style={{ maxHeight: 260, overflow: 'auto', background: '#f5f7fa', padding: 8, fontSize: 12, borderRadius: 4 }}>{prettyRaw(channelQueryRow.channelRawBody)}</pre>
+        </div>}
+      </div>}
+    </Modal>
     </div>
   </div>
 }

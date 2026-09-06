@@ -25,6 +25,17 @@ public final class JsonUtils {
         }
     }
 
+    public static <T> T toObject(String json, Class<T> type) {
+        if (json == null || type == null) {
+            return null;
+        }
+        try {
+            return OBJECT_MAPPER.readValue(json, type);
+        } catch (IOException e) {
+            throw new IllegalArgumentException("JSON解析失败", e);
+        }
+    }
+
     public static Map<String, Object> toObjectMap(String json) {
         try {
             return OBJECT_MAPPER.readValue(json, OBJECT_MAP_TYPE);

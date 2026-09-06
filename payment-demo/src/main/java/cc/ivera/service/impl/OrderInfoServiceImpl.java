@@ -1,5 +1,6 @@
 package cc.ivera.service.impl;
 
+import cc.ivera.entity.LocalMessage;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.entity.OrderItem;
 import cc.ivera.entity.Product;
@@ -15,6 +16,7 @@ import cc.ivera.mapper.OrderItemMapper;
 import cc.ivera.mapper.PaymentOrderMapper;
 import cc.ivera.mapper.ProductMapper;
 import cc.ivera.service.InventoryService;
+import cc.ivera.service.LocalMessageService;
 import cc.ivera.service.OrderCloseMessageService;
 import cc.ivera.service.OrderInfoService;
 import cc.ivera.util.OrderNoUtils;
@@ -22,6 +24,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
@@ -37,7 +40,10 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
 
     private static final long ORDER_CREATE_LOCK_WAIT_MS = 3000L;
     private static final long ORDER_CREATE_LOCK_LEASE_MS = 10000L;
-    private static final long ORDER_EXPIRE_MINUTES = 15L;
+
+    /** 本地订单未支付超时（分钟），与 MQ 延迟关单 TTL、定时兜底扫描共用同一配置。 */
+    @Value("${payment.order.expire-minutes:3}")
+    private long orderExpireMinutes;
 
     private final ProductMapper productMapper;
 
@@ -46,6 +52,8 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
     private final PaymentOrderMapper paymentOrderMapper;
 
     private final InventoryService inventoryService;
+
+    private final LocalMessageService localMessageService;
 
     private final OrderCloseMessageService orderCloseMessageService;
 
@@ -59,6 +67,7 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
         PaymentOrderMapper paymentOrderMapper,
         OrderCloseMessageService orderCloseMessageService,
         InventoryService inventoryService,
+        LocalMessageService localMessageService,
         DistributedLockTemplate distributedLockTemplate,
         TransactionTemplate transactionTemplate
     ) {
@@ -67,6 +76,7 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
         this.paymentOrderMapper = paymentOrderMapper;
         this.orderCloseMessageService = orderCloseMessageService;
         this.inventoryService = inventoryService;
+        this.localMessageService = localMessageService;
         this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
     }
@@ -119,7 +129,7 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
         orderInfo.setPaymentAppId(paymentAppId);
         orderInfo.setPaymentChannelCode(paymentChannelCode);
         orderInfo.setVersion(0);
-        orderInfo.setExpireTime(new java.util.Date(System.currentTimeMillis() + ORDER_EXPIRE_MINUTES * 60 * 1000));
+        orderInfo.setExpireTime(new java.util.Date(System.currentTimeMillis() + orderExpireMinutes * 60 * 1000));
         // V2 四维状态显式落库；快速购买无收货人输入，用模拟值（物流模拟）。
         orderInfo.setOrderStatus(OrderLifecycleStatus.WAIT_PAY.getType());
         orderInfo.setPayStatus(PayStatus.UNPAID.getType());
@@ -164,8 +174,8 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
             throw e;
         }
 
-        // 订单成功落库后再发送延迟关单消息，避免消息先于事务提交。
-        sendCloseOrderMessageAfterCommit(orderInfo);
+        // 事务性发件箱：延迟关单消息落库本地消息表（本方法无包裹事务，落库后立即投递；失败由发件箱定时重试兜底）
+        orderCloseMessageService.sendCloseOrderMessage(orderInfo.getOrderNo(), orderInfo.getPaymentType());
         return orderInfo;
     }
 
@@ -246,6 +256,10 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
                 // 同事务关闭该订单全部活跃支付单，防止关闭后渠道侧仍可支付。
                 paymentOrderMapper.closeActiveByOrderNo(orderNo);
                 releaseReservationAfterCommit(orderNo);
+                // 关单收口：无论由 MQ 延迟关单消费者还是定时兜底对账（TimeoutOrderCloseScheduler）触发，
+                // 订单一旦离开 NOTPAY，其延迟关单发件箱消息即已完成使命，同事务回写 CONSUMED，
+                // 与订单状态原子提交，避免定时关单已释放库存而 t_local_message 仍悬挂 PENDING。
+                localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo);
             }
         }
         return updated;
@@ -292,24 +306,6 @@ public class OrderInfoServiceImpl extends ServiceImpl<OrderInfoMapper, OrderInfo
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
             @Override public void afterCommit() { inventoryService.releaseReservation(orderNo); }
-        });
-    }
-
-    private void sendCloseOrderMessageAfterCommit(OrderInfo orderInfo) {
-        if (orderInfo == null || !StringUtils.hasText(orderInfo.getOrderNo())) {
-            return;
-        }
-
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            orderCloseMessageService.sendCloseOrderMessage(orderInfo.getOrderNo(), orderInfo.getPaymentType());
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-            @Override
-            public void afterCommit() {
-                orderCloseMessageService.sendCloseOrderMessage(orderInfo.getOrderNo(), orderInfo.getPaymentType());
-            }
         });
     }
 

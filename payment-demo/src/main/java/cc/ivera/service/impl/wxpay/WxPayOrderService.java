@@ -406,7 +406,13 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
         if (WxTradeState.SUCCESS.getType().equals(tradeState)) {
             validateWxPayOrderNotify(lockedOrder, resultMap);
-            if (orderInfoService.updateStatusByOrderNoIfStatus(orderNo, OrderStatus.NOTPAY, OrderStatus.SUCCESS)) {
+            // 查单确认支付成功统一走支付成功处理器：支付单回写 SUCCESS/渠道交易号/实付金额/支付时间
+            // + 成交收口其它渠道活跃支付单，与支付宝查单路径（queryAndSyncStatus/checkOrderStatus）对齐。
+            String transactionId = getString(resultMap, "transaction_id");
+            Integer payerTotal = getWxPayTotalAmount(resultMap);
+            boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
+                    orderNo, PaymentConfigLoader.CHANNEL_WXPAY, transactionId, payerTotal);
+            if (firstSettled) {
                 paymentInfoService.createPaymentInfo(result);
             }
             return;

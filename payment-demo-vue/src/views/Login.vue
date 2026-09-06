@@ -1,27 +1,46 @@
 <template>
-  <div class="tb-login-wrap">
-    <div class="tb-login-card">
-      <div class="tb-login-head">淘支付商城 · 欢迎登录</div>
-      <div class="tb-login-body">
-        <el-tabs v-model="tab">
-          <el-tab-pane label="登 录" name="login">
-            <el-form :model="loginForm" label-position="top" @submit.native.prevent="login">
-              <el-form-item label="用户名"><el-input v-model.trim="loginForm.username" autocomplete="username"/></el-form-item>
-              <el-form-item label="密码"><el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" @keyup.enter.native="login"/></el-form-item>
-              <el-button type="primary" :loading="loading" style="width:100%;height:42px;font-size:15px" @click="login">登 录</el-button>
-              <el-button type="text" style="padding:0;margin-top:8px" @click="fpVisible=true">忘记密码？</el-button>
-            </el-form>
-          </el-tab-pane>
-          <el-tab-pane label="免费注册" name="register">
-            <el-form :model="registerForm" label-position="top" @submit.native.prevent="register">
-              <el-form-item label="用户名"><el-input v-model.trim="registerForm.username"/></el-form-item>
-              <el-form-item label="密码（至少8位）"><el-input v-model="registerForm.password" type="password" show-password @keyup.enter.native="register"/></el-form-item>
-              <el-button type="primary" :loading="loading" style="width:100%;height:42px;font-size:15px" @click="register">注 册</el-button>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
+  <div class="tb-auth">
+    <div class="tb-auth-hero">
+      <div class="tb-auth-deco tb-auth-deco-a"></div>
+      <div class="tb-auth-deco tb-auth-deco-b"></div>
+      <div class="tb-auth-brand">
+        <div class="tb-auth-logo">淘</div>
+        <div class="tb-auth-name">淘支付<small>演示商城</small></div>
       </div>
+      <p class="tb-auth-tagline">安全 · 便捷 · 极速的支付演示体验</p>
     </div>
+
+    <div class="tb-auth-card">
+      <div class="tb-auth-switch">
+        <button type="button" :class="{ on: tab === 'login' }" @click="tab = 'login'">登 录</button>
+        <button type="button" :class="{ on: tab === 'register' }" @click="tab = 'register'">免费注册</button>
+      </div>
+
+      <el-form v-if="tab === 'login'" :model="loginForm" label-position="top" class="tb-auth-form" @submit.native.prevent="login">
+        <el-form-item label="用户名">
+          <el-input v-model.trim="loginForm.username" autocomplete="username" placeholder="请输入用户名"><i slot="prefix" class="tb-auth-ico">👤</i></el-input>
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="loginForm.password" type="password" show-password autocomplete="current-password" placeholder="请输入密码（至少 8 位）" @keyup.enter.native="login"><i slot="prefix" class="tb-auth-ico">🔒</i></el-input>
+        </el-form-item>
+        <el-button type="primary" :loading="loading" class="tb-auth-submit" @click="login">登 录</el-button>
+        <div class="tb-auth-forgot"><el-button type="text" @click="fpVisible=true">忘记密码？</el-button></div>
+      </el-form>
+
+      <el-form v-else :model="registerForm" label-position="top" class="tb-auth-form" @submit.native.prevent="register">
+        <el-form-item label="用户名">
+          <el-input v-model.trim="registerForm.username" autocomplete="username" placeholder="请输入用户名"><i slot="prefix" class="tb-auth-ico">👤</i></el-input>
+        </el-form-item>
+        <el-form-item label="密码">
+          <el-input v-model="registerForm.password" type="password" show-password autocomplete="new-password" placeholder="请输入密码（至少 8 位）" @keyup.enter.native="register"><i slot="prefix" class="tb-auth-ico">🔒</i></el-input>
+        </el-form-item>
+        <el-button type="primary" :loading="loading" class="tb-auth-submit" @click="register">注 册</el-button>
+        <div class="tb-auth-tip">注册即代表同意演示环境使用规范，账号数据仅用于本地演示</div>
+      </el-form>
+    </div>
+
+    <p class="tb-auth-foot">淘支付 · 支付能力演示 Demo</p>
+
     <el-dialog title="找回密码" :visible.sync="fpVisible" width="420px">
       <p style="color:#999;font-size:12px;margin-top:0">提交后请联系管理员处理，管理员将为你重置新密码。</p>
       <el-input v-model.trim="fpForm.username" placeholder="用户名（必填）" style="margin-bottom:12px"/>

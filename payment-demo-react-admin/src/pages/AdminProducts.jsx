@@ -50,6 +50,7 @@ export default function AdminProducts() {
     { title: '价格(分)', dataIndex: 'price', width: 90 },
     { title: '可用库存', dataIndex: 'stock', width: 90 },
     { title: '锁定库存', dataIndex: 'lockedStock', width: 90 },
+    { title: '已售库存', dataIndex: 'soldStock', width: 90 },
     { title: '状态', dataIndex: 'productStatus', width: 90, render: v => <Tag color={v === 'ENABLED' ? 'green' : 'default'}>{v}</Tag> },
     { title: '库存调整', width: 220, render: (_, p) => <Space><InputNumber value={stockDelta[p.id]} placeholder="±数量" onChange={v2 => setStockDelta(s => ({ ...s, [p.id]: v2 }))} style={{ width: 110 }} /><Button type="primary" onClick={() => adjustStock(p, stockDelta[p.id])}>确认调整</Button></Space> },
     { title: '上下架', width: 150, render: (_, p) => <Button onClick={() => setStatus(p, p.productStatus === 'ENABLED' ? 'DISABLED' : 'ENABLED')}>{p.productStatus === 'ENABLED' ? '下架' : '上架'}</Button> }
@@ -77,6 +78,7 @@ export default function AdminProducts() {
           <Descriptions.Item label="状态"><Tag color={p.productStatus === 'ENABLED' ? 'green' : 'default'}>{p.productStatus}</Tag></Descriptions.Item>
           <Descriptions.Item label="可用库存">{p.stock}</Descriptions.Item>
           <Descriptions.Item label="锁定库存">{p.lockedStock}</Descriptions.Item>
+          <Descriptions.Item label="已售库存">{p.soldStock}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{p.createTime ? new Date(p.createTime).toLocaleString() : '-'}</Descriptions.Item>
           <Descriptions.Item label="更新时间">{p.updateTime ? new Date(p.updateTime).toLocaleString() : '-'}</Descriptions.Item>
         </Descriptions>

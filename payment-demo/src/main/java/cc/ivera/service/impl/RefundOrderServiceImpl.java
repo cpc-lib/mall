@@ -403,8 +403,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
 
         String type = refundOrder.getRefundType();
         if (RefundType.CANCEL_BEFORE_SHIP.getType().equals(type)) {
-            // 未发货取消：受理即回补库存
-            inventoryService.restockForRefund(refundNo, itemsOf(refundNo));
+            // 未发货取消：受理即回补库存（未收货：锁定→可用）
+            inventoryService.restockForRefund(refundNo, itemsOf(refundNo), false);
             return initiateChannelRefund(refundOrder);
         }
         if (RefundType.RETURN_AND_REFUND.getType().equals(type)) {
@@ -426,7 +426,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (!RefundPolicy.restockOnConfirmReturn(refundOrder.getRefundType())) {
             throw new BizException("仅退货退款类型需要确认签收");
         }
-        inventoryService.restockForRefund(refundNo, itemsOf(refundNo));
+        inventoryService.restockForRefund(refundNo, itemsOf(refundNo), true);
         if (remark != null && !remark.trim().isEmpty()) {
             refundOrder.setAdminRemark(remark.trim());
         }

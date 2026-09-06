@@ -2,23 +2,26 @@
   <div class="tb-page"><div class="container">
     <h2 class="tb-h2">我的订单</h2>
     <p class="tb-page-tip">退款金额由服务端按订单快照核算（最后一件吃尾差），页面金额仅为预估。</p>
-    <div class="tb-cardbox tb-table-card">
-    <el-table :data="orders" style="width:100%">
-      <el-table-column label="订单号" min-width="190"><template slot-scope="s">{{s.row.order.orderNo}}</template></el-table-column>
-      <el-table-column label="支付方式" width="100"><template slot-scope="s">{{s.row.order.paymentType}}</template></el-table-column>
-      <el-table-column label="金额" width="110"><template slot-scope="s">¥{{money(s.row.order.totalFee)}}</template></el-table-column>
-      <el-table-column label="状态" min-width="150"><template slot-scope="s"><el-tag v-for="t in statusTags(s.row.order)" :key="t" size="small" style="margin-right:4px">{{t}}</el-tag></template></el-table-column>
-      <el-table-column label="商品明细（快照价）" min-width="300"><template slot-scope="s"><div v-for="i in s.row.items" :key="i.id">{{i.productTitle}} × {{i.quantity}} @ ¥{{money(i.unitPrice)}}；已退 {{i.refundedQty||0}}<span v-if="(i.refundFrozenQty||0)>0">，冻结 {{i.refundFrozenQty}}</span></div></template></el-table-column>
-      <el-table-column label="操作" width="300">
-        <template slot-scope="s">
-          <el-button v-if="canPay(s.row)" size="mini" type="primary" @click="pay(s.row)">支付</el-button>
-          <el-button v-if="canCancel(s.row)" size="mini" @click="cancelOrder(s.row)">取消订单</el-button>
-          <el-button v-if="canLogistics(s.row)" size="mini" @click="showLogistics(s.row)">物流详情</el-button>
-          <el-button v-if="canConfirm(s.row)" size="mini" type="primary" plain @click="confirmReceipt(s.row)">确认收货</el-button>
-          <el-button v-if="canRefund(s.row)" size="mini" @click="beginRefund(s.row)">分项退款</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+    <div v-if="!orders.length" class="tb-cardbox"><p class="m-list-empty">暂无订单，去首页挑点好物吧</p></div>
+    <div v-for="d in orders" :key="d.order.orderNo" class="m-list-card">
+      <div class="m-list-head">
+        <div class="m-list-no">订单号 {{d.order.orderNo}}</div>
+        <div class="m-list-tags"><el-tag v-for="t in statusTags(d.order)" :key="t" size="mini">{{t}}</el-tag></div>
+      </div>
+      <div class="m-list-sub">
+        <span class="m-list-sub-label">{{d.order.paymentType}}</span>
+        <span class="m-list-amount">¥{{money(d.order.totalFee)}}</span>
+      </div>
+      <div class="m-list-items">
+        <div v-for="i in d.items" :key="i.id">{{i.productTitle}} <span class="m-list-item-sub">× {{i.quantity}} @ ¥{{money(i.unitPrice)}}；已退 {{i.refundedQty||0}}<span v-if="(i.refundFrozenQty||0)>0">，冻结 {{i.refundFrozenQty}}</span></span></div>
+      </div>
+      <div class="m-list-actions">
+        <el-button v-if="canPay(d)" size="mini" type="primary" @click="pay(d)">支付</el-button>
+        <el-button v-if="canCancel(d)" size="mini" @click="cancelOrder(d)">取消订单</el-button>
+        <el-button v-if="canLogistics(d)" size="mini" @click="showLogistics(d)">物流详情</el-button>
+        <el-button v-if="canConfirm(d)" size="mini" type="primary" plain @click="confirmReceipt(d)">确认收货</el-button>
+        <el-button v-if="canRefund(d)" size="mini" @click="beginRefund(d)">分项退款</el-button>
+      </div>
     </div>
     <el-dialog title="分项退款" :visible.sync="dialog" width="560px">
       <div v-if="target" style="margin-bottom:12px">
@@ -29,7 +32,7 @@
           <el-radio v-if="target.order.fulfillmentStatus==='RECEIVED'" label="RETURN_AND_REFUND">退货退款（签收质检后补库存）</el-radio>
         </el-radio-group>
       </div>
-      <div v-for="i in targetItems" :key="i.id" style="margin-bottom:12px"><b>{{i.productTitle}}</b>：<el-input-number v-model="qty[i.id]" :min="0" :max="available(i)" :disabled="available(i)<=0" /> / 可退 {{available(i)}} 件，快照价 ¥{{money(i.unitPrice)}}</div>
+      <div v-for="i in targetItems" :key="i.id" class="m-modal-line"><b>{{i.productTitle}}</b><el-input-number v-model="qty[i.id]" :min="0" :max="available(i)" :disabled="available(i)<=0" /><span class="m-modal-hint">可退 {{available(i)}} 件，快照价 ¥{{money(i.unitPrice)}}</span></div>
       <el-input v-model.trim="reason" maxlength="255" placeholder="退款原因" />
       <div style="margin-top:12px">预估退款：<b>¥{{money(estimateTotal)}}</b>（以服务端核算为准）</div>
       <span slot="footer"><el-button @click="dialog=false">取消</el-button><el-button type="primary" :disabled="estimateTotal<=0" @click="submitRefund">提交申请</el-button></span>
@@ -47,8 +50,9 @@
       <div style="text-align:center">
         <div v-if="codeUrl" class="qr-frame"><qriously :value="codeUrl" :size="280"/></div>
         <p style="margin:14px 0 4px;font-weight:600">请使用微信扫描二维码完成支付</p>
-        <p style="color:#999;font-size:12px;margin:0">支付成功后页面自动刷新，无需手动关闭</p>
-        <div style="margin-top:8px;word-break:break-all;color:#bbb;font-size:11px">{{codeUrl}}</div>
+        <p style="color:#999;font-size:12px;margin:0 0 12px">支付完成后请点击下方按钮查询支付结果</p>
+        <el-button type="primary" style="width:100%" :loading="payQuerying" @click="queryPayResult">我已支付，查询支付结果</el-button>
+        <div style="margin-top:10px;word-break:break-all;color:#bbb;font-size:11px">{{codeUrl}}</div>
       </div>
     </el-dialog>
   </div></div>
@@ -60,7 +64,7 @@ import shipmentApi from '../api/shipment'
 import { availableRefundQuantity, refundAmountEstimate } from '../utils/refundQuota'
 import { SHIPMENT_LABEL, statusTags } from '../utils/statusLabels'
 export default {
-  data() { return { orders: [], dialog: false, target: null, refundType: 'REFUND_ONLY', qty: {}, reason: '用户申请退款', wxDialog: false, codeUrl: '', shipments: {}, logistics: null, logisticsDialog: false } },
+  data() { return { orders: [], dialog: false, target: null, refundType: 'REFUND_ONLY', qty: {}, reason: '用户申请退款', wxDialog: false, codeUrl: '', wxOrderNo: '', payQuerying: false, shipments: {}, logistics: null, logisticsDialog: false } },
   computed: {
     targetItems() { return this.target ? this.target.items || [] : [] },
     estimateTotal() { return this.targetItems.reduce((s, i) => s + refundAmountEstimate(i, this.qty[i.id] || 0), 0) },
@@ -94,7 +98,23 @@ export default {
     canRefund(d) { return d.order.payStatus === 'PAID' && (d.items || []).some(i => availableRefundQuantity(i) > 0) },
     available(i) { return availableRefundQuantity(i) },
     async pay(d) {
-      if (d.order.paymentType === '支付宝') { const r = await checkoutApi.alipay(d.order.orderNo); const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write((r.data && r.data.html) || ''); w.document.close() } } else { const r = await checkoutApi.wxpay(d.order.orderNo); this.codeUrl = (r.data && (r.data.codeUrl || r.data.code_url)) || ''; this.wxDialog = true }
+      if (d.order.paymentType === '支付宝') { const r = await checkoutApi.alipay(d.order.orderNo); const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write((r.data && r.data.html) || ''); w.document.close() } } else { const r = await checkoutApi.wxpay(d.order.orderNo); this.codeUrl = (r.data && (r.data.codeUrl || r.data.code_url)) || ''; this.wxOrderNo = d.order.orderNo; this.wxDialog = true }
+    },
+    // 手动查询支付结果（二维码弹窗按钮）：主动向渠道查单并同步本地状态（回调延迟/丢失也能查到）
+    async queryPayResult() {
+      if (!this.wxOrderNo) return
+      this.payQuerying = true
+      try {
+        const r = await checkoutApi.payQuery(this.wxOrderNo)
+        const desc = r.data && r.data.channelTradeStateDesc
+        if (r.data && r.data.payStatus === 'PAID') {
+          this.wxDialog = false
+          this.$message.success('支付成功')
+          await this.load()
+        } else {
+          this.$message.info(`渠道暂未确认支付${desc ? `（${desc}）` : ''}，若已完成支付请稍候几秒再点查询`)
+        }
+      } finally { this.payQuerying = false }
     },
     cancelOrder(d) {
       this.$confirm('已付款未发货订单将创建「未发货取消」退款申请，受理后自动原路退回，库存自动回补。', '取消订单').then(async () => {

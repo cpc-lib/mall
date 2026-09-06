@@ -89,6 +89,42 @@
         <el-form-item label="描述">
           <el-input v-model="channelForm.channelDesc"></el-input>
         </el-form-item>
+        <el-divider content-position="left">微信商户信息</el-divider>
+        <el-form-item label="微信 AppID">
+          <el-input v-model="channelForm.appid" placeholder="例如：wx74862e0dfcf69954"></el-input>
+        </el-form-item>
+        <el-form-item label="微信商户号">
+          <el-input v-model="channelForm.mchId" placeholder="例如：1558950191"></el-input>
+        </el-form-item>
+        <el-form-item label="商户 API 证书序列号">
+          <el-input v-model="channelForm.mchSerialNo"></el-input>
+        </el-form-item>
+        <el-form-item label="商户私钥（apiclient_key.pem 内容）">
+          <el-input
+            v-model="channelForm.privateKey"
+            type="textarea"
+            :rows="6"
+            placeholder="-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----"></el-input>
+        </el-form-item>
+        <el-form-item label="APIv3 密钥">
+          <el-input v-model="channelForm.apiV3Key"></el-input>
+        </el-form-item>
+        <el-form-item label="APIv2 密钥（partnerKey）">
+          <el-input v-model="channelForm.partnerKey"></el-input>
+        </el-form-item>
+        <el-divider content-position="left">支付宝商户信息</el-divider>
+        <el-form-item label="支付宝应用 ID">
+          <el-input v-model="channelForm.alipayAppId" placeholder="例如：9021000136667568"></el-input>
+        </el-form-item>
+        <el-form-item label="卖家 PID（seller_id）">
+          <el-input v-model="channelForm.sellerId"></el-input>
+        </el-form-item>
+        <el-form-item label="应用私钥（base64）">
+          <el-input v-model="channelForm.merchantPrivateKey" type="textarea" :rows="4"></el-input>
+        </el-form-item>
+        <el-form-item label="支付宝公钥（base64）">
+          <el-input v-model="channelForm.alipayPublicKey" type="textarea" :rows="4"></el-input>
+        </el-form-item>
         <el-form-item label="渠道参数JSON">
           <el-input
             v-model="channelForm.configParams"
@@ -158,6 +194,16 @@ const defaultChannelForm = () => ({
   channelStatus: 'ENABLED',
   channelDesc: '',
   configParams: '',
+  appid: '',
+  mchId: '',
+  mchSerialNo: '',
+  privateKey: '',
+  apiV3Key: '',
+  partnerKey: '',
+  alipayAppId: '',
+  sellerId: '',
+  merchantPrivateKey: '',
+  alipayPublicKey: '',
   sortOrder: 0
 })
 

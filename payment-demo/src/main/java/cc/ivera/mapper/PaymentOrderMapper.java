@@ -17,4 +17,7 @@ public interface PaymentOrderMapper extends BaseMapper<PaymentOrder> {
 
     /** 关闭订单下全部活跃支付单（CREATED/PAYING → CLOSED）。 */
     int closeActiveByOrderNo(@Param("orderNo") String orderNo);
+
+    /** 订单成交收口：关闭除成交支付单外的其它渠道活跃支付单。 */
+    int closeActiveByOrderNoExceptPaymentNo(@Param("orderNo") String orderNo, @Param("paymentNo") String paymentNo);
 }

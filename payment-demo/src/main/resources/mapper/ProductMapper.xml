@@ -41,19 +41,24 @@
           and locked_stock &gt;= #{quantity}
     </update>
 
-    <!-- 提交预占：支付成功，仅扣锁定（可用已在预占时扣减） -->
-    <update id="commitReservedStock">
+    <!-- 确认收货结转已售：锁定转已售，锁定不足则 affectedRows=0 -->
+    <update id="commitSoldStock">
         update t_product
-        set locked_stock = locked_stock - #{quantity}, update_time = CURRENT_TIMESTAMP
+        set locked_stock = locked_stock - #{quantity},
+            sold_stock = sold_stock + #{quantity},
+            update_time = CURRENT_TIMESTAMP
         where id = #{id}
           and locked_stock &gt;= #{quantity}
     </update>
 
-    <!-- 退款回补：仅加可用库存 -->
-    <update id="restock">
+    <!-- 已售退款回补：已售归还可用，已售不足则 affectedRows=0 -->
+    <update id="releaseSoldStock">
         update t_product
-        set available_stock = available_stock + #{quantity}, update_time = CURRENT_TIMESTAMP
+        set available_stock = available_stock + #{quantity},
+            sold_stock = sold_stock - #{quantity},
+            update_time = CURRENT_TIMESTAMP
         where id = #{id}
+          and sold_stock &gt;= #{quantity}
     </update>
 
 </mapper>

@@ -2,27 +2,31 @@
   <div class="tb-page"><div class="container">
     <h2 class="tb-h2">我的退款申请</h2>
     <p class="tb-page-tip">仅待审核（APPLYING）可编辑/撤销；受理后冻结额度并走审核/渠道退款链路。金额以服务端核算为准。</p>
-    <div class="tb-cardbox tb-table-card">
-    <el-table :data="list" style="width:100%">
-      <el-table-column label="退款号" min-width="190"><template slot-scope="s">{{s.row.apply.refundNo}}</template></el-table-column>
-      <el-table-column label="订单号" min-width="190"><template slot-scope="s">{{s.row.apply.orderNo}}</template></el-table-column>
-      <el-table-column label="类型" width="180"><template slot-scope="s">{{typeLabel(s.row.apply.refundType)}}</template></el-table-column>
-      <el-table-column label="金额" width="100"><template slot-scope="s">¥{{money(s.row.apply.refundAmount)}}</template></el-table-column>
-      <el-table-column label="状态" width="110"><template slot-scope="s"><el-tag :type="s.row.apply.status==='FAILED'?'danger':s.row.apply.status==='SUCCESS'?'success':'info'" size="mini">{{statusLabel(s.row.apply.status)}}</el-tag></template></el-table-column>
-      <el-table-column label="失败原因" min-width="200"><template slot-scope="s"><span v-if="s.row.apply.status==='FAILED'" style="color:#f50;font-size:12px">{{s.row.failReason || '渠道退款失败，请联系管理员重试'}}</span><span v-else>-</span></template></el-table-column>
-      <el-table-column label="原因"><template slot-scope="s">{{s.row.apply.reason}}</template></el-table-column>
-      <el-table-column label="商品明细（快照价）" min-width="240"><template slot-scope="s"><div v-for="i in s.row.items" :key="i.id">item#{{i.orderItemId}} × {{i.refundQty}} @ ¥{{money(i.unitPrice)}}</div></template></el-table-column>
-      <el-table-column label="操作" width="150">
-        <template slot-scope="s">
-          <el-button v-if="s.row.apply.status==='APPLYING'" size="mini" @click="beginEdit(s.row)">编辑</el-button>
-          <el-button v-if="s.row.apply.status==='APPLYING'" size="mini" type="danger" @click="cancel(s.row)">撤销</el-button>
-          <span v-if="s.row.apply.status!=='APPLYING'">-</span>
+    <div v-if="!list.length" class="tb-cardbox"><p class="m-list-empty">暂无退款申请</p></div>
+    <div v-for="r in list" :key="r.apply.refundNo" class="m-list-card">
+      <div class="m-list-head">
+        <div class="m-list-no">退款号 {{r.apply.refundNo}}<br/>订单号 {{r.apply.orderNo}}</div>
+        <div class="m-list-tags"><el-tag :type="r.apply.status==='FAILED'?'danger':r.apply.status==='SUCCESS'?'success':'info'" size="mini">{{statusLabel(r.apply.status)}}</el-tag></div>
+      </div>
+      <div class="m-list-sub">
+        <span class="m-list-sub-label">{{typeLabel(r.apply.refundType)}}</span>
+        <span class="m-list-amount">¥{{money(r.apply.refundAmount)}}</span>
+      </div>
+      <div class="m-list-items">
+        <div v-for="i in r.items" :key="i.id">item#{{i.orderItemId}} <span class="m-list-item-sub">× {{i.refundQty}} @ ¥{{money(i.unitPrice)}}</span></div>
+        <div>原因：{{r.apply.reason}}</div>
+        <div v-if="r.apply.status==='FAILED'" class="m-list-fail">失败原因：{{r.failReason || '渠道退款失败，请联系管理员重试'}}</div>
+      </div>
+      <div class="m-list-actions">
+        <template v-if="r.apply.status==='APPLYING'">
+          <el-button size="mini" @click="beginEdit(r)">编辑</el-button>
+          <el-button size="mini" type="danger" @click="cancel(r)">撤销</el-button>
         </template>
-      </el-table-column>
-    </el-table>
+        <span v-else class="m-list-item-sub">已受理，不可编辑/撤销</span>
+      </div>
     </div>
     <el-dialog title="编辑待审核退款申请" :visible.sync="dialog" width="560px">
-      <div v-for="i in editItems" :key="i.id" style="margin-bottom:12px">item#{{i.orderItemId}}：<el-input-number v-model="quantities[i.orderItemId]" :min="0" :max="maxFor(i)" /> / 最大 {{maxFor(i)}} 件</div>
+      <div v-for="i in editItems" :key="i.id" class="m-modal-line"><b>item#{{i.orderItemId}}</b><el-input-number v-model="quantities[i.orderItemId]" :min="0" :max="maxFor(i)" /><span class="m-modal-hint">最大 {{maxFor(i)}} 件</span></div>
       <el-input v-model.trim="reason" maxlength="255" placeholder="退款原因"/><div style="margin-top:12px">修改后预估金额：¥{{money(editTotal)}}</div>
       <span slot="footer"><el-button @click="dialog=false">取消</el-button><el-button type="primary" :disabled="editTotal<=0" @click="save">保存</el-button></span>
     </el-dialog>

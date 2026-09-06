@@ -24,6 +24,7 @@ import cc.ivera.util.OrderNoUtils;
 import cc.ivera.vo.CartItemVO;
 import cc.ivera.vo.OrderDetailVO;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
@@ -37,7 +38,10 @@ import java.util.List;
 
 @Service
 public class CheckoutServiceImpl implements CheckoutService {
-    private static final long ORDER_EXPIRE_MINUTES = 15L;
+
+    /** 本地订单未支付超时（分钟），与 MQ 延迟关单 TTL、定时兜底扫描共用同一配置。 */
+    @Value("${payment.order.expire-minutes:3}")
+    private long orderExpireMinutes;
 
     private final CartService cartService;
     private final ProductMapper productMapper;
@@ -81,7 +85,7 @@ public class CheckoutServiceImpl implements CheckoutService {
         order.setTitle(products.size() == 1 ? products.get(0).getTitle() : "多商品订单(" + products.size() + "项)");
         order.setTotalFee(total); order.setLegacyStatus(OrderStatus.NOTPAY.getType()); order.setPaymentType(request.getPaymentType());
         order.setPaymentAppId(payConfig.getAppId()); order.setPaymentChannelCode(channelCode); order.setVersion(0);
-        order.setExpireTime(new java.util.Date(System.currentTimeMillis() + ORDER_EXPIRE_MINUTES * 60 * 1000));
+        order.setExpireTime(new java.util.Date(System.currentTimeMillis() + orderExpireMinutes * 60 * 1000));
         // V2 四维状态显式落库（与 DDL 默认值一致），保证下单响应的 VO 不依赖 DB 回填。
         order.setOrderStatus(OrderLifecycleStatus.WAIT_PAY.getType());
         order.setPayStatus(PayStatus.UNPAID.getType());
@@ -108,7 +112,9 @@ public class CheckoutServiceImpl implements CheckoutService {
         }
         // V2：下单同步原子预占库存（同事务），库存不足整体回滚，替代仅有的前置库存检查。
         inventoryService.reserveForOrder(order, items);
-        afterCommit(() -> { cartService.clearSelected(userId); orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType()); });
+        // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
+        orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
+        afterCommit(() -> cartService.clearSelected(userId));
         return detail(order, items);
     }
 

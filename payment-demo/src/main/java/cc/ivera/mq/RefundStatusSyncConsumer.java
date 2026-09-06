@@ -1,6 +1,8 @@
 package cc.ivera.mq;
 
 import cc.ivera.config.RefundStatusSyncRabbitConfig;
+import cc.ivera.entity.LocalMessage;
+import cc.ivera.service.LocalMessageService;
 import cc.ivera.service.RefundApplicationService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -13,8 +15,12 @@ public class RefundStatusSyncConsumer {
 
     private final RefundApplicationService refundApplicationService;
 
-    public RefundStatusSyncConsumer(RefundApplicationService refundApplicationService) {
+    private final LocalMessageService localMessageService;
+
+    public RefundStatusSyncConsumer(RefundApplicationService refundApplicationService,
+                                    LocalMessageService localMessageService) {
         this.refundApplicationService = refundApplicationService;
+        this.localMessageService = localMessageService;
     }
 
     @RabbitListener(queues = RefundStatusSyncRabbitConfig.REFUND_STATUS_SYNC_RELEASE_QUEUE)
@@ -24,10 +30,15 @@ public class RefundStatusSyncConsumer {
             return;
         }
 
+        processRefundStatusSync(message);
+        // 消费者成功处理（监听器正常返回后 Spring 才向 broker ack）→ 回写本地消息表为已消费
+        localMessageService.markConsumed(LocalMessage.BIZ_TYPE_REFUND_SYNC, message.getRefundNo());
+    }
+
+    private void processRefundStatusSync(RefundStatusSyncMessage message) {
         String refundNo = message.getRefundNo();
         log.info("Start refund status sync message, refundNo={}", refundNo);
         refundApplicationService.queryRefundStatus(refundNo);
         log.info("Finished refund status sync message, refundNo={}", refundNo);
     }
 }
-

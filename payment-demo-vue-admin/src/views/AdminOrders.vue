@@ -29,9 +29,21 @@
     </el-table>
     </div>
 
-    <el-dialog :title="channelQueryRow ? '渠道查单 - ' + channelQueryRow.orderNo : '渠道查单'" :visible.sync="channelQueryVisible" width="640px">
+    <el-dialog :title="channelQueryRow ? '渠道查单 - ' + channelQueryRow.orderNo : '渠道查单'" :visible.sync="channelQueryVisible" width="860px">
       <div v-loading="channelQueryLoading">
-        <el-descriptions v-if="channelQueryRow" :column="2" border size="small">
+        <template v-if="channelQueryRow">
+          <h4 style="margin-top:0">支付尝试记录（本订单全部渠道支付单）</h4>
+          <el-table :data="payAttempts" size="mini" style="width:100%;margin-bottom:16px">
+            <el-table-column prop="paymentNo" label="支付单号" min-width="160"/>
+            <el-table-column prop="channel" label="渠道" width="80"/>
+            <el-table-column label="状态" width="90"><template slot-scope="s"><el-tag :type="s.row.status==='SUCCESS'?'success':(s.row.status==='PAYING'?'warning':'info')" size="mini">{{s.row.status}}</el-tag></template></el-table-column>
+            <el-table-column label="渠道交易号" min-width="150"><template slot-scope="s">{{s.row.channelOrderNo||'-'}}</template></el-table-column>
+            <el-table-column label="请求金额" width="90"><template slot-scope="s">¥{{money(s.row.requestAmount)}}</template></el-table-column>
+            <el-table-column label="实付金额" width="90"><template slot-scope="s">{{s.row.paidAmount ? '¥'+money(s.row.paidAmount) : '-'}}</template></el-table-column>
+            <el-table-column label="发起时间" width="150"><template slot-scope="s">{{s.row.createTime ? new Date(s.row.createTime).toLocaleString() : '-'}}</template></el-table-column>
+            <el-table-column label="支付时间" width="150"><template slot-scope="s">{{s.row.paidTime ? new Date(s.row.paidTime).toLocaleString() : '-'}}</template></el-table-column>
+          </el-table>
+          <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="渠道">{{channelQueryRow.channelCode}}</el-descriptions-item>
           <el-descriptions-item label="渠道状态">{{channelQueryRow.channelTradeState}}</el-descriptions-item>
           <el-descriptions-item label="状态说明" :span="2">{{channelQueryRow.channelTradeStateDesc}}</el-descriptions-item>
@@ -39,10 +51,11 @@
           <el-descriptions-item label="查单后支付状态">{{channelQueryRow.localPayStatusAfter}}</el-descriptions-item>
           <el-descriptions-item label="是否同步" :span="2"><el-tag :type="channelQueryRow.synced?'success':'info'" size="small">{{channelQueryRow.synced?'已推进本地订单':'本地状态未变更'}}</el-tag></el-descriptions-item>
         </el-descriptions>
-        <div v-if="channelQueryRow && channelQueryRow.channelRawBody">
+        <div v-if="channelQueryRow.channelRawBody">
           <h4>渠道原始报文</h4>
           <pre style="max-height:260px;overflow:auto;background:#f5f7fa;padding:8px;font-size:12px;border-radius:4px">{{prettyRaw(channelQueryRow.channelRawBody)}}</pre>
         </div>
+        </template>
       </div>
       <div slot="footer">
         <el-button @click="channelQueryVisible = false">关闭</el-button>
@@ -96,7 +109,7 @@ import shipmentApi from '../api/shipment'
 import refundApi from '../api/refundApply'
 import { PAY_LABEL, FULFILLMENT_LABEL } from '../utils/statusLabels'
 export default {
-  data() { return { allOrders: [], orderFilter: { payStatus: '', orderStatus: '', fulfillmentStatus: '', orderNo: '', userId: '' }, dateRange: null, detailVisible: false, detailRow: null, detailLoading: false, paAmount: 0, paReason: '差价补偿', channelQueryVisible: false, channelQueryLoading: false, channelQueryRow: null } },
+  data() { return { allOrders: [], orderFilter: { payStatus: '', orderStatus: '', fulfillmentStatus: '', orderNo: '', userId: '' }, dateRange: null, detailVisible: false, detailRow: null, detailLoading: false, paAmount: 0, paReason: '差价补偿', channelQueryVisible: false, channelQueryLoading: false, channelQueryRow: null, payAttempts: [] } },
   computed: {
     canClose() { const o = this.detailRow && this.detailRow.order; return o && o.payStatus === 'UNPAID' && (o.orderStatus === '未支付' || o.orderStatus === '超时已关闭') },
     canMarkPaid() { const o = this.detailRow && this.detailRow.order; return o && o.payStatus === 'UNPAID' && o.orderStatus === '未支付' }
@@ -129,10 +142,12 @@ export default {
     async forceClose(orderNo) { try { await this.$confirm('将关闭未支付订单并释放预占库存，确认操作？', '强制关单'); await shipmentApi.forceClose(orderNo); this.$message.success('订单已强制关闭'); this.loadAllOrders() } catch (e) { /* 取消 */ } },
     async markPaid(orderNo) { try { await this.$confirm('将手动标记该未支付订单为已支付并提交预占库存，确认操作？', '标记支付成功'); await shipmentApi.markPaid(orderNo); this.$message.success('订单已标记为支付成功'); this.loadAllOrders() } catch (e) { /* 取消 */ } },
     async channelQuery(orderNo) {
-      this.channelQueryVisible = true; this.channelQueryLoading = true; this.channelQueryRow = null
+      // 渠道查单（幂等同步本地订单）+ 加载本订单全部渠道支付尝试记录（t_payment_order）
+      this.channelQueryVisible = true; this.channelQueryLoading = true; this.channelQueryRow = null; this.payAttempts = []
       try {
         const r = await shipmentApi.channelQuery(orderNo)
         this.channelQueryRow = r.data
+        shipmentApi.paymentOrders(orderNo).then(pr => { this.payAttempts = pr.data || [] })
         this.loadAllOrders()
       } finally { this.channelQueryLoading = false }
     },

@@ -14,6 +14,20 @@ spring:
     port: 5672
     username: guest
     password: guest
+    publisher-confirm-type: correlated # 发送者确认：异步回调确认消息到达交换机（回调见 RabbitReliabilityConfig）
+    publisher-returns: true # 消息不可路由到队列时退回发送者（配合 template.mandatory）
+    template:
+      mandatory: true
+    listener:
+      simple:
+        acknowledge-mode: auto # 消费者确认：监听器成功返回后自动 ack，异常时按下方重试策略处理
+        retry:
+          enabled: true # 消费异常指数回避重试：2s→6s→18s，共 4 次后放弃
+          max-attempts: 4
+          initial-interval: 2000
+          multiplier: 3.0
+          max-interval: 20000
+        default-requeue-rejected: false # 重试耗尽后拒绝且不再回队（避免无限热重试）；后续由 DB 兜底定时任务对账（关单/退款同步均为幂等链路）
 
   redis:
     host: 192.168.1.200
@@ -45,7 +59,7 @@ payment:
     refresh-ttl-seconds: 604800
     jwt-secret: ${AUTH_JWT_SECRET:1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ}
   order:
-    close-delay-ms: 900000
+    expire-minutes: 3 # 本地订单未支付超时（分钟）：到时释放锁定库存并关单（MQ 延迟关单 TTL 与定时兜底扫描共用此值）
   refund:
     status-sync-delay-ms: 60000
 

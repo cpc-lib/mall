@@ -188,7 +188,7 @@
 | Release Queue | `payment.order.close.release.queue` |
 | Delay Routing Key | `payment.order.close.delay` |
 | Release Routing Key | `payment.order.close.release` |
-| 默认 TTL | 60000ms（可配置 `payment.order.close-delay-ms`） |
+| 默认 TTL | 180000ms（`payment.order.expire-minutes` 默认 3 分钟 × 60000；队列参数不可变更，改值后需删除队列重建） |
 
 ### 6.2 退款状态同步延迟消息
 

@@ -3,12 +3,14 @@ package cc.ivera.controller;
 import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.entity.OrderShipment;
+import cc.ivera.entity.PaymentOrder;
 import cc.ivera.enums.FulfillmentStatus;
 import cc.ivera.enums.OrderStatus;
 import cc.ivera.enums.PayStatus;
 import cc.ivera.enums.PayType;
 import cc.ivera.exception.BizException;
 import cc.ivera.mapper.OrderInfoMapper;
+import cc.ivera.mapper.PaymentOrderMapper;
 import cc.ivera.service.AliPayService;
 import cc.ivera.service.CheckoutService;
 import cc.ivera.service.OrderInfoService;
@@ -42,6 +44,7 @@ public class AdminOrderShipmentController {
 
     private final ShipmentService shipmentService;
     private final OrderInfoMapper orderInfoMapper;
+    private final PaymentOrderMapper paymentOrderMapper;
     private final CheckoutService checkoutService;
     private final OrderInfoService orderInfoService;
     private final WxPayOrderFacade wxPayOrderFacade;
@@ -49,12 +52,14 @@ public class AdminOrderShipmentController {
 
     public AdminOrderShipmentController(ShipmentService shipmentService,
                                        OrderInfoMapper orderInfoMapper,
+                                       PaymentOrderMapper paymentOrderMapper,
                                        CheckoutService checkoutService,
                                        OrderInfoService orderInfoService,
                                        WxPayOrderFacade wxPayOrderFacade,
                                        AliPayService aliPayService) {
         this.shipmentService = shipmentService;
         this.orderInfoMapper = orderInfoMapper;
+        this.paymentOrderMapper = paymentOrderMapper;
         this.checkoutService = checkoutService;
         this.orderInfoService = orderInfoService;
         this.wxPayOrderFacade = wxPayOrderFacade;
@@ -117,6 +122,19 @@ public class AdminOrderShipmentController {
     public R<OrderShipment> ship(@PathVariable String orderNo) {
         OrderShipment shipment = shipmentService.ship(orderNo);
         return R.ok(shipment).setMessage("发货成功，运单号 " + shipment.getTrackingNo());
+    }
+
+    @ApiOperation("支付尝试记录（本订单全部渠道支付单：渠道/状态/渠道交易号/金额/时间）")
+    @GetMapping("/{orderNo}/payment-orders")
+    public R<List<PaymentOrder>> paymentOrders(
+            @PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException("订单不存在");
+        }
+        return R.ok(paymentOrderMapper.selectList(new QueryWrapper<PaymentOrder>()
+                .eq("order_no", orderNo)
+                .orderByAsc("id")));
     }
 
     @ApiOperation("渠道订单查询（主动向微信/支付宝查单，已支付成功则同步本地订单；不自动关单）")

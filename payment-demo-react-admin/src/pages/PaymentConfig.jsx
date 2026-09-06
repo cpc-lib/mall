@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Drawer, Form, Input, InputNumber, message, Modal, Select, Space, Tabs, Table, Tag } from 'antd'
+import { Alert, Button, Divider, Drawer, Form, Input, InputNumber, message, Modal, Select, Space, Tabs, Table, Tag } from 'antd'
 import paymentConfigApi from '@/api/paymentConfig'
 
 const defaultChannelForm = () => ({
@@ -305,6 +305,38 @@ export default function PaymentConfig() {
           </Form.Item>
           <Form.Item label="描述" name="channelDesc">
             <Input />
+          </Form.Item>
+          <Divider plain orientation="left">微信商户信息</Divider>
+          <Form.Item label="微信 AppID" name="appid">
+            <Input placeholder="例如：wx74862e0dfcf69954" />
+          </Form.Item>
+          <Form.Item label="微信商户号" name="mchId">
+            <Input placeholder="例如：1558950191" />
+          </Form.Item>
+          <Form.Item label="商户 API 证书序列号" name="mchSerialNo">
+            <Input />
+          </Form.Item>
+          <Form.Item label="商户私钥（apiclient_key.pem 内容）" name="privateKey">
+            <Input.TextArea rows={6} placeholder={'-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'} />
+          </Form.Item>
+          <Form.Item label="APIv3 密钥" name="apiV3Key">
+            <Input />
+          </Form.Item>
+          <Form.Item label="APIv2 密钥（partnerKey）" name="partnerKey">
+            <Input />
+          </Form.Item>
+          <Divider plain orientation="left">支付宝商户信息</Divider>
+          <Form.Item label="支付宝应用 ID" name="alipayAppId">
+            <Input placeholder="例如：9021000136667568" />
+          </Form.Item>
+          <Form.Item label="卖家 PID（seller_id）" name="sellerId">
+            <Input />
+          </Form.Item>
+          <Form.Item label="应用私钥（base64）" name="merchantPrivateKey">
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item label="支付宝公钥（base64）" name="alipayPublicKey">
+            <Input.TextArea rows={4} />
           </Form.Item>
           <Form.Item label="渠道参数JSON" name="configParams">
             <Input.TextArea rows={8} placeholder='例如：{"domain":"https://api.mch.weixin.qq.com"}' />

@@ -1,10 +1,10 @@
 package cc.ivera.service.impl;
 
-import cc.ivera.config.OrderCloseRabbitConfig;
+import cc.ivera.entity.LocalMessage;
 import cc.ivera.mq.OrderCloseMessage;
+import cc.ivera.service.LocalMessageService;
 import cc.ivera.service.OrderCloseMessageService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -12,12 +12,10 @@ import org.springframework.util.StringUtils;
 @Slf4j
 public class OrderCloseMessageServiceImpl implements OrderCloseMessageService {
 
-    private final RabbitTemplate rabbitTemplate;
+    private final LocalMessageService localMessageService;
 
-    public OrderCloseMessageServiceImpl(
-        RabbitTemplate rabbitTemplate
-    ) {
-        this.rabbitTemplate = rabbitTemplate;
+    public OrderCloseMessageServiceImpl(LocalMessageService localMessageService) {
+        this.localMessageService = localMessageService;
     }
 
     @Override
@@ -30,10 +28,8 @@ public class OrderCloseMessageServiceImpl implements OrderCloseMessageService {
         message.setOrderNo(orderNo);
         message.setPaymentType(paymentType);
 
-        rabbitTemplate.convertAndSend(
-                OrderCloseRabbitConfig.ORDER_CLOSE_EVENT_EXCHANGE,
-                OrderCloseRabbitConfig.ORDER_CLOSE_DELAY_ROUTING_KEY,
-                message);
-        log.info("延迟关单消息已发送，orderNo={}, paymentType={}", orderNo, paymentType);
+        // 事务性发件箱：业务事务内落库 PENDING，提交后投递 MQ（发送者确认），消费成功后由消费者回写 CONSUMED
+        localMessageService.saveAndPublishAfterCommit(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo, message);
+        log.info("延迟关单消息已进入本地消息表发件箱，orderNo={}, paymentType={}", orderNo, paymentType);
     }
 }

@@ -9,6 +9,7 @@
       <el-table-column prop="price" label="价格(分)" width="90"/>
       <el-table-column prop="stock" label="可用库存" width="90"/>
       <el-table-column prop="lockedStock" label="锁定库存" width="90"/>
+      <el-table-column prop="soldStock" label="已售库存" width="90"/>
       <el-table-column label="状态" width="100"><template slot-scope="s"><el-tag :type="s.row.productStatus==='ENABLED'?'success':'info'">{{s.row.productStatus}}</el-tag></template></el-table-column>
       <el-table-column label="库存调整" width="260"><template slot-scope="s"><el-input-number v-model="stockDelta[s.row.id]" size="small" style="width:130px" placeholder="±数量"/><el-button size="mini" type="primary" style="margin-left:8px" @click="adjustStock(s.row)">确认调整</el-button></template></el-table-column>
       <el-table-column label="上下架" width="100"><template slot-scope="s"><el-button size="mini" @click="setStatus(s.row)">{{s.row.productStatus==='ENABLED'?'下架':'上架'}}</el-button></template></el-table-column>
@@ -23,6 +24,7 @@
           <el-descriptions-item label="状态"><el-tag :type="product.productStatus==='ENABLED'?'success':'info'" size="small">{{product.productStatus}}</el-tag></el-descriptions-item>
           <el-descriptions-item label="可用库存">{{product.stock}}</el-descriptions-item>
           <el-descriptions-item label="锁定库存">{{product.lockedStock}}</el-descriptions-item>
+          <el-descriptions-item label="已售库存">{{product.soldStock}}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{product.createTime||'-'}}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{product.updateTime||'-'}}</el-descriptions-item>
         </el-descriptions>

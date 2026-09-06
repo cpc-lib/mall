@@ -278,6 +278,7 @@ CREATE TABLE t_product (
   price INT DEFAULT 1 NOT NULL,
   available_stock INT DEFAULT 100 NOT NULL,
   locked_stock INT DEFAULT 0 NOT NULL,
+  sold_stock INT DEFAULT 0 NOT NULL,
   product_status VARCHAR(16) DEFAULT 'ENABLED' NOT NULL,
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -289,7 +290,8 @@ COMMENT ON COLUMN t_product.id IS '商品id';
 COMMENT ON COLUMN t_product.title IS '商品名称';
 COMMENT ON COLUMN t_product.price IS '售价(分)';
 COMMENT ON COLUMN t_product.available_stock IS '可用库存：可被下单预占的数量';
-COMMENT ON COLUMN t_product.locked_stock IS '锁定库存：下单预占未提交/未释放的数量';
+COMMENT ON COLUMN t_product.locked_stock IS '锁定库存：下单预占未结转的数量（支付后保持锁定，确认收货结转已售/退款释放）';
+COMMENT ON COLUMN t_product.sold_stock IS '已售库存：确认收货结转的数量（已售退款回补时扣减）';
 COMMENT ON COLUMN t_product.product_status IS '商品状态：ENABLED/DISABLED';
 
 CREATE OR REPLACE TRIGGER trg_product_uptime
@@ -577,8 +579,13 @@ CREATE TABLE t_payment_order (
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT pk_payment_order PRIMARY KEY (id),
-  CONSTRAINT uk_payment_order_no UNIQUE (payment_no),
-  CONSTRAINT uk_payment_channel_order UNIQUE (channel, channel_order_no)
+  CONSTRAINT uk_payment_order_no UNIQUE (payment_no)
+);
+-- 渠道单号唯一约束（函数唯一索引）：channel_order_no 为 NULL（支付单 CREATED/PAYING 阶段未获得渠道单号）的行
+-- 不参与唯一性判定；DM8 对含 NULL 列的组合唯一约束视为相等，普通 UNIQUE 会阻塞同渠道后续 NULL 支付单。
+CREATE UNIQUE INDEX uk_payment_channel_order ON t_payment_order (
+  CASE WHEN channel_order_no IS NULL THEN 'ID:' || CAST(id AS VARCHAR(20)) ELSE channel END,
+  CASE WHEN channel_order_no IS NULL THEN NULL ELSE channel_order_no END
 );
 CREATE INDEX idx_payment_order_order_no ON t_payment_order(order_no);
 CREATE INDEX idx_payment_order_status ON t_payment_order(order_no, status);
@@ -648,6 +655,7 @@ CREATE TABLE t_inventory_transaction (
   product_id BIGINT NOT NULL,
   available_delta INT NOT NULL,
   locked_delta INT NOT NULL,
+  sold_delta INT DEFAULT 0 NOT NULL,
   operation_status VARCHAR(16) DEFAULT 'SUCCESS' NOT NULL,
   error_message VARCHAR(500),
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -663,13 +671,14 @@ CREATE INDEX idx_inventory_tx_status_time ON t_inventory_transaction(operation_s
 COMMENT ON TABLE t_inventory_transaction IS '库存流水：每次预占/提交/释放/回补/手工调整落一条，biz_no 唯一保证幂等；失败申请也记录（不改变库存）';
 COMMENT ON COLUMN t_inventory_transaction.id IS '流水id';
 COMMENT ON COLUMN t_inventory_transaction.biz_no IS '幂等业务号：TYPE:orderNo:itemId 或 REFUND_RESTOCK:refundNo:itemId 或 MANUAL_ADJUST:productId:UUID';
-COMMENT ON COLUMN t_inventory_transaction.biz_type IS '流水类型：ORDER_RESERVE-下单预占，ORDER_COMMIT-支付提交，ORDER_RELEASE-关单释放，REFUND_RESTOCK-退款回补，MANUAL_ADJUST-管理员手工调整';
+COMMENT ON COLUMN t_inventory_transaction.biz_type IS '流水类型：ORDER_RESERVE-下单预占，ORDER_COMMIT-支付提交（数量不变），ORDER_SOLD-确认收货结转已售，ORDER_RELEASE-关单释放，REFUND_RESTOCK-退款回补，MANUAL_ADJUST-管理员手工调整';
 COMMENT ON COLUMN t_inventory_transaction.order_no IS '关联订单号';
 COMMENT ON COLUMN t_inventory_transaction.order_item_id IS '关联订单明细id';
 COMMENT ON COLUMN t_inventory_transaction.refund_no IS '关联退款单号（回补时）';
 COMMENT ON COLUMN t_inventory_transaction.product_id IS '商品id（库存单元）';
 COMMENT ON COLUMN t_inventory_transaction.available_delta IS '可用库存变化量（失败申请为 0）';
 COMMENT ON COLUMN t_inventory_transaction.locked_delta IS '锁定库存变化量';
+COMMENT ON COLUMN t_inventory_transaction.sold_delta IS '已售库存变化量';
 COMMENT ON COLUMN t_inventory_transaction.operation_status IS '操作状态：SUCCESS-已生效，FAILED-调整申请被拒绝（库存未变化）';
 COMMENT ON COLUMN t_inventory_transaction.error_message IS '失败原因（FAILED 时记录申请调整量与拒绝原因）';
 
@@ -943,5 +952,31 @@ INSERT INTO t_product (title, price, available_stock, locked_stock, product_stat
 INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time) VALUES ('大数据课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
 INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time) VALUES ('前端课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
 INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time) VALUES ('UI课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+
+-- =====================================================================
+-- 本地消息表（事务性发件箱）：业务事务内落库 PENDING，事务提交后投递 MQ；
+-- 发送者确认到达置 SENT；消费者监听器成功返回后回写 CONSUMED；重试超限置 FAILED 待人工补偿
+-- =====================================================================
+CREATE TABLE t_local_message (
+  id BIGINT IDENTITY(1, 1) NOT NULL,
+  biz_type VARCHAR(32) NOT NULL,
+  biz_no VARCHAR(64) NOT NULL,
+  message_content CLOB NOT NULL,
+  status VARCHAR(16) DEFAULT 'PENDING' NOT NULL,
+  retry_count INT DEFAULT 0 NOT NULL,
+  next_retry_time TIMESTAMP NOT NULL,
+  create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT pk_local_message PRIMARY KEY (id)
+);
+CREATE INDEX idx_local_message_scan ON t_local_message(status, next_retry_time);
+CREATE INDEX idx_local_message_biz ON t_local_message(biz_type, biz_no);
+COMMENT ON TABLE t_local_message IS '本地消息表（事务性发件箱）：延迟关单/退款同步消息可靠投递与消费回写';
+COMMENT ON COLUMN t_local_message.biz_type IS '业务类型：ORDER_CLOSE-延迟关单，REFUND_SYNC-退款状态同步';
+COMMENT ON COLUMN t_local_message.biz_no IS '业务单号：orderNo/refundNo';
+COMMENT ON COLUMN t_local_message.message_content IS '消息内容JSON（与MQ消息体一致）';
+COMMENT ON COLUMN t_local_message.status IS '状态：PENDING-待投递，SENT-已投递(发送者确认)，CONSUMED-已消费(消费成功回写)，FAILED-投递失败待人工补偿';
+COMMENT ON COLUMN t_local_message.retry_count IS '投递重试次数';
+COMMENT ON COLUMN t_local_message.next_retry_time IS '下次重试时间';
 
 COMMIT;

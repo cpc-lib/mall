@@ -11,6 +11,6 @@ export const MALL_IMGS = [
 export const mallImg = id => MALL_IMGS[Number(id || 0) % MALL_IMGS.length]
 
 // 远程图加载失败（网络错误/服务不可用）时的本地兜底：内置 SVG，无需网络，保证不破版
-const FALLBACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" rx="28" fill="#ffe3ee"/><text x="120" y="116" font-size="96" text-anchor="middle" dominant-baseline="central">🛍️</text><text x="120" y="198" font-size="17" text-anchor="middle" fill="#f0447c" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-weight="700">淘支付 · 演示商品图</text></svg>'
+const FALLBACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="240" viewBox="0 0 240 240"><rect width="240" height="240" rx="28" fill="#f2f3f5"/><text x="120" y="116" font-size="96" text-anchor="middle" dominant-baseline="central">🛍️</text><text x="120" y="198" font-size="17" text-anchor="middle" fill="#fa5416" font-family="PingFang SC,Microsoft YaHei,sans-serif" font-weight="700">淘支付 · 演示商品图</text></svg>'
 export const MALL_IMG_FALLBACK = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(FALLBACK_SVG)
 export const onMallImgError = e => { if (!String(e.currentTarget.src).startsWith('data:')) e.currentTarget.src = MALL_IMG_FALLBACK }

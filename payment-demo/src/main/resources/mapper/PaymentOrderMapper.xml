@@ -33,4 +33,13 @@
           and status in ('CREATED', 'PAYING')
     </update>
 
+    <!-- 订单成交收口：关闭除成交支付单外的其它渠道活跃支付单（跨渠道多次发起支付后防悬挂） -->
+    <update id="closeActiveByOrderNoExceptPaymentNo">
+        update t_payment_order
+        set status = 'CLOSED', update_time = CURRENT_TIMESTAMP
+        where order_no = #{orderNo}
+          and payment_no != #{paymentNo}
+          and status in ('CREATED', 'PAYING')
+    </update>
+
 </mapper>

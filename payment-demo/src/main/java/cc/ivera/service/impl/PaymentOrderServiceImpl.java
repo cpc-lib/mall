@@ -44,9 +44,12 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
             throw new BizException("发起支付缺少渠道编码");
         }
 
-        PaymentOrder active = findActiveByOrderNo(order.getOrderNo());
+        // 渠道感知：同渠道复用活跃支付单；跨渠道各建一行（旧渠道活跃单不提前关闭，
+        // 用户扫旧渠道二维码支付仍能按渠道正确落行，订单终态统一收口其它渠道活跃单）。
+        PaymentOrder active = findActiveByOrderNoAndChannel(order.getOrderNo(), channel);
         if (active != null) {
-            log.info("订单存在活跃支付单，复用，orderNo={}, paymentNo={}", order.getOrderNo(), active.getPaymentNo());
+            log.info("订单存在同渠道活跃支付单，复用，orderNo={}, channel={}, paymentNo={}",
+                    order.getOrderNo(), channel, active.getPaymentNo());
             return active;
         }
 
@@ -100,10 +103,11 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         return updated > 0;
     }
 
-    private PaymentOrder findActiveByOrderNo(String orderNo) {
+    private PaymentOrder findActiveByOrderNoAndChannel(String orderNo, String channel) {
         List<PaymentOrder> list = paymentOrderMapper.selectList(
                 new com.baomidou.mybatisplus.core.conditions.query.QueryWrapper<PaymentOrder>()
                         .eq("order_no", orderNo)
+                        .eq("channel", channel)
                         .in("status", PaymentOrderStatus.CREATED.getType(), PaymentOrderStatus.PAYING.getType())
                         .orderByDesc("id")
                         .last("limit 1"));

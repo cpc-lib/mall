@@ -32,13 +32,13 @@ public class OrderCloseRabbitConfig {
         return new DirectExchange(ORDER_CLOSE_DEAD_LETTER_EXCHANGE, true, false);
     }
 
-    //延时处理机制
+    //延时处理机制（TTL 与本地订单未支付超时共用 payment.order.expire-minutes）
     @Bean(name = "orderCloseDelayQueue")
-    public Queue orderCloseDelayQueue(@Value("${payment.order.close-delay-ms:900000}") long closeDelayMs) {
+    public Queue orderCloseDelayQueue(@Value("${payment.order.expire-minutes:3}") long expireMinutes) {
         Map<String, Object> args = new HashMap<>();
         args.put("x-dead-letter-exchange", ORDER_CLOSE_DEAD_LETTER_EXCHANGE);
         args.put("x-dead-letter-routing-key", ORDER_CLOSE_RELEASE_ROUTING_KEY);
-        args.put("x-message-ttl", closeDelayMs);
+        args.put("x-message-ttl", expireMinutes * 60_000L);
         return new Queue(ORDER_CLOSE_DELAY_QUEUE, true, false, false, args);
     }
 

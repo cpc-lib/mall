@@ -289,7 +289,8 @@ payment-demo-java-dm/
 | `spring.redis.*` | Redis 连接（购物车/Token/锁定/幂等） |
 | `spring.rabbitmq.*` | RabbitMQ 连接 |
 | `auth.jwt-secret` / `refresh-ttl-seconds` | JWT 密钥（环境变量 AUTH_JWT_SECRET 覆盖）/ Refresh 7 天 |
-| `payment.order.close-delay-ms` | 关单延迟（默认 900000 = 15 分钟） |
+| `payment.order.expire-minutes` | 本地订单未支付超时（分钟，默认 3）：到时释放锁定库存并关单；延迟关单 TTL = 该值 × 60000 |
+| `payment.order.timeout-scan-ms` | 超时关单兜底扫描间隔（默认 60000） |
 | `payment.refund.status-sync-delay-ms` | 退款状态同步延迟（默认 60000） |
 | `stock.import.storage` | Excel 存储后端：`local` / `minio` |
 | `stock.import.dir` | local 模式保存目录 |

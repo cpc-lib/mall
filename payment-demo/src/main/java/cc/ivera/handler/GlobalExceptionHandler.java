@@ -59,7 +59,8 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public R<?> handleException(Exception ex) {
         log.error("系统异常", ex);
-        return R.error(ErrorCode.SYSTEM_ERROR, ex.getMessage() == null ? ErrorCode.SYSTEM_ERROR.getDefaultMessage() : ex.getMessage());
+        // 系统异常不透出内部细节（堆栈/SQL/中间件信息），统一返回通用文案，详情仅入日志
+        return R.error(ErrorCode.SYSTEM_ERROR, ErrorCode.SYSTEM_ERROR.getDefaultMessage());
     }
 
     private String formatFieldError(FieldError fieldError) {

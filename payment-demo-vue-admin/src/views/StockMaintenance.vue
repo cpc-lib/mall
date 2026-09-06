@@ -103,6 +103,7 @@ export default {
         { value: 'MANUAL_ADJUST', label: 'MANUAL_ADJUST（手工调整）' },
         { value: 'ORDER_RESERVE', label: 'ORDER_RESERVE（下单预占）' },
         { value: 'ORDER_COMMIT', label: 'ORDER_COMMIT（支付提交）' },
+        { value: 'ORDER_SOLD', label: 'ORDER_SOLD（确认收货结转）' },
         { value: 'ORDER_RELEASE', label: 'ORDER_RELEASE（关单释放）' },
         { value: 'REFUND_RESTOCK', label: 'REFUND_RESTOCK（退款回补）' }
       ],

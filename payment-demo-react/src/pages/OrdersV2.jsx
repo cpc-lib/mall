@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Descriptions, InputNumber, Modal, Radio, Space, Table, Tag, Input, message } from 'antd'
+import { Button, Descriptions, Empty, InputNumber, Modal, Radio, Tag, Input, message } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
 import checkoutApi from '@/api/checkout'
 import refundApi from '@/api/refundApply'
@@ -16,6 +16,7 @@ export default function OrdersV2() {
   const [qty, setQty] = useState({})
   const [logistics, setLogistics] = useState(null)
   const [wxCode, setWxCode] = useState(null)
+  const [payQuerying, setPayQuerying] = useState(false)
   const load = async () => {
     const o = await checkoutApi.list()
     const list = o.data || []
@@ -56,6 +57,22 @@ export default function OrdersV2() {
       setWxCode({ orderNo: d.order.orderNo, codeUrl })
     }
   }
+  // 手动查询支付结果（二维码弹窗按钮）：主动向渠道查单并同步本地状态（回调延迟/丢失也能查到）
+  const queryPayResult = async () => {
+    if (!wxCode) return
+    setPayQuerying(true)
+    try {
+      const r = await checkoutApi.payQuery(wxCode.orderNo)
+      const desc = r.data?.channelTradeStateDesc
+      if (r.data?.payStatus === 'PAID') {
+        setWxCode(null)
+        message.success('支付成功')
+        await load()
+      } else {
+        message.info(`渠道暂未确认支付${desc ? `（${desc}）` : ''}，若已完成支付请稍候几秒再点查询`)
+      }
+    } finally { setPayQuerying(false) }
+  }
   const cancelOrder = async d => {
     Modal.confirm({
       title: '取消订单', content: '已付款未发货订单将创建「未发货取消」退款申请，受理后自动原路退回，库存自动回补。',
@@ -89,38 +106,41 @@ export default function OrdersV2() {
     setTarget(null); await load()
   }
   const estimateTotal = (target?.items || []).reduce((sum, i) => sum + refundAmountEstimate(i, qty[i.id] || 0), 0)
-  const columns = [
-    { title: '订单号', render: (_, d) => d.order.orderNo },
-    { title: '支付方式', render: (_, d) => d.order.paymentType },
-    { title: '金额', render: (_, d) => `¥${((d.order.totalFee || 0) / 100).toFixed(2)}` },
-    { title: '状态', render: (_, d) => <Space size={4}>{statusTags(d.order).map(t => <Tag key={t}>{t}</Tag>)}</Space> },
-    { title: '商品明细（快照价）', render: (_, d) => d.items.map(i => <div key={i.id}>{i.productTitle} × {i.quantity} @ ¥{((i.unitPrice || 0) / 100).toFixed(2)}；已退 {i.refundedQty || 0}{(i.refundFrozenQty || 0) > 0 ? `，冻结 ${i.refundFrozenQty}` : ''}</div>) },
-    {
-      title: '操作', width: 300, render: (_, d) => {
-        const o = d.order
-        const canPay = o.payStatus === 'UNPAID' && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
-        const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP'
-        const canConfirm = o.fulfillmentStatus === 'SHIPPED' && shipments[o.orderNo] === 'DELIVERED'
-        const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus)
-        const canRefund = o.payStatus === 'PAID' && d.items.some(i => availableRefundQuantity(i) > 0)
-        return <Space wrap>
-          {canPay && <Button type="primary" onClick={() => pay(d)}>支付</Button>}
-          {canCancel && <Button onClick={() => cancelOrder(d)}>取消订单</Button>}
-          {canLogistics && <Button onClick={() => showLogistics(d)}>物流详情</Button>}
-          {canConfirm && <Button type="primary" ghost onClick={() => confirmReceipt(d)}>确认收货</Button>}
-          {canRefund && <Button onClick={() => beginRefund(d)}>分项退款</Button>}
-        </Space>
-      }
-    }
-  ]
   const timelineRows = logistics?.timeline ? Object.entries(logistics.timeline).filter(([, v]) => v) : []
   return <div className="tb-page">
     <div className="container">
       <h2 className="tb-h2">我的订单</h2>
       <p className="tb-page-tip">退款金额由服务端按订单快照核算（最后一件吃尾差），页面金额仅为预估。</p>
-      <div className="tb-cardbox" style={{ padding: '8px 16px 16px' }}>
-        <Table rowKey={d => d.order.orderNo} dataSource={orders} columns={columns} />
-      </div>
+      {orders.length === 0
+        ? <div className="tb-cardbox"><Empty description="暂无订单，去首页挑点好物吧" /></div>
+        : orders.map(d => {
+          const o = d.order
+          const canPay = o.payStatus === 'UNPAID' && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
+          const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP'
+          const canConfirm = o.fulfillmentStatus === 'SHIPPED' && shipments[o.orderNo] === 'DELIVERED'
+          const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus)
+          const canRefund = o.payStatus === 'PAID' && d.items.some(i => availableRefundQuantity(i) > 0)
+          return <div className="m-list-card" key={o.orderNo}>
+            <div className="m-list-head">
+              <div className="m-list-no">订单号 {o.orderNo}</div>
+              <div className="m-list-tags">{statusTags(o).map(t => <Tag key={t}>{t}</Tag>)}</div>
+            </div>
+            <div className="m-list-sub">
+              <span className="m-list-sub-label">{o.paymentType}</span>
+              <span className="m-list-amount">¥{((o.totalFee || 0) / 100).toFixed(2)}</span>
+            </div>
+            <div className="m-list-items">
+              {d.items.map(i => <div key={i.id}>{i.productTitle} <span className="m-list-item-sub">× {i.quantity} @ ¥{((i.unitPrice || 0) / 100).toFixed(2)}；已退 {i.refundedQty || 0}{(i.refundFrozenQty || 0) > 0 ? `，冻结 ${i.refundFrozenQty}` : ''}</span></div>)}
+            </div>
+            <div className="m-list-actions">
+              {canPay && <Button type="primary" onClick={() => pay(d)}>支付</Button>}
+              {canCancel && <Button onClick={() => cancelOrder(d)}>取消订单</Button>}
+              {canLogistics && <Button onClick={() => showLogistics(d)}>物流详情</Button>}
+              {canConfirm && <Button type="primary" ghost onClick={() => confirmReceipt(d)}>确认收货</Button>}
+              {canRefund && <Button onClick={() => beginRefund(d)}>分项退款</Button>}
+            </div>
+          </div>
+        })}
     </div>
     <Modal open={!!target} title="分项退款" onCancel={() => setTarget(null)} onOk={submitRefund} okButtonProps={{ disabled: estimateTotal <= 0 }}>
       {target && <div style={{ marginBottom: 12 }}>
@@ -133,7 +153,7 @@ export default function OrdersV2() {
       </div>}
       {target?.items.map(i => {
         const max = availableRefundQuantity(i)
-        return <div key={i.id} style={{ marginBottom: 12 }}><b>{i.productTitle}</b>：<InputNumber min={0} max={max} value={qty[i.id] || 0} disabled={max <= 0} onChange={v => setQty({ ...qty, [i.id]: Math.min(max, Number(v || 0)) })} /> / 可退 {max} 件，快照价 ¥{((i.unitPrice || 0) / 100).toFixed(2)}</div>
+        return <div key={i.id} className="m-modal-line"><b>{i.productTitle}</b><InputNumber min={0} max={max} value={qty[i.id] || 0} disabled={max <= 0} onChange={v => setQty({ ...qty, [i.id]: Math.min(max, Number(v || 0)) })} /><span className="m-modal-hint">可退 {max} 件，快照价 ¥{((i.unitPrice || 0) / 100).toFixed(2)}</span></div>
       })}
       <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="退款原因" maxLength={255} />
       <div style={{ marginTop: 12 }}>预估退款：<b>¥{(estimateTotal / 100).toFixed(2)}</b>（以服务端核算为准）</div>
@@ -152,8 +172,9 @@ export default function OrdersV2() {
       <div style={{ textAlign: 'center' }}>
         {wxCode?.codeUrl && <div className="qr-frame"><QRCodeSVG value={wxCode.codeUrl} size={280} level="M" includeMargin /></div>}
         <p style={{ marginTop: 14, marginBottom: 4, fontWeight: 600 }}>请使用微信扫描二维码完成支付</p>
-        <p style={{ color: '#999', fontSize: 12, marginBottom: 0 }}>支付成功后页面自动刷新，无需手动关闭</p>
-        <div style={{ marginTop: 8, wordBreak: 'break-all', color: '#bbb', fontSize: 11 }}>{wxCode?.codeUrl}</div>
+        <p style={{ color: '#999', fontSize: 12, marginBottom: 12 }}>支付完成后点击下方按钮查询结果，页面也会自动刷新</p>
+        <Button type="primary" block loading={payQuerying} onClick={queryPayResult}>我已支付，查询支付结果</Button>
+        <div style={{ marginTop: 10, wordBreak: 'break-all', color: '#bbb', fontSize: 11 }}>{wxCode?.codeUrl}</div>
       </div>
     </Modal>
   </div>

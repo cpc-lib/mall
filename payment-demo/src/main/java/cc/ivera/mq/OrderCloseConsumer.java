@@ -1,10 +1,12 @@
 package cc.ivera.mq;
 
 import cc.ivera.config.OrderCloseRabbitConfig;
+import cc.ivera.entity.LocalMessage;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.enums.OrderStatus;
 import cc.ivera.enums.PayType;
 import cc.ivera.service.AliPayService;
+import cc.ivera.service.LocalMessageService;
 import cc.ivera.service.OrderInfoService;
 import cc.ivera.service.wxpay.WxPayOrderFacade;
 import lombok.extern.slf4j.Slf4j;
@@ -21,14 +23,18 @@ public class OrderCloseConsumer {
 
     private final AliPayService aliPayService;
 
+    private final LocalMessageService localMessageService;
+
     public OrderCloseConsumer(
         OrderInfoService orderInfoService,
         WxPayOrderFacade wxPayOrderFacade,
-        AliPayService aliPayService
+        AliPayService aliPayService,
+        LocalMessageService localMessageService
     ) {
         this.orderInfoService = orderInfoService;
         this.wxPayOrderFacade = wxPayOrderFacade;
         this.aliPayService = aliPayService;
+        this.localMessageService = localMessageService;
     }
 
     @RabbitListener(queues = OrderCloseRabbitConfig.ORDER_CLOSE_RELEASE_QUEUE)
@@ -38,6 +44,12 @@ public class OrderCloseConsumer {
             return;
         }
 
+        processOrderClose(message);
+        // 消费者成功处理（监听器正常返回后 Spring 才向 broker ack）→ 回写本地消息表为已消费
+        localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, message.getOrderNo());
+    }
+
+    private void processOrderClose(OrderCloseMessage message) {
         String orderNo = message.getOrderNo();
         OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
         if (orderInfo == null) {

@@ -8,6 +8,7 @@ import cc.ivera.service.AliPayService;
 import cc.ivera.service.wxpay.WxPayOrderFacade;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,10 @@ public class TimeoutOrderCloseScheduler {
     private final AliPayService aliPayService;
     private final WxPayOrderFacade wxPayOrderFacade;
 
+    /** 本地订单未支付超时（分钟），与下单 expire_time、MQ 延迟关单 TTL 共用同一配置。 */
+    @Value("${payment.order.expire-minutes:3}")
+    private long orderExpireMinutes;
+
     public TimeoutOrderCloseScheduler(OrderInfoMapper orderInfoMapper, AliPayService aliPayService, WxPayOrderFacade wxPayOrderFacade) {
         this.orderInfoMapper = orderInfoMapper;
         this.aliPayService = aliPayService;
@@ -29,7 +34,7 @@ public class TimeoutOrderCloseScheduler {
 
     @Scheduled(fixedDelayString = "${payment.order.timeout-scan-ms:60000}")
     public void scan() {
-        Date cutoff = new Date(System.currentTimeMillis() - 15L * 60L * 1000L);
+        Date cutoff = new Date(System.currentTimeMillis() - orderExpireMinutes * 60L * 1000L);
         QueryWrapper<OrderInfo> q = new QueryWrapper<>();
         q.eq("legacy_status", OrderStatus.NOTPAY.getType())
                 .lt("create_time", cutoff)

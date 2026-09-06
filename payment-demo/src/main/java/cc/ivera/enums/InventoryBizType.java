@@ -14,13 +14,16 @@ public enum InventoryBizType {
     /** 下单预占：available-=qty, locked+=qty */
     ORDER_RESERVE("ORDER_RESERVE"),
 
-    /** 支付成功提交预占：locked-=qty */
+    /** 支付成功提交预占：库存数量不变（保持锁定），仅 reservation LOCKED→COMMITTED 事件标记 */
     ORDER_COMMIT("ORDER_COMMIT"),
+
+    /** 确认收货结转已售：locked-=qty, sold+=qty */
+    ORDER_SOLD("ORDER_SOLD"),
 
     /** 关单/取消释放预占：available+=qty, locked-=qty */
     ORDER_RELEASE("ORDER_RELEASE"),
 
-    /** 退款回补：available+=qty */
+    /** 退款回补：locked/sold 归还 available（来源桶按订单是否已确认收货分流） */
     REFUND_RESTOCK("REFUND_RESTOCK"),
 
     /** 管理员手工库存调整（补货/扣减）：available±delta，biz_no = MANUAL_ADJUST:productId:UUID */

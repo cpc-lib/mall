@@ -134,3 +134,4 @@ ALTER TABLE t_payment_app DROP COLUMN app_config;
 
 - 2026-09-06：规范创建（设计确认：appid 归渠道、私钥内容入库、彻底移除文件配置）。
 - 2026-09-06：实现落地。渠道实体/请求/服务层新增 10 个商户字段并全部接入加载与复制链路；应用实体/请求/视图 VO 移除 appConfig；微信/支付宝全链路改为渠道表取参，私钥统一 `WxPayPrivateKeyUtil` 内容加载；删除 WxPayConfig/AlipayProperties/AlipayClientConfig/wxpay.properties/alipay-sandbox.properties/apiclient_key.pem；payment_demo.sql 渠道表增列+种子 PEM 入库、应用表去 app_config；新增存量库 ALTER 脚本 upgrade_channel_merchant_config.sql；vue-admin/react-admin 渠道表单新增微信/支付宝商户分组、应用表单去 appConfig。双端构建与 mvn compile 全部通过，规范移入 implemented。
+- 2026-09-06：修正。验收第 4 条此前误标完成——react-admin/vue-admin 渠道表单商户字段实际未落盘（编辑丢失），导致管理端看不到/无法维护 appid 与 apiclient_key.pem 内容。本次补齐：`PaymentConfig.jsx` 渠道表单新增微信/支付宝商户信息分组（10 字段，antd Divider 分组）+ import Divider；`PaymentConfig.vue` 对等新增分组 + defaultChannelForm 补 10 字段初始值。编辑抽屉经 listAllChannels 实体回显全部商户参数（可查看）。react-admin `✓ built in 3.75s`、vue-admin `DONE Build complete`。

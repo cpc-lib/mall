@@ -19,9 +19,17 @@ public interface InventoryService {
     void reserveForOrder(OrderInfo order, List<OrderItem> items);
 
     /**
-     * 支付成功提交预占：reservation LOCKED→COMMITTED（CAS），locked-=qty。
+     * 支付成功提交预占：reservation LOCKED→COMMITTED（CAS）。
+     * 库存数量不变（保持锁定），待确认收货时结转已售。
      */
     void commitReservation(String orderNo);
+
+    /**
+     * 确认收货结转已售：按订单明细将锁定库存结转为已售库存（locked-=qty, sold+=qty）。
+     * 结转数量 = quantity - restockedQty（收货前已回补部分不重复结转）；
+     * 以流水 bizNo（ORDER_SOLD:orderNo:itemId）唯一键保证幂等。
+     */
+    void convertToSoldOnReceipt(String orderNo);
 
     /**
      * 超时关单/取消释放预占：reservation LOCKED→RELEASED（CAS），locked 归还 available。
@@ -29,8 +37,10 @@ public interface InventoryService {
     void releaseReservation(String orderNo);
 
     /**
-     * 退款回补：available+=qty；restocked+qty 不得超过 已退+冻结 上限。
-     * 是否回补由退款类型策略决定，调用方只传需要回补的明细。
+     * 退款回补：来源桶按订单是否已确认收货分流——
+     * 未收货（afterReceipt=false）：locked-=qty, available+=qty；
+     * 已收货（afterReceipt=true）：sold-=qty, available+=qty。
+     * restocked+qty 不得超过 已退+冻结 上限；是否回补由退款类型策略决定，调用方只传需要回补的明细。
      */
-    void restockForRefund(String refundNo, List<RefundItem> items);
+    void restockForRefund(String refundNo, List<RefundItem> items, boolean afterReceipt);
 }

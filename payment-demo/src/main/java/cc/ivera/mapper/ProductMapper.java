@@ -18,9 +18,9 @@ public interface ProductMapper extends BaseMapper<Product> {
     /** 释放预占：available+=qty, locked-=qty WHERE locked>=qty。 */
     int releaseReservedStock(@Param("id") Long id, @Param("quantity") Integer quantity);
 
-    /** 提交预占：仅 locked-=qty（支付成功）。 */
-    int commitReservedStock(@Param("id") Long id, @Param("quantity") Integer quantity);
+    /** 确认收货结转已售：locked-=qty, sold+=qty WHERE locked>=qty。 */
+    int commitSoldStock(@Param("id") Long id, @Param("quantity") Integer quantity);
 
-    /** 退款回补：available+=qty。 */
-    int restock(@Param("id") Long id, @Param("quantity") Integer quantity);
+    /** 已售退款回补：available+=qty, sold-=qty WHERE sold>=qty。 */
+    int releaseSoldStock(@Param("id") Long id, @Param("quantity") Integer quantity);
 }

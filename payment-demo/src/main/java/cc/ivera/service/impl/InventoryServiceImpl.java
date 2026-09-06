@@ -78,7 +78,7 @@ public class InventoryServiceImpl implements InventoryService {
                 throw new BizException("库存不足，productId=" + item.getProductId());
             }
             insertTransaction(InventoryBizType.ORDER_RESERVE, item.getOrderNo(), item.getId(), null,
-                    item.getProductId(), -item.getQuantity(), item.getQuantity());
+                    item.getProductId(), -item.getQuantity(), item.getQuantity(), 0);
         }
     }
 
@@ -103,13 +103,43 @@ public class InventoryServiceImpl implements InventoryService {
             log.warn("库存预占状态不支持提交，幂等返回，orderNo={}", orderNo);
             return;
         }
+        // 支付成功仅推进预占状态，库存保持锁定（数量不变），待确认收货时结转已售。
         for (InventoryReservation reservation : reservations) {
-            int committed = productMapper.commitReservedStock(reservation.getProductId(), reservation.getQuantity());
-            if (committed == 0) {
-                throw new BizException("库存预占提交失败，productId=" + reservation.getProductId());
-            }
             insertTransaction(InventoryBizType.ORDER_COMMIT, orderNo, reservation.getOrderItemId(), null,
-                    reservation.getProductId(), 0, -reservation.getQuantity());
+                    reservation.getProductId(), 0, 0, 0);
+        }
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void convertToSoldOnReceipt(String orderNo) {
+        List<OrderItem> items = orderItemMapper.selectList(
+                new QueryWrapper<OrderItem>().eq("order_no", orderNo).orderByAsc("id"));
+        if (items.isEmpty()) {
+            log.warn("确认收货结转未找到订单明细，跳过，orderNo={}", orderNo);
+            return;
+        }
+        for (OrderItem item : items) {
+            int qty = item.getQuantity() - (item.getRestockedQty() == null ? 0 : item.getRestockedQty());
+            if (qty <= 0) {
+                log.info("确认收货结转数量为0，跳过，orderNo={}, orderItemId={}", orderNo, item.getId());
+                continue;
+            }
+            String bizNo = InventoryBizType.ORDER_SOLD.name() + ":" + orderNo + ":" + item.getId();
+            Integer exists = transactionMapper.selectCount(new QueryWrapper<InventoryTransaction>().eq("biz_no", bizNo));
+            if (exists != null && exists > 0) {
+                log.info("确认收货结转流水已存在，幂等跳过，orderNo={}, orderItemId={}", orderNo, item.getId());
+                continue;
+            }
+            int converted = productMapper.commitSoldStock(item.getProductId(), qty);
+            if (converted == 0) {
+                // 旧模型存量在途单的锁定已在支付时被扣减，无法结转：不阻塞收货，仅告警留痕。
+                log.warn("确认收货结转失败（锁定库存不足），跳过，orderNo={}, orderItemId={}, productId={}, qty={}",
+                        orderNo, item.getId(), item.getProductId(), qty);
+                continue;
+            }
+            insertTransaction(InventoryBizType.ORDER_SOLD, orderNo, item.getId(), null,
+                    item.getProductId(), 0, -qty, qty);
         }
     }
 
@@ -140,13 +170,13 @@ public class InventoryServiceImpl implements InventoryService {
                 throw new BizException("库存预占释放失败，productId=" + reservation.getProductId());
             }
             insertTransaction(InventoryBizType.ORDER_RELEASE, orderNo, reservation.getOrderItemId(), null,
-                    reservation.getProductId(), reservation.getQuantity(), -reservation.getQuantity());
+                    reservation.getProductId(), reservation.getQuantity(), -reservation.getQuantity(), 0);
         }
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void restockForRefund(String refundNo, List<RefundItem> items) {
+    public void restockForRefund(String refundNo, List<RefundItem> items, boolean afterReceipt) {
         if (refundNo == null || items == null || items.isEmpty()) {
             return;
         }
@@ -161,14 +191,24 @@ public class InventoryServiceImpl implements InventoryService {
             if (added == 0) {
                 throw new BizException("补库存数量超过可回补上限，orderItemId=" + item.getOrderItemId());
             }
-            productMapper.restock(item.getProductId(), item.getRefundQty());
+            // 来源桶分流：未收货从锁定归还，已收货从已售归还。
+            int moved = afterReceipt
+                    ? productMapper.releaseSoldStock(item.getProductId(), item.getRefundQty())
+                    : productMapper.releaseReservedStock(item.getProductId(), item.getRefundQty());
+            if (moved == 0) {
+                throw new BizException(afterReceipt
+                        ? "已售库存不足，无法回补，productId=" + item.getProductId()
+                        : "库存预占释放失败，productId=" + item.getProductId());
+            }
             insertTransaction(InventoryBizType.REFUND_RESTOCK, null, item.getOrderItemId(), refundNo,
-                    item.getProductId(), item.getRefundQty(), 0);
+                    item.getProductId(), item.getRefundQty(),
+                    afterReceipt ? 0 : -item.getRefundQty(),
+                    afterReceipt ? -item.getRefundQty() : 0);
         }
     }
 
     private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
-                                   Long productId, int availableDelta, int lockedDelta) {
+                                   Long productId, int availableDelta, int lockedDelta, int soldDelta) {
         InventoryTransaction transaction = new InventoryTransaction();
         transaction.setBizNo(bizType.name() + ":" + (refundNo != null ? refundNo : orderNo) + ":" + orderItemId);
         transaction.setBizType(bizType.getType());
@@ -178,6 +218,7 @@ public class InventoryServiceImpl implements InventoryService {
         transaction.setProductId(productId);
         transaction.setAvailableDelta(availableDelta);
         transaction.setLockedDelta(lockedDelta);
+        transaction.setSoldDelta(soldDelta);
         try {
             transactionMapper.insert(transaction);
         } catch (DuplicateKeyException e) {

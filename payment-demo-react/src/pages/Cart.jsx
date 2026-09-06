@@ -1,37 +1,54 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Checkbox, Empty, Input, InputNumber, Select, Space, message } from 'antd'
+import { Button, Checkbox, Empty, Input, InputNumber, message } from 'antd'
 import cartApi from '@/api/cart'
 import checkoutApi from '@/api/checkout'
 import paymentConfigApi from '@/api/paymentConfig'
 import { mallImg, onMallImgError } from '@/assets/mallImgs'
 
 const paymentTypeOf = code => code === 'WXPAY' ? '微信' : code === 'ALIPAY' ? '支付宝' : ''
+const CHANNEL_META = {
+  WXPAY: { name: '微信支付', desc: '使用微信扫码支付（沙箱演示）', glyph: '微', cls: 'wx' },
+  ALIPAY: { name: '支付宝', desc: '跳转支付宝完成支付（沙箱演示）', glyph: '支', cls: 'ali' }
+}
+const channelMetaOf = code => CHANNEL_META[code] || { name: code, desc: '沙箱演示渠道', glyph: (code || '?').slice(0, 1), cls: '' }
 
-// 淘宝风格购物车：商品行 + 收货信息 + 吸底结算条
+// 精致现代风购物车：商品行 + 收货信息 + 支付渠道选择 + 吸底结算条
 export default function Cart() {
   const [items, setItems] = useState([])
   const [apps, setApps] = useState([])
-  const [paymentAppId, setPaymentAppId] = useState()
+  const [channelCode, setChannelCode] = useState('')
   const [receiver, setReceiver] = useState({ name: '', phone: '', address: '' })
   const load = async () => {
     const [cart, payApps] = await Promise.all([cartApi.list(), paymentConfigApi.listEnabledApps()])
     setItems(cart.data || [])
-    const nextApps = payApps.data || []
-    setApps(nextApps)
-    if (!nextApps.some(a => a.id === paymentAppId)) setPaymentAppId(nextApps[0]?.id)
+    setApps(payApps.data || [])
   }
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  const selectedApp = useMemo(() => apps.find(a => a.id === paymentAppId), [apps, paymentAppId])
+  // 渠道级去重：同渠道多应用时默认取第一个启用应用，用户视角只感知「支付方式」
+  const channels = useMemo(() => {
+    const seen = new Set()
+    const list = []
+    for (const a of apps) {
+      if (!a.channelCode || seen.has(a.channelCode)) continue
+      seen.add(a.channelCode)
+      list.push({ code: a.channelCode, appId: a.id, ...channelMetaOf(a.channelCode) })
+    }
+    return list
+  }, [apps])
+  useEffect(() => {
+    if (!channels.some(c => c.code === channelCode)) setChannelCode(channels[0]?.code || '')
+  }, [channels]) // eslint-disable-line react-hooks/exhaustive-deps
   const selectedItems = items.filter(i => i.selected)
   const total = selectedItems.reduce((s, i) => s + Number(i.latestPrice || 0) * Number(i.quantity || 0), 0)
-  const canCheckout = selectedItems.length > 0 && selectedItems.every(i => i.available) && Boolean(selectedApp)
+  const canCheckout = selectedItems.length > 0 && selectedItems.every(i => i.available) && Boolean(channelCode)
   const changeQty = async (row, q) => { await cartApi.put({ productId: row.productId, quantity: q, selected: row.selected }); await load() }
   const checkout = async () => {
-    if (!selectedApp) return message.error('请选择支付应用')
-    const paymentType = paymentTypeOf(selectedApp.channelCode)
-    if (!paymentType) return message.error(`暂不支持渠道 ${selectedApp.channelCode}`)
+    const app = apps.find(a => a.channelCode === channelCode)
+    if (!app) return message.error('请选择支付方式')
+    const paymentType = paymentTypeOf(channelCode)
+    if (!paymentType) return message.error(`暂不支持渠道 ${channelCode}`)
     const r = await checkoutApi.create({
-      paymentType, paymentAppId: selectedApp.id,
+      paymentType, paymentAppId: app.id,
       receiverName: receiver.name.trim() || undefined,
       receiverPhone: receiver.phone.trim() || undefined,
       receiverAddress: receiver.address.trim() || undefined
@@ -51,7 +68,7 @@ export default function Cart() {
         <div className="tb-col-op">操作</div>
       </div>
       {items.length === 0
-        ? <div className="tb-cardbox" style={{ borderRadius: '0 0 8px 8px' }}><Empty description="购物车还是空的，去挑点好物吧" /></div>
+        ? <div className="tb-cardbox"><Empty description="购物车还是空的，去挑点好物吧" /></div>
         : items.map(r => (
         <div className="tb-cart-row" key={r.productId}>
           <div className="tb-col-check"><Checkbox checked={r.selected} onChange={async v => { await cartApi.select(r.productId, v.target.checked); await load() }} /></div>
@@ -72,12 +89,24 @@ export default function Cart() {
         <Input style={{ width: 140 }} placeholder="收货人姓名（选填）" value={receiver.name} onChange={e => setReceiver({ ...receiver, name: e.target.value })} />
         <Input style={{ width: 160 }} placeholder="收货人电话（选填）" value={receiver.phone} onChange={e => setReceiver({ ...receiver, phone: e.target.value })} />
         <Input style={{ width: 320 }} placeholder="收货地址（选填，缺省模拟值）" value={receiver.address} onChange={e => setReceiver({ ...receiver, address: e.target.value })} />
-        <Space>支付应用：<Select style={{ minWidth: 240 }} value={paymentAppId} placeholder="选择支付应用" onChange={setPaymentAppId} options={apps.map(a => ({ value: a.id, label: `${a.appName} / ${a.channelName || a.channelCode}` }))} /></Space>
+        <div className="m-pay-label">支付方式</div>
+        <div className="m-pay-list">
+          {channels.map(c => (
+            <div key={c.code} className={`m-pay-item${c.code === channelCode ? ' active' : ''}`} onClick={() => setChannelCode(c.code)}>
+              <div className={`m-pay-logo ${c.cls}`}>{c.glyph}</div>
+              <div className="m-pay-info">
+                <div className="m-pay-name">{c.name}</div>
+                <div className="m-pay-desc">{c.desc}</div>
+              </div>
+              <div className="m-pay-check" />
+            </div>
+          ))}
+        </div>
       </div>}
       <div className="tb-cart-bar">
-        <span style={{ fontSize: 13, color: '#6C6C6C' }}>已选 <b style={{ color: '#FF5000' }}>{selectedItems.length}</b> 件商品</span>
+        <span className="m-dim">已选 <b className="m-count">{selectedItems.length}</b> 件商品</span>
         <div className="tb-cart-total">合计：<b>¥{(total / 100).toFixed(2)}</b></div>
-        <Button className="tb-cart-checkout" style={{}} disabled={!canCheckout} onClick={checkout}>结 算</Button>
+        <Button className="tb-cart-checkout" disabled={!canCheckout} onClick={checkout}>结 算</Button>
       </div>
     </div>
   </div>

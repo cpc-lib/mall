@@ -9,6 +9,7 @@ import cc.ivera.exception.BizException;
 import cc.ivera.lock.DistributedLockTemplate;
 import cc.ivera.mapper.OrderInfoMapper;
 import cc.ivera.mapper.OrderShipmentMapper;
+import cc.ivera.service.InventoryService;
 import cc.ivera.service.ShipmentService;
 import cc.ivera.service.logistics.LogisticsProvider;
 import cc.ivera.util.OrderNoUtils;
@@ -49,16 +50,20 @@ public class ShipmentServiceImpl implements ShipmentService {
 
     private final TransactionTemplate transactionTemplate;
 
+    private final InventoryService inventoryService;
+
     public ShipmentServiceImpl(OrderInfoMapper orderInfoMapper,
                                OrderShipmentMapper orderShipmentMapper,
                                LogisticsProvider logisticsProvider,
                                DistributedLockTemplate distributedLockTemplate,
-                               TransactionTemplate transactionTemplate) {
+                               TransactionTemplate transactionTemplate,
+                               InventoryService inventoryService) {
         this.orderInfoMapper = orderInfoMapper;
         this.orderShipmentMapper = orderShipmentMapper;
         this.logisticsProvider = logisticsProvider;
         this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.inventoryService = inventoryService;
     }
 
     @Override
@@ -151,6 +156,9 @@ public class ShipmentServiceImpl implements ShipmentService {
                 .eq("order_no", orderNo)
                 .eq("fulfillment_status", FulfillmentStatus.SHIPPED.getType())
                 .set("fulfillment_status", FulfillmentStatus.RECEIVED.getType()));
+
+        // 锁定库存结转已售（同事务；流水 bizNo 幂等，重复收货在上方已拦截）。
+        inventoryService.convertToSoldOnReceipt(orderNo);
         log.info("订单确认收货完成，orderNo={}", orderNo);
     }
 
