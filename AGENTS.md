@@ -1,62 +1,69 @@
 # 电商商城平台 Agent Rules
 
-This file is the project-level rulebook for coding agents. Keep changes small, spec-led, and verifiable.
+本文件是编码 Agent 的项目级规则手册。保持改动小步、有记录、可验证。
 
-Repository layout: `backend/` (Spring Boot 2.3.7, Java 8, package `cc.ivera`), `user-ui/` (React 18 user mall, port 3000), `admin-ui/` (React 18 admin console, port 3002). Both frontends talk to the backend at `http://localhost:8080` via CORS.
+仓库布局：`backend/`（Spring Boot 2.3.7，Java 8，包名 `cc.ivera`，数据库达梦 DM8，缓存/锁 Redis + Redisson，消息队列 RabbitMQ，支付渠道微信 V2/V3 + 支付宝）、`user-ui/`（React 18 用户商城，dev 端口 3000）、`admin-ui/`（React 18 管理后台，dev 端口 3002）。两个前端通过 CORS 直连后端 `http://localhost:8080`。
 
-## Issue Classification
+文档账本：`README.md`（面向使用者的功能与启动说明）、`CODE_INTRO.md`（面向开发者的架构/实体/路由/幂等设计导览）、`backend/docs/`（DM8 与 RabbitMQ 运维手册）。
 
-Every issue must be classified before implementation:
+## 问题分类
 
-| Class | When To Use | Required Action |
+实施前必须先给问题定性：
+
+| 类别 | 判定条件 | 必须动作 |
 |---|---|---|
-| Local bug | Existing contract is clear and only one narrow behavior is wrong. | Add or update a focused test, make the smallest fix, run affected tests and characterization tests. |
-| Design change | The issue changes a workflow, state rule, domain model, architecture boundary, config source, or provider behavior. | Create or update a `spec/planned/<domain>/...` spec before code changes. |
-| Public API or compatibility impact | Any route, request shape, response structure, response text, status value, DB schema, event name, config key, frontend call, provider callback, log/audit contract, or legacy path changes. | Document compatibility impact and migration/rollback notes in the spec before code changes. |
-| Multiple issues, same root cause | Several reports point to one shared rule, abstraction, config source, idempotency rule, or state transition. | Group them under one spec and avoid one-off patches until the shared rule is explicit. |
+| 局部缺陷 | 既有契约清晰，仅单一行为出错。 | 补充或更新针对性测试，做最小修复，跑受影响测试与特征测试。 |
+| 设计变更 | 改动影响工作流、状态规则、领域模型、架构边界、配置来源或渠道对接行为。 | 动代码前在提交/PR 说明中写清「现状 → 目标方案 → 影响面」，并同步更新 CODE_INTRO.md 对应章节。 |
+| 公共 API / 兼容性影响 | 任何路由、请求/响应结构、响应文案、状态值、DB schema、事件名、配置键、前端调用、渠道回调、日志/审计契约或遗留路径变化。 | 兼容性影响与迁移/回滚说明写入提交/PR 描述；DB 变更必须同时改 `schema.sql` 全量脚本并提供 `backend/env/sql/dm8/upgrade_*.sql` 增量脚本（头部注释写明适用库、幂等性与回滚方式）。 |
+| 多问题同根因 | 多个报告指向同一条共享规则、抽象、配置源、幂等规则或状态流转。 | 先明确共享规则再统一修改，禁止逐个打补丁。 |
 
-If classification is unclear, treat it as a design change and write the spec first.
+分类不明确时，按设计变更处理，先补齐方案说明再动代码。
 
-## Branch Naming
+## 分支命名
 
-Use one of these prefixes:
+只使用以下前缀：
 
-- `bug-fix/<issue-or-topic>` for local bug fixes.
-- `feature/<issue-or-topic>` for new behavior or design changes.
-- `refactor/<topic>` for behavior-preserving refactors.
-- `update/<topic>` for docs, spec, config, or governance-only changes.
+- `bug-fix/<issue-or-topic>`：局部缺陷修复。
+- `feature/<issue-or-topic>`：新行为或设计变更。
+- `refactor/<topic>`：行为保持不变的重构。
+- `update/<topic>`：文档、配置或治理类变更。
 
-Branch, PR, and commit names must not include agent names, vendor names, author signatures, or generated-by markers.
+分支、PR 与提交名称不得包含 Agent 名称、厂商名称、作者签名或任何生成标记。
 
-## Test Requirements
+## 领域不变量（改动不得破坏）
 
-- The backend currently ships **no automated test suite** (`backend/src/test` is empty). Before refactoring any legacy backend behavior, add characterization tests under `backend/src/test` that lock the current behavior.
-- Characterization tests must not judge whether current behavior is reasonable.
-- Suspicious current behavior must be marked with `现状` in the test name or comment.
-- Tests that touch DB, Redis, cache, global state, MQ, config, or clock state must reset state and use temporary isolation.
-- Do not call real payment providers, real Redis, real RabbitMQ, or real DM8 from characterization tests unless an integration test spec explicitly requires it.
-- Frontend logic tests run with the Node built-in test runner:
-  - `user-ui`: `npm run test:logic` (refresh single-flight, refund quota)
-  - `admin-ui`: `npm run test:logic` (refresh single-flight)
-- For behavior-preserving work, run `mvn test` in `backend/` plus both frontend `test:logic` scripts and confirm no regressions.
-- If a test fails after a refactor, first explain which locked behavior changed, then make the smallest correction.
+- **库存四桶恒等式**：`available_stock + locked_stock + sold_stock + lost_stock` 恒等于入库总量；任何库存变动必须写 `t_inventory_transaction` 流水，并以 `biz_no`（`TYPE:单号:明细id`）做幂等锚（预检 selectCount + 唯一键兜底）。
+- **防超卖根闸门**：`ProductMapper.reserveStock` 条件 UPDATE（`WHERE available_stock >= qty`），下单库存不足必须整单回滚，不允许「先下单后补扣」。
+- **支付成交唯一性**：本地订单 1:N 渠道支付尝试，仅允许一笔 SUCCESS 成交；重复/晚到支付由 `PaymentSuccessService` 自动原路退款冲正，冲正不动库存。
+- **退款防超退**：受理即冻结可退额度，金额以服务端 `RefundPolicy` 为准；仅退款不退货必须核销货损（未收货 `locked→lost`、已收货 `sold→lost`），货物不回仓，不走回补。
+- **状态推进**：订单/支付/退款单状态流转一律走数据库行锁 + CAS 条件更新，禁止先改后查。
 
-## Spec Reconciliation Rules
+## 测试要求
 
-- Treat `spec/` as the state ledger for public behavior, architecture contracts, compatibility rules, and governance.
-- Before changing code, find the related spec. If none exists, create one in `spec/planned/<domain>/` (the directory may not exist yet in a fresh checkout — create it on first use).
-- A planned spec moves to `spec/implemented/<domain>/` only after implementation anchors and tests prove it is landed.
-- Partially delivered work stays in `planned/` with completed and remaining acceptance criteria marked clearly.
-- Deprecated or abandoned decisions move to `spec/archived/`, keeping the reason and date.
-- If implementation, tests, docs, and spec disagree, the work is not complete.
+- 后端当前**无自动化测试套件**（`backend/src/test` 为空）。重构任何遗留后端行为前，先在 `backend/src/test` 补特征测试锁定现状。
+- 特征测试不得评判现状是否合理；可疑现状须在测试名或注释中标注 `现状`。
+- 触碰 DB、Redis、缓存、全局状态、MQ、配置或时钟的测试必须重置状态并使用临时隔离。
+- 特征测试禁止调用真实支付渠道、真实 Redis、真实 RabbitMQ 或真实 DM8，除非任务说明明确要求集成测试。
+- 前端逻辑测试使用 Node 内置 test runner：
+  - `user-ui`：`npm run test:logic`（Token 单飞刷新 + 退款额度核算）
+  - `admin-ui`：`npm run test:logic`（Token 单飞刷新）
+- 行为保持类改动，需在 `backend/` 跑 `mvn test`，并跑两个前端的 `test:logic`，确认无回归。
+- 重构后若测试失败，先说明锁定的是哪条行为、为何变化，再做最小修正。
 
-## Definition Of Done
+## 文档同步规则
 
-A change is done only when all applicable items are true:
+- `CODE_INTRO.md` 是架构与公共行为的说明账本：幂等规则、状态机、库存/退款/支付联动、MQ 拓扑、前端页面能力等发生变化时，必须同步对应章节，包括其中的架构图与表格。
+- `README.md` 面向使用者：新功能、启动方式、依赖、目录结构变化时必须同步。
+- DB schema 变更时 `schema.sql`（全新库）与增量脚本（存量库）必须成对更新，保证两类库最终结构一致。
+- 实现、测试、文档三者不一致，视为工作未完成。
 
-- The issue class is documented or obvious from the PR.
-- Public API and compatibility impact are unchanged or explicitly documented.
-- Related specs are created or updated in the correct state.
-- Characterization tests and impacted tests pass.
-- Implementation anchors in the spec point to real files/classes/tests.
-- No unrelated business behavior, bug fix, or feature is bundled into the change.
+## 完成定义（DoD）
+
+一项改动只有满足以下所有适用项才算完成：
+
+- 问题定性明确，或可从 PR/提交说明直接看出。
+- 公共 API 与兼容性影响无变化，或已在提交/PR 说明中记录（含迁移/回滚方式）。
+- 领域不变量未被破坏。
+- 特征测试与受影响测试全部通过。
+- `CODE_INTRO.md` / `README.md` 与实现保持一致；DB 变更的 `schema.sql` 与增量脚本成对落地。
+- 未夹带任何无关的业务行为、缺陷修复或功能。

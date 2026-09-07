@@ -9,7 +9,6 @@ const MENU = [
   { key: '/admin/shipping', label: '订单发货' },
   { key: '/admin/products', label: '商品库存' },
   { key: '/admin/refunds', label: '退款受理' },
-  { key: '/admin/mq-logs', label: 'MQ/库存异常' },
   { key: '/admin/users', label: '用户列表' },
   { key: '/admin/reset-requests', label: '密码重置申请' },
   { key: '/admin/reset-password', label: '重置用户密码' },

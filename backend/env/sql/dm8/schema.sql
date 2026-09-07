@@ -2,7 +2,7 @@
 -- 电商商城平台 DM8 一体化完整初始化脚本（单一文件，纯 DM8 语法）
 -- ===============================================================
 -- 内容：
---   PART 1  核心业务库（21 张表 + 种子数据，历次增量升级结构已全部固化）
+--   PART 1  核心业务库（20 张表 + 种子数据，历次增量升级结构已全部固化）
 --   PART 2  省市区基础数据（t_region 表 + 全国三级行政区划）
 --   PART 3  用户收货地址表（t_shipping_address）
 --
@@ -20,14 +20,20 @@
 -- 注意：上述增量脚本的最终结构已经固化到本全量脚本中，切勿在本脚本后再次执行，
 --       否则会产生重复建表、重复加列或重复建索引错误。
 -- 已合并原增量脚本 upgrade_user_cart_order_refund_stock.sql 的全部内容
--- （t_user / t_order_item / t_refund_apply / t_refund_apply_item /
---   t_stock_operation_log，以及 t_product 的 stock / product_status 列），
+-- （t_user / t_order_item / t_refund_apply / t_refund_apply_item，
+--   以及 t_product 的 stock / product_status 列），
+-- 并已并入库存货损四桶增量（原 upgrade_add_lost_stock.sql：t_product.lost_stock、
+-- t_inventory_transaction.lost_delta）与旧表清理（原 upgrade_drop_stock_operation_log.sql
+-- 的 DROP 守卫），两增量脚本已移除，本目录仅保留本文件一个 SQL。
 -- 全新初始化无需再执行任何增量升级脚本；原增量脚本中“旧库历史订单明细
 -- 迁移”语句仅服务于已存在数据的旧库，不属于全量重建范围，故不纳入。
 -- 对账功能：旧自动拉单式对账三表（t_reconciliation_batch/detail/discrepancy）
 -- 已废弃，仅保留 DROP 守卫块清理遗留库，不再重建；新对账为“微信交易账单
 -- 上传式对账”，使用 t_bill_import / t_bill_record /
 -- t_bill_reconcile_discrepancy 三张表。
+-- V1 库存操作日志表 t_stock_operation_log 同已废弃，仅保留 DROP 守卫块
+-- 清理遗留库（含全量重建场景），不再重建；存量库如需单独清理，手动执行
+-- DROP TABLE t_stock_operation_log CASCADE; 即可。
 -- 运行方式：docker compose 启动 DM8 后执行 env/scripts/dm8/init-dm8-sql.sh，
 --           该脚本会按文件名顺序执行 env/sql/dm8 下的 *.sql。
 -- 默认连接用户：SYSDBA；默认 schema：SYSDBA。
@@ -35,36 +41,35 @@
 
 -- ----------------------------
 -- Drop tables in dependency-safe order.
--- 直接 DDL（非 PL/SQL），每条 ; 结尾，DM Manager 不会拆散。
--- 首次执行时表不存在会报错，请在 DM Manager 设置"出错时继续"：
---   工具 > 选项 > SQL执行 > 出错时 继续。
+-- 直接 DDL（非 PL/SQL），每条 ; 结尾；使用 IF EXISTS，首次执行及重复执行均不会因表不存在报错。
 -- ----------------------------
-DROP TABLE t_order_shipment CASCADE;
-DROP TABLE t_inventory_transaction CASCADE;
-DROP TABLE t_stock_import CASCADE;
-DROP TABLE t_inventory_reservation CASCADE;
-DROP TABLE t_payment_order CASCADE;
-DROP TABLE t_refund_item CASCADE;
-DROP TABLE t_refund_order CASCADE;
-DROP TABLE t_schema_migration CASCADE;
-DROP TABLE t_refund_apply_item CASCADE;
-DROP TABLE t_refund_apply CASCADE;
-DROP TABLE t_stock_operation_log CASCADE;
-DROP TABLE t_order_item CASCADE;
-DROP TABLE t_password_reset_request CASCADE;
-DROP TABLE t_user CASCADE;
-DROP TABLE t_refund_info CASCADE;
-DROP TABLE t_payment_info CASCADE;
-DROP TABLE t_order_info CASCADE;
-DROP TABLE t_payment_app CASCADE;
-DROP TABLE t_product CASCADE;
-DROP TABLE t_payment_channel CASCADE;
-DROP TABLE t_reconciliation_discrepancy CASCADE;
-DROP TABLE t_reconciliation_detail CASCADE;
-DROP TABLE t_reconciliation_batch CASCADE;
-DROP TABLE t_bill_reconcile_discrepancy CASCADE;
-DROP TABLE t_bill_record CASCADE;
-DROP TABLE t_bill_import CASCADE;
+DROP TABLE IF EXISTS t_local_message CASCADE;
+DROP TABLE IF EXISTS t_order_shipment CASCADE;
+DROP TABLE IF EXISTS t_inventory_transaction CASCADE;
+DROP TABLE IF EXISTS t_stock_import CASCADE;
+DROP TABLE IF EXISTS t_inventory_reservation CASCADE;
+DROP TABLE IF EXISTS t_payment_order CASCADE;
+DROP TABLE IF EXISTS t_refund_item CASCADE;
+DROP TABLE IF EXISTS t_refund_order CASCADE;
+DROP TABLE IF EXISTS t_schema_migration CASCADE;
+DROP TABLE IF EXISTS t_refund_apply_item CASCADE;
+DROP TABLE IF EXISTS t_refund_apply CASCADE;
+DROP TABLE IF EXISTS t_order_item CASCADE;
+DROP TABLE IF EXISTS t_password_reset_request CASCADE;
+DROP TABLE IF EXISTS t_user CASCADE;
+DROP TABLE IF EXISTS t_refund_info CASCADE;
+DROP TABLE IF EXISTS t_payment_info CASCADE;
+DROP TABLE IF EXISTS t_order_info CASCADE;
+DROP TABLE IF EXISTS t_payment_app CASCADE;
+DROP TABLE IF EXISTS t_product CASCADE;
+DROP TABLE IF EXISTS t_payment_channel CASCADE;
+DROP TABLE IF EXISTS t_reconciliation_discrepancy CASCADE;
+DROP TABLE IF EXISTS t_reconciliation_detail CASCADE;
+DROP TABLE IF EXISTS t_reconciliation_batch CASCADE;
+DROP TABLE IF EXISTS t_stock_operation_log CASCADE;
+DROP TABLE IF EXISTS t_bill_reconcile_discrepancy CASCADE;
+DROP TABLE IF EXISTS t_bill_record CASCADE;
+DROP TABLE IF EXISTS t_bill_import CASCADE;
 
 -- ----------------------------
 -- t_payment_channel 支付渠道配置表
@@ -120,7 +125,7 @@ CREATE OR REPLACE TRIGGER trg_payment_channel_uptime
 BEFORE UPDATE ON t_payment_channel
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -159,7 +164,7 @@ CREATE OR REPLACE TRIGGER trg_payment_app_uptime
 BEFORE UPDATE ON t_payment_app
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -237,7 +242,7 @@ CREATE OR REPLACE TRIGGER trg_order_info_uptime
 BEFORE UPDATE ON t_order_info
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -276,7 +281,7 @@ CREATE OR REPLACE TRIGGER trg_payment_info_uptime
 BEFORE UPDATE ON t_payment_info
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -290,6 +295,7 @@ CREATE TABLE t_product (
   available_stock INT DEFAULT 100 NOT NULL,
   locked_stock INT DEFAULT 0 NOT NULL,
   sold_stock INT DEFAULT 0 NOT NULL,
+  lost_stock INT DEFAULT 0 NOT NULL,
   product_status VARCHAR(16) DEFAULT 'ENABLED' NOT NULL,
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -303,13 +309,14 @@ COMMENT ON COLUMN t_product.price IS '售价(分)';
 COMMENT ON COLUMN t_product.available_stock IS '可用库存：可被下单预占的数量';
 COMMENT ON COLUMN t_product.locked_stock IS '锁定库存：下单预占未结转的数量（支付后保持锁定，确认收货结转已售/退款释放）';
 COMMENT ON COLUMN t_product.sold_stock IS '已售库存：确认收货结转的数量（已售退款回补时扣减）';
+COMMENT ON COLUMN t_product.lost_stock IS '丢失/货损库存：仅退款不退货核销的数量（locked/sold 转入，货物不回仓）';
 COMMENT ON COLUMN t_product.product_status IS '商品状态：ENABLED/DISABLED';
 
 CREATE OR REPLACE TRIGGER trg_product_uptime
 BEFORE UPDATE ON t_product
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -359,7 +366,7 @@ CREATE OR REPLACE TRIGGER trg_refund_info_uptime
 BEFORE UPDATE ON t_refund_info
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -416,7 +423,7 @@ CREATE OR REPLACE TRIGGER trg_password_reset_uptime
 BEFORE UPDATE ON t_password_reset_request
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -545,30 +552,6 @@ COMMENT ON COLUMN t_refund_item.legacy_stock_returned IS 'V1 旧已回补库存�
 COMMENT ON COLUMN t_refund_item.status IS '明细状态（随退款单主状态流转）';
 
 -- ----------------------------
--- t_stock_operation_log MQ 幂等/死信人工重放
--- ----------------------------
-CREATE TABLE t_stock_operation_log (
-  id BIGINT IDENTITY(1, 1) NOT NULL,
-  biz_no VARCHAR(100) NOT NULL,
-  order_no VARCHAR(50),
-  refund_no VARCHAR(50),
-  operation_type VARCHAR(20) NOT NULL,
-  operation_status VARCHAR(30) NOT NULL,
-  retry_count INT DEFAULT 0 NOT NULL,
-  payload CLOB,
-  error_message VARCHAR(1000),
-  create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT pk_stock_operation_log PRIMARY KEY (id),
-  CONSTRAINT uk_stock_operation_biz UNIQUE (biz_no)
-);
-CREATE INDEX idx_stock_operation_order_no ON t_stock_operation_log(order_no);
-CREATE INDEX idx_stock_operation_refund_no ON t_stock_operation_log(refund_no);
-CREATE INDEX idx_stock_operation_status ON t_stock_operation_log(operation_status);
-
-COMMENT ON TABLE t_stock_operation_log IS '库存操作日志（V2 起交易链路不再写入，仅保留历史审计与 MQ 幂等记录结构）';
-
--- ----------------------------
 -- t_payment_order 支付单（V2：本地订单 1:N 渠道支付尝试）
 -- 一个业务订单允许多次支付尝试，但只允许一笔有效成交支付（SUCCESS）；
 -- 其余成功支付进入 DUPLICATE_PAYMENT/LATE_PAYMENT 自动原路退款。
@@ -667,6 +650,7 @@ CREATE TABLE t_inventory_transaction (
   available_delta INT NOT NULL,
   locked_delta INT NOT NULL,
   sold_delta INT DEFAULT 0 NOT NULL,
+  lost_delta INT DEFAULT 0 NOT NULL,
   operation_status VARCHAR(16) DEFAULT 'SUCCESS' NOT NULL,
   error_message VARCHAR(500),
   create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -682,7 +666,7 @@ CREATE INDEX idx_inventory_tx_status_time ON t_inventory_transaction(operation_s
 COMMENT ON TABLE t_inventory_transaction IS '库存流水：每次预占/提交/释放/回补/手工调整落一条，biz_no 唯一保证幂等；失败申请也记录（不改变库存）';
 COMMENT ON COLUMN t_inventory_transaction.id IS '流水id';
 COMMENT ON COLUMN t_inventory_transaction.biz_no IS '幂等业务号：TYPE:orderNo:itemId 或 REFUND_RESTOCK:refundNo:itemId 或 MANUAL_ADJUST:productId:UUID';
-COMMENT ON COLUMN t_inventory_transaction.biz_type IS '流水类型：ORDER_RESERVE-下单预占，ORDER_COMMIT-支付提交（数量不变），ORDER_SOLD-确认收货结转已售，ORDER_RELEASE-关单释放，REFUND_RESTOCK-退款回补，MANUAL_ADJUST-管理员手工调整';
+COMMENT ON COLUMN t_inventory_transaction.biz_type IS '流水类型：ORDER_RESERVE-下单预占，ORDER_COMMIT-支付提交（数量不变），ORDER_SOLD-确认收货结转已售，ORDER_RELEASE-关单释放，REFUND_RESTOCK-退款回补，REFUND_LOST-仅退款货损核销，MANUAL_ADJUST-管理员手工调整';
 COMMENT ON COLUMN t_inventory_transaction.order_no IS '关联订单号';
 COMMENT ON COLUMN t_inventory_transaction.order_item_id IS '关联订单明细id';
 COMMENT ON COLUMN t_inventory_transaction.refund_no IS '关联退款单号（回补时）';
@@ -820,7 +804,7 @@ CREATE OR REPLACE TRIGGER trg_bill_import_uptime
 BEFORE UPDATE ON t_bill_import
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -877,7 +861,7 @@ CREATE OR REPLACE TRIGGER trg_bill_record_uptime
 BEFORE UPDATE ON t_bill_record
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -934,7 +918,7 @@ CREATE OR REPLACE TRIGGER trg_bill_reconcile_discrepancy_uptime
 BEFORE UPDATE ON t_bill_reconcile_discrepancy
 FOR EACH ROW
 BEGIN
-  :NEW.update_time = CURRENT_TIMESTAMP;
+  :NEW.update_time := CURRENT_TIMESTAMP;
 END;
 /
 
@@ -997,7 +981,7 @@ COMMIT;
 -- PART 2  省市区基础数据（t_region + 全国三级行政区划数据）
 -- ===============================================================
 
-DROP TABLE t_region CASCADE;
+DROP TABLE IF EXISTS t_region CASCADE;
 -- 省市区基础数据表：三级区域树（公共只读）
 CREATE TABLE t_region (
   id         BIGINT IDENTITY(1, 1) NOT NULL,
@@ -4446,7 +4430,7 @@ INSERT INTO t_region (parent_id, code, name, level, sort) VALUES ( 3417, '659012
 -- PART 3  用户收货地址表（t_shipping_address）
 -- ===============================================================
 
-DROP TABLE t_shipping_address CASCADE;
+DROP TABLE IF EXISTS t_shipping_address CASCADE;
 -- 用户收货地址表：支持多地址 + 默认地址 + 省市区三级
 CREATE TABLE t_shipping_address (
   id             BIGINT IDENTITY(1, 1) NOT NULL,
@@ -4463,3 +4447,6 @@ CREATE TABLE t_shipping_address (
   CONSTRAINT pk_ssa PRIMARY KEY (id)
 );
 CREATE INDEX idx_ssa_user ON t_shipping_address(user_id);
+
+-- 初始化完成后显式提交数据
+COMMIT;

@@ -1,7 +1,5 @@
 import request from '@/utils/request'
 export default {
-  list: () => request.get('/api/admin/stock/operations'),
-  replay: (id) => request.post(`/api/admin/stock/operations/${id}/replay`),
   products: () => request.get('/api/admin/products'),
   getProduct: (id) => request.get(`/api/admin/products/${id}`),
   createProduct: (data) => request.post('/api/admin/products', data),

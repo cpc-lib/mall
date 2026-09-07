@@ -2,8 +2,6 @@ package cc.ivera.controller;
 
 import cc.ivera.dto.admin.StockImportCreateRequest;
 import cc.ivera.dto.admin.StockImportFileSaveRequest;
-import cc.ivera.entity.StockOperationLog;
-import cc.ivera.mapper.StockOperationLogMapper;
 import cc.ivera.service.ProductStockService;
 import cc.ivera.service.StockImportService;
 import cc.ivera.vo.BatchAdjustResultVO;
@@ -11,29 +9,22 @@ import cc.ivera.vo.InventoryTransactionVO;
 import cc.ivera.vo.PageVO;
 import cc.ivera.vo.R;
 import cc.ivera.vo.StockImportVO;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import io.swagger.annotations.ApiOperation;
 import org.springframework.web.bind.annotation.*;
 import javax.validation.Valid;
 import java.util.List;
 
 /**
- * 库存操作历史审计查询。
- * V2 起交易链路不再写入 t_stock_operation_log（库存动作改为 InventoryService 本地事务 + 流水表），
- * 本接口仅保留历史数据查看能力；MQ 重放入口随库存 MQ 链路一并退役。
  * 库存流水分页查询走 V2 流水表 t_inventory_transaction。
  * V5 起：Excel 批量库存导入记录（文件存后端目录：创建 / 列表 / 读取文件 / 保存编辑 / 确认入库）。
  */
 @RestController @RequestMapping("/api/admin/stock") @CrossOrigin
 public class StockAdminController {
-    private final StockOperationLogMapper mapper;
     private final ProductStockService productStockService;
     private final StockImportService stockImportService;
-    public StockAdminController(StockOperationLogMapper mapper, ProductStockService productStockService,
-                                StockImportService stockImportService){
-        this.mapper=mapper; this.productStockService=productStockService; this.stockImportService=stockImportService;
+    public StockAdminController(ProductStockService productStockService, StockImportService stockImportService){
+        this.productStockService=productStockService; this.stockImportService=stockImportService;
     }
-    @GetMapping("/operations") public R<List<StockOperationLog>> list(){return R.ok(mapper.selectList(new QueryWrapper<StockOperationLog>().orderByDesc("create_time")));}
 
     @ApiOperation("库存流水分页查询（可按商品/类型/状态过滤）")
     @GetMapping("/transactions")

@@ -8,7 +8,6 @@ const AdminOrders = lazy(() => import('./pages/AdminOrders.jsx'))
 const AdminShipping = lazy(() => import('./pages/AdminShipping.jsx'))
 const AdminProducts = lazy(() => import('./pages/AdminProducts.jsx'))
 const AdminRefunds = lazy(() => import('./pages/AdminRefunds.jsx'))
-const AdminMqLogs = lazy(() => import('./pages/AdminMqLogs.jsx'))
 const AdminResetRequests = lazy(() => import('./pages/AdminResetRequests.jsx'))
 const AdminResetPassword = lazy(() => import('./pages/AdminResetPassword.jsx'))
 const StockMaintenance = lazy(() => import('./pages/StockMaintenance.jsx'))
@@ -34,7 +33,6 @@ export default function App() {
           <Route path="shipping" element={<AdminShipping />} />
           <Route path="products" element={<AdminProducts />} />
           <Route path="refunds" element={<AdminRefunds />} />
-          <Route path="mq-logs" element={<AdminMqLogs />} />
           <Route path="users" element={<UserList />} />
           <Route path="reset-requests" element={<AdminResetRequests />} />
           <Route path="reset-password" element={<AdminResetPassword />} />

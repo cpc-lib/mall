@@ -22,8 +22,7 @@ import java.util.*;
 
 /**
  * 管理员商品管理：新增商品 / 商品详情 / 库存调整（单条+批量）/ 上下架。
- * 库存调整与商品详情日志统一走 V2 库存流水表 t_inventory_transaction
- * （旧 t_stock_operation_log 自 V2 起仅为历史审计，交易链路不再写入）。
+ * 库存调整与商品详情日志统一走 V2 库存流水表 t_inventory_transaction。
  */
 @RestController @RequestMapping("/api/admin/products") @CrossOrigin
 @Validated

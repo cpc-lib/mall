@@ -248,7 +248,8 @@ flowchart TD
     C -->|"REFUND_ONLY 仅退款"| RO{是否已确认收货?}
     RO -->|"未收货(SHIPPED)<br/>货不回仓"| RP["writeOffLostForRefund<br/>locked-=qty, lost+=qty<br/>写 REFUND_LOST 流水(bizNo 幂等)"]
     RP --> H
-    RO -->|"已收货(RECEIVED)<br/>瑕疵补偿 货留用户"| L[不动库存 直接发起渠道退款]
+    RO -->|"已收货(RECEIVED)<br/>瑕疵补偿 货留用户"| RQ["writeOffLostForRefund<br/>sold-=qty, lost+=qty<br/>写 REFUND_LOST 流水(bizNo 幂等)"]
+    RQ --> H
     C -->|PRICE_ADJUSTMENT 差价| L
     C -->|用户撤销 / 管理员拒绝| M[仅释放三层冻结额度 不动库存]
     N["系统冲正 ExceptionRefundService<br/>(免审 不占售后额度)"] --> O["DUPLICATE_PAYMENT / LATE_PAYMENT<br/>原路退款 不补库存"]
@@ -325,18 +326,17 @@ flowchart TB
 | `releaseReservation` 关单释放 | 订单 CAS NOTPAY→CLOSED + 关闭活跃支付单 | `casTransition(LOCKED→RELEASED)` + 败者状态复核；流水 UK | 已 RELEASED 幂等返回；遇 COMMITTED 抛错（已成交不可释放）；无记录放行 |
 | `convertToSoldOnReceipt` 收货结转 | 物流 CAS SHIPPED/IN_TRANSIT/DELIVERED→RECEIVED（用户主动确认即签收） | `biz_no` 预检（ORDER_SOLD:orderNo:itemId）+ 结转数量 quantity-restockedQty + `commitSoldStock` 条件 UPDATE + 流水 UK | 已结转跳过；锁定不足仅告警不阻塞收货（旧模型兼容） |
 | `restockForRefund` 退款回补 | 退款单行锁 + 状态机（受理/签收各一次） | `biz_no` 预检（REFUND_RESTOCK:refundNo:itemId）+ `addRestockedQty` 上限守卫 + 流水 UK | 已回补跳过；超「已退+冻结」上限抛错（防超补） |
-| `writeOffLostForRefund` 仅退款货损核销 | 退款单行锁 + 受理状态机（REFUND_ONLY 未收货） | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
+| `writeOffLostForRefund` 仅退款货损核销 | 退款单行锁 + 受理状态机（REFUND_ONLY 未收货/已收货） | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock`/`writeOffSoldLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定/已售不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
 | `insertTransaction` 流水落库 | — | `uk(biz_no)` + DuplicateKeyException 捕获 | 重复流水跳过并留日志（审计终态兜底） |
 
 **要点**
 
 - **防超卖根闸门**：`ProductMapper.reserveStock` 条件 UPDATE（`WHERE available_stock >= qty`）；库存不足时**下单整体回滚**（订单不会产生），而非下单后扣减失败再退款
 - **支付成功不动库存数量**：仅预占状态 LOCKED→COMMITTED，库存保持锁定；已售结转延迟到确认收货（`commitSoldStock`：locked→sold），为退款处理留出「未收货时库存仍在锁定桶」的通道
-- **退款库存分三条路径**：① 未发货取消 / 退货退款 → **回补**（`restockForRefund`，未收货 locked→available、已收货 sold→available，货物回仓可再售）；② 仅退款未收货 → **核销货损**（`writeOffLostForRefund`：locked→lost，仅退款不退货，货物不回仓）；③ 仅退款已收货 / 差价 / 系统冲正 → **不动库存**（货权已转移或资金侧处理）
+- **退款库存分三条路径**：① 未发货取消 / 退货退款签收 → **回补**（`restockForRefund`，未收货 locked→available、已收货签收 sold→available，货物回仓可再售）；② 仅退款（不退货）→ **核销货损**（`writeOffLostForRefund` 按履约状态分流：未收货 locked→lost、已收货 sold→lost，货物不回仓计入 lost_stock）；③ 差价 / 系统冲正 → **不动库存**（资金侧处理）
 - **`biz_no` 是全链路幂等锚**：格式 `TYPE:orderNo/refundNo:itemId`，预检 selectCount + insert 时 UK 捕获双重防护，即使预检与插入之间存在并发窗口也被 UK 兜底
 - **MQ 重投安全**：关单消费者与 Outbox 重投（`LocalMessageSendJob` 每 30s 重扫 PENDING）依赖上述幂等——消息重复投递不产生重复库存动作
 - `t_inventory_transaction`：库存流水（bizType：ORDER_RESERVE/ORDER_COMMIT/ORDER_SOLD/ORDER_RELEASE/REFUND_RESTOCK/REFUND_LOST/MANUAL_ADJUST；operationStatus=FAILED 仅用于管理员手工调整申请被拒绝的留痕，库存不变）
-- `t_stock_operation_log`：库存操作日志（业务类型 `InventoryBizType`：下单/支付/退款/手工调整/Excel 入库等）
 - 重复支付/晚到支付冲正由 `PaymentSuccessService` 在支付成功链路自动触发；`OVER_SOLD` 熔断入口（`ExceptionRefundService.trigger`）为旧模型在途单兼容保留，当前交易链路无调用方
 
 ### 3.5 订单履约与退款
@@ -346,7 +346,7 @@ flowchart TB
 - 用户端：查看物流时间线、确认收货；已付款未发货取消订单自动生成退款申请
 - 管理端：模拟发货、强制关单、退款受理
 - **退款单模型**（RefundOrder/RefundItem，区别于渠道退款记录 t_refund_info）：
-  - 类型 `RefundType`（6 种）：未发货取消（受理后自动回补 locked→available）、退货退款（签收质检后回补 sold→available）、仅退款（未收货核销货损 locked→lost，已收货不动库存）、差价退款（管理员发起手填金额，不动库存）、重复支付/晚到支付自动原路退款（`ExceptionRefundService` 系统冲正，不占售后额度）
+  - 类型 `RefundType`（6 种）：未发货取消（受理后自动回补 locked→available）、退货退款（签收质检后回补 sold→available）、仅退款（核销货损：未收货 locked→lost、已收货 sold→lost）、差价退款（管理员发起手填金额，不动库存）、重复支付/晚到支付自动原路退款（`ExceptionRefundService` 系统冲正，不占售后额度）
   - 状态 `RefundOrderStatus`：APPLYING（待审核，可编辑/撤销）→ 受理后冻结额度 → 审核/退货签收 → 渠道退款 → SUCCESS/FAILED
   - **防超退**：受理即冻结可退额度，前端 `refundQuota.js` 与后端 `RefundPolicy` 双重核算；最后一件吃尾差，金额以服务端为准
 
@@ -437,7 +437,6 @@ flowchart TB
 | `OrderShipment` | `t_order_shipment` | 发货单（运单号/物流时间线） |
 | `InventoryReservation` | `t_inventory_reservation` | 库存预占（LOCKED/COMMITTED/RELEASED） |
 | `InventoryTransaction` | `t_inventory_transaction` | 库存流水（available/locked/sold/lost 四桶 delta，含 FAILED 记录） |
-| `StockOperationLog` | `t_stock_operation_log` | 库存操作日志（业务类型） |
 | `StockImport` | `t_stock_import` | Excel 导入记录（storage_type/file_path） |
 | `RefundOrder` / `RefundItem` | `t_refund_order` / `t_refund_item` | 退款单/退款明细（冻结额度防超退） |
 | `RefundInfo` | `t_refund_info` | 渠道退款记录（refund 分） |
@@ -585,7 +584,6 @@ flowchart TB
 | 订单发货 | `/admin/shipping` | 待发货列表、模拟发货 |
 | 商品库存 | `/admin/products` | 商品 CRUD、库存调整（单个/批量）、上下架、详情抽屉 |
 | 退款受理 | `/admin/refunds` | 退款列表、受理/拒绝/退货签收/渠道重试/状态查询/差价退款 |
-| MQ/库存异常 | `/admin/mq-logs` | 库存操作异常记录、死信重放 |
 | 用户列表 | `/admin/users` | 分页搜索、禁用启用、用户详情 |
 | 密码重置申请 | `/admin/reset-requests` | 找回密码申请受理/拒绝 |
 | 重置用户密码 | `/admin/reset-password` | 按用户直接重置（随机密码仅展示一次） |
