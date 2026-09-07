@@ -43,4 +43,12 @@ public interface InventoryService {
      * restocked+qty 不得超过 已退+冻结 上限；是否回补由退款类型策略决定，调用方只传需要回补的明细。
      */
     void restockForRefund(String refundNo, List<RefundItem> items, boolean afterReceipt);
+
+    /**
+     * 仅退款核销货损（货物不回仓，计入丢失库存），来源桶按订单是否已确认收货分流——
+     * 未收货（afterReceipt=false）：locked-=qty, lost+=qty（货仍在锁定桶）；
+     * 已收货（afterReceipt=true）：sold-=qty, lost+=qty（货已结转售出桶，留用户不退回）。
+     * restocked_qty 同步累加做超核销守卫；以流水 bizNo（REFUND_LOST:refundNo:itemId）保证幂等。
+     */
+    void writeOffLostForRefund(String refundNo, List<RefundItem> items, boolean afterReceipt);
 }

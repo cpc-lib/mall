@@ -150,13 +150,21 @@ public class ShipmentServiceImpl implements ShipmentService {
             log.info("订单已确认收货，幂等返回，orderNo={}", orderNo);
             return;
         }
-        if (!ShipmentStatus.DELIVERED.getType().equals(shipment.getStatus())) {
-            throw new BizException("物流尚未送达，不能确认收货，orderNo=" + orderNo);
+        // 已发货即可确认收货，不强制等待物流送达（模拟环境中用户主动确认即视为签收）
+        if (!ShipmentStatus.SHIPPED.getType().equals(shipment.getStatus())
+                && !ShipmentStatus.IN_TRANSIT.getType().equals(shipment.getStatus())
+                && !ShipmentStatus.DELIVERED.getType().equals(shipment.getStatus())) {
+            throw new BizException("物流状态不允许确认收货，orderNo=" + orderNo);
         }
 
-        // 物流单 CAS：DELIVERED → RECEIVED。
-        int cas = orderShipmentMapper.casShipmentStatus(shipment.getTrackingNo(),
-                ShipmentStatus.DELIVERED.getType(), ShipmentStatus.RECEIVED.getType(), "receivedTime");
+        // 物流单 CAS：SHIPPED/IN_TRANSIT/DELIVERED → RECEIVED（用户主动确认即视为签收）。
+        int cas = orderShipmentMapper.update(null, new UpdateWrapper<OrderShipment>()
+                .eq("tracking_no", shipment.getTrackingNo())
+                .in("status", ShipmentStatus.SHIPPED.getType(),
+                        ShipmentStatus.IN_TRANSIT.getType(),
+                        ShipmentStatus.DELIVERED.getType())
+                .set("status", ShipmentStatus.RECEIVED.getType())
+                .set("received_time", new Date()));
         if (cas == 0) {
             throw new BizException("确认收货失败：物流状态已被并发变更，orderNo=" + orderNo);
         }

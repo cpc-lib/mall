@@ -92,8 +92,12 @@ public class ProductStockServiceImpl implements ProductStockService {
         vo.setOperationType(t.getBizType());
         vo.setOperationStatus(t.getOperationStatus() == null ? "SUCCESS" : t.getOperationStatus());
         vo.setOrderNo(t.getOrderNo());
+        vo.setRefundNo(t.getRefundNo());
+        vo.setProductId(t.getProductId());
         vo.setAvailableDelta(t.getAvailableDelta());
         vo.setLockedDelta(t.getLockedDelta());
+        vo.setSoldDelta(t.getSoldDelta());
+        vo.setLostDelta(t.getLostDelta());
         vo.setErrorMessage(t.getErrorMessage());
         vo.setCreateTime(t.getCreateTime());
         return vo;

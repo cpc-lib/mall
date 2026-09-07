@@ -61,4 +61,24 @@
           and sold_stock &gt;= #{quantity}
     </update>
 
+    <!-- 仅退款未收货核销货损：锁定转丢失，锁定不足则 affectedRows=0 -->
+    <update id="writeOffLostStock">
+        update t_product
+        set locked_stock = locked_stock - #{quantity},
+            lost_stock = lost_stock + #{quantity},
+            update_time = CURRENT_TIMESTAMP
+        where id = #{id}
+          and locked_stock &gt;= #{quantity}
+    </update>
+
+    <!-- 仅退款已收货核销货损：已售转丢失（货留用户不回仓），已售不足则 affectedRows=0 -->
+    <update id="writeOffSoldLostStock">
+        update t_product
+        set sold_stock = sold_stock - #{quantity},
+            lost_stock = lost_stock + #{quantity},
+            update_time = CURRENT_TIMESTAMP
+        where id = #{id}
+          and sold_stock &gt;= #{quantity}
+    </update>
+
 </mapper>

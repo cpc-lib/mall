@@ -19,5 +19,7 @@ public class Product extends BaseEntity {
 
     private Integer soldStock; //已售库存：确认收货结转的数量（已售退款回补时扣减）
 
+    private Integer lostStock; //丢失/货损库存：仅退款未收货核销的数量（locked 转入，货物不回仓）
+
     private String productStatus; //ENABLED / DISABLED
 }

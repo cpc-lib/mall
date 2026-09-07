@@ -20,9 +20,17 @@ public class InventoryTransactionVO {
 
     private String orderNo;
 
+    private String refundNo;
+
+    private Long productId;
+
     private Integer availableDelta;
 
     private Integer lockedDelta;
+
+    private Integer soldDelta;
+
+    private Integer lostDelta;
 
     private String errorMessage;
 

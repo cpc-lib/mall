@@ -26,6 +26,9 @@ public enum InventoryBizType {
     /** 退款回补：locked/sold 归还 available（来源桶按订单是否已确认收货分流） */
     REFUND_RESTOCK("REFUND_RESTOCK"),
 
+    /** 仅退款未收货核销货损：locked-=qty, lost+=qty（货物不回仓，计入丢失库存） */
+    REFUND_LOST("REFUND_LOST"),
+
     /** 管理员手工库存调整（补货/扣减）：available±delta，biz_no = MANUAL_ADJUST:productId:UUID */
     MANUAL_ADJUST("MANUAL_ADJUST");
 

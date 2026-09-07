@@ -11,6 +11,12 @@ export default function AdminProducts() {
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [drawerDelta, setDrawerDelta] = useState(null)
+  const [logs, setLogs] = useState([])
+  const [logPage, setLogPage] = useState(1)
+  const [logTotal, setLogTotal] = useState(0)
+  const [logLoading, setLogLoading] = useState(false)
+
+  const LOG_PAGE_SIZE = 8
 
   const loadProducts = () => { stockApi.products().then(r => setProducts(r.data || [])) }
   useEffect(loadProducts, [])
@@ -21,7 +27,19 @@ export default function AdminProducts() {
     catch (e) { message.error('加载失败') }
     finally { setDetailLoading(false) }
   }
-  useEffect(() => { if (detailId) { setDetail(null); setDrawerDelta(null); loadDetail() } }, [detailId])
+  const loadLogs = async (page = 1) => {
+    if (!detailId) return
+    setLogLoading(true)
+    try {
+      const res = await stockApi.transactions({ page, size: LOG_PAGE_SIZE, productId: detailId })
+      setLogs(res.data?.records || [])
+      setLogTotal(res.data?.total || 0)
+      setLogPage(page)
+    }
+    catch (e) { message.error('库存流水加载失败') }
+    finally { setLogLoading(false) }
+  }
+  useEffect(() => { if (detailId) { setDetail(null); setDrawerDelta(null); setLogs([]); loadDetail(); loadLogs(1) } }, [detailId])
 
   const openDetail = p => setDetailId(p.id)
   const adjustStock = async (p, delta) => {
@@ -34,7 +52,7 @@ export default function AdminProducts() {
   const p = detail?.product
   const drawerAdjust = async () => {
     if (!drawerDelta || drawerDelta === 0) return message.warning('请输入调整量')
-    try { await stockApi.adjustStock(detailId, drawerDelta); message.success('库存已调整'); setDrawerDelta(null); await loadDetail(); loadProducts() }
+    try { await stockApi.adjustStock(detailId, drawerDelta); message.success('库存已调整'); setDrawerDelta(null); await loadDetail(); loadProducts(); loadLogs(1) }
     catch (e) { message.error(e.response?.data?.message || '调整失败') }
   }
   const drawerToggle = async () => {
@@ -50,17 +68,27 @@ export default function AdminProducts() {
     { title: '可用库存', dataIndex: 'stock', width: 90 },
     { title: '锁定库存', dataIndex: 'lockedStock', width: 90 },
     { title: '已售库存', dataIndex: 'soldStock', width: 90 },
+    { title: '丢失库存', dataIndex: 'lostStock', width: 90, render: v => <Tag color={v > 0 ? 'orange' : 'default'}>{v || 0}</Tag> },
     { title: '状态', dataIndex: 'productStatus', width: 90, render: v => <Tag color={v === 'ENABLED' ? 'green' : 'default'}>{v}</Tag> },
     { title: '库存调整', width: 220, render: (_, p) => <Space><InputNumber value={stockDelta[p.id]} placeholder="±数量" onChange={v2 => setStockDelta(s => ({ ...s, [p.id]: v2 }))} style={{ width: 110 }} /><Button type="primary" onClick={() => adjustStock(p, stockDelta[p.id])}>确认调整</Button></Space> },
     { title: '上下架', width: 150, render: (_, p) => <Button onClick={() => setStatus(p, p.productStatus === 'ENABLED' ? 'DISABLED' : 'ENABLED')}>{p.productStatus === 'ENABLED' ? '下架' : '上架'}</Button> }
   ]
+  const BIZ_TYPE_LABEL = {
+    MANUAL_ADJUST: '手工调整', ORDER_RESERVE: '下单预占', ORDER_COMMIT: '支付提交',
+    ORDER_SOLD: '确认收货结转', ORDER_RELEASE: '关单释放', REFUND_RESTOCK: '退款回补', REFUND_LOST: '仅退款货损'
+  }
+  const deltaCell = v => v == null || v === 0
+    ? <span style={{ color: '#bfbfbf' }}>-</span>
+    : <span style={{ color: v > 0 ? '#52c41a' : '#f5222d' }}>{v > 0 ? `+${v}` : v}</span>
   const logCols = [
-    { title: '时间', dataIndex: 'createTime', width: 165, render: v => v ? new Date(v).toLocaleString() : '-' },
-    { title: '业务单号', dataIndex: 'bizNo', width: 210, ellipsis: true },
-    { title: '类型', dataIndex: 'operationType', width: 130 },
-    { title: '状态', dataIndex: 'operationStatus', width: 80, render: v => <Tag color={v === 'SUCCESS' ? 'green' : v === 'NEED_MANUAL' ? 'red' : 'orange'}>{v}</Tag> },
-    { title: '调整量', dataIndex: 'availableDelta', width: 80, render: v => v == null ? '-' : <span style={{ color: v > 0 ? '#52c41a' : v < 0 ? '#f5222d' : '#8c8c8c' }}>{v > 0 ? `+${v}` : v}</span> },
-    { title: '关联订单', dataIndex: 'orderNo', ellipsis: true }
+    { title: '时间', dataIndex: 'createTime', width: 150, render: v => v ? new Date(v).toLocaleString() : '-' },
+    { title: '类型', dataIndex: 'operationType', width: 104, render: v => BIZ_TYPE_LABEL[v] || v },
+    { title: '状态', dataIndex: 'operationStatus', width: 66, render: v => <Tag color={v === 'SUCCESS' ? 'green' : 'red'}>{v === 'SUCCESS' ? '成功' : v}</Tag> },
+    { title: '可用', dataIndex: 'availableDelta', width: 52, align: 'center', render: deltaCell },
+    { title: '锁定', dataIndex: 'lockedDelta', width: 52, align: 'center', render: deltaCell },
+    { title: '已售', dataIndex: 'soldDelta', width: 52, align: 'center', render: deltaCell },
+    { title: '丢失', dataIndex: 'lostDelta', width: 52, align: 'center', render: v => v ? <Tag color="orange" style={{ margin: 0 }}>{v > 0 ? `+${v}` : v}</Tag> : <span style={{ color: '#bfbfbf' }}>-</span> },
+    { title: '业务单号', dataIndex: 'bizNo', ellipsis: true }
   ]
 
   return <div>
@@ -78,6 +106,7 @@ export default function AdminProducts() {
           <Descriptions.Item label="可用库存">{p.stock}</Descriptions.Item>
           <Descriptions.Item label="锁定库存">{p.lockedStock}</Descriptions.Item>
           <Descriptions.Item label="已售库存">{p.soldStock}</Descriptions.Item>
+          <Descriptions.Item label="丢失库存">{p.lostStock || 0}</Descriptions.Item>
           <Descriptions.Item label="创建时间">{p.createTime ? new Date(p.createTime).toLocaleString() : '-'}</Descriptions.Item>
           <Descriptions.Item label="更新时间">{p.updateTime ? new Date(p.updateTime).toLocaleString() : '-'}</Descriptions.Item>
         </Descriptions>
@@ -87,8 +116,9 @@ export default function AdminProducts() {
           <Button type="primary" onClick={drawerAdjust}>确认调整</Button>
           <Button danger={p.productStatus === 'ENABLED'} onClick={drawerToggle}>{p.productStatus === 'ENABLED' ? '下架' : '上架'}</Button>
         </Space>
-        <h4>库存操作日志（最近20条）</h4>
-        <Table rowKey="id" dataSource={detail.logs || []} columns={logCols} pagination={false} size="small" />
+        <h4>库存操作流水</h4>
+        <Table rowKey="id" dataSource={logs} columns={logCols} size="small" loading={logLoading}
+          pagination={{ current: logPage, pageSize: LOG_PAGE_SIZE, total: logTotal, onChange: p => loadLogs(p), showTotal: t => `共 ${t} 条`, size: 'small' }} />
       </div>}
     </Drawer>
     <Drawer open={pcVisible} width={480} onClose={() => setPcVisible(false)} title="新增商品"

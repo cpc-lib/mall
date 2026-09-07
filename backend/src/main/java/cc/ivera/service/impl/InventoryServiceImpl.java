@@ -207,8 +207,50 @@ public class InventoryServiceImpl implements InventoryService {
         }
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void writeOffLostForRefund(String refundNo, List<RefundItem> items, boolean afterReceipt) {
+        if (refundNo == null || items == null || items.isEmpty()) {
+            return;
+        }
+        for (RefundItem item : items) {
+            String bizNo = InventoryBizType.REFUND_LOST.name() + ":" + refundNo + ":" + item.getOrderItemId();
+            Integer exists = transactionMapper.selectCount(new QueryWrapper<InventoryTransaction>().eq("biz_no", bizNo));
+            if (exists != null && exists > 0) {
+                log.info("退款货损核销流水已存在，幂等跳过，refundNo={}, orderItemId={}", refundNo, item.getOrderItemId());
+                continue;
+            }
+            // 累加 restocked_qty：防超核销守卫（restocked+qty ≤ refunded+frozen）；
+            // 未收货场景同时使确认收货结转数量 quantity-restocked_qty 跳过已核销部分，避免部分退款时整笔结转 CAS 失败。
+            int added = orderItemMapper.addRestockedQty(item.getOrderItemId(), item.getRefundQty());
+            if (added == 0) {
+                throw new BizException("货损核销数量超过可核销上限，orderItemId=" + item.getOrderItemId());
+            }
+            // 来源桶分流：未收货货在锁定桶（locked→lost），已收货货已售出（sold→lost，货留用户不回仓）。
+            int written = afterReceipt
+                    ? productMapper.writeOffSoldLostStock(item.getProductId(), item.getRefundQty())
+                    : productMapper.writeOffLostStock(item.getProductId(), item.getRefundQty());
+            if (written == 0) {
+                throw new BizException(afterReceipt
+                        ? "已售库存不足，无法核销货损，productId=" + item.getProductId()
+                        : "锁定库存不足，无法核销货损，productId=" + item.getProductId());
+            }
+            insertTransaction(InventoryBizType.REFUND_LOST, null, item.getOrderItemId(), refundNo,
+                    item.getProductId(), 0,
+                    afterReceipt ? 0 : -item.getRefundQty(),
+                    afterReceipt ? -item.getRefundQty() : 0,
+                    item.getRefundQty());
+        }
+    }
+
     private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
                                    Long productId, int availableDelta, int lockedDelta, int soldDelta) {
+        insertTransaction(bizType, orderNo, orderItemId, refundNo, productId,
+                availableDelta, lockedDelta, soldDelta, 0);
+    }
+
+    private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
+                                   Long productId, int availableDelta, int lockedDelta, int soldDelta, int lostDelta) {
         InventoryTransaction transaction = new InventoryTransaction();
         transaction.setBizNo(bizType.name() + ":" + (refundNo != null ? refundNo : orderNo) + ":" + orderItemId);
         transaction.setBizType(bizType.getType());
@@ -219,6 +261,7 @@ public class InventoryServiceImpl implements InventoryService {
         transaction.setAvailableDelta(availableDelta);
         transaction.setLockedDelta(lockedDelta);
         transaction.setSoldDelta(soldDelta);
+        transaction.setLostDelta(lostDelta);
         try {
             transactionMapper.insert(transaction);
         } catch (DuplicateKeyException e) {

@@ -229,6 +229,11 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         requirePaidActive(order);
         String refundType = forcedType != null ? forcedType : resolveRefundType(request.getRefundType(), order.getFulfillmentStatus());
         checkFulfillment(refundType, order.getFulfillmentStatus());
+        // 仅退款一键整单退：前端可不传明细，服务端按整单剩余可退数量自动补全（全额）；退货退款仍须显式传明细。
+        List<RefundApplyItemRequest> items = request.getItems();
+        if ((items == null || items.isEmpty()) && RefundType.REFUND_ONLY.getType().equals(refundType)) {
+            items = buildFullRefundItems(order.getOrderNo());
+        }
 
         String refundNo = OrderNoUtils.getRefundNo();
         RefundOrder refundOrder = new RefundOrder();
@@ -243,7 +248,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         refundOrder.setRefundAmount(0);
         applyMapper.insert(refundOrder);
 
-        int amount = createItemsAndFreeze(refundOrder, request.getItems());
+        int amount = createItemsAndFreeze(refundOrder, items);
         refundOrder.setRefundAmount(amount);
         applyMapper.updateById(refundOrder);
         // 订单层冻结（三层防线最外层，原子）
@@ -292,6 +297,15 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (!FulfillmentStatus.WAIT_SHIP.getType().equals(order.getFulfillmentStatus())) {
             throw new BizException("订单已发货，无法取消，请在确认收货后申请退货退款或仅退款");
         }
+        RefundApplyRequest request = new RefundApplyRequest();
+        request.setOrderNo(orderNo);
+        request.setReason("未发货取消订单");
+        request.setItems(buildFullRefundItems(orderNo));
+        return doCreate(userId, request, RefundType.CANCEL_BEFORE_SHIP.getType(), channelHolder);
+    }
+
+    /** 构建整单全额退明细：每个订单明细按剩余可退数量（quantity-已退-冻结）全退。 */
+    private List<RefundApplyItemRequest> buildFullRefundItems(String orderNo) {
         List<OrderItem> orderItems = orderItemMapper.selectList(
                 new QueryWrapper<OrderItem>().eq("order_no", orderNo).orderByAsc("id"));
         List<RefundApplyItemRequest> items = new ArrayList<>();
@@ -307,11 +321,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (items.isEmpty()) {
             throw new BizException("订单无可退明细");
         }
-        RefundApplyRequest request = new RefundApplyRequest();
-        request.setOrderNo(orderNo);
-        request.setReason("未发货取消订单");
-        request.setItems(items);
-        return doCreate(userId, request, RefundType.CANCEL_BEFORE_SHIP.getType(), channelHolder);
+        return items;
     }
 
     private RefundApplyVO doCreatePriceAdjustment(String orderNo, Integer amount, String reason) {
@@ -433,6 +443,19 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (RefundType.RETURN_AND_REFUND.getType().equals(type)) {
             // 退货退款：等待管理员确认签收质检后再发起渠道退款
             return null;
+        }
+        // REFUND_ONLY：仅退款不退货，受理即核销货损（货物不回仓，计入丢失库存）。
+        // 来源桶按履约状态分流：未收货货在锁定桶（locked→lost），已收货货已售出（sold→lost，货留用户）。
+        if (RefundType.REFUND_ONLY.getType().equals(type)) {
+            OrderInfo order = orderMapper.selectOne(
+                    new QueryWrapper<OrderInfo>().eq("order_no", refundOrder.getOrderNo()));
+            if (order != null) {
+                boolean received = FulfillmentStatus.RECEIVED.getType().equals(order.getFulfillmentStatus());
+                boolean shipped = FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus());
+                if (shipped || received) {
+                    inventoryService.writeOffLostForRefund(refundNo, itemsOf(refundNo), received);
+                }
+            }
         }
         // REFUND_ONLY / PRICE_ADJUSTMENT：直接发起渠道退款
         return initiateChannelRefund(refundOrder);

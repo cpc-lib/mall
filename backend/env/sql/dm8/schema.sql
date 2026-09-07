@@ -690,6 +690,7 @@ COMMENT ON COLUMN t_inventory_transaction.product_id IS '商品id（库存单元
 COMMENT ON COLUMN t_inventory_transaction.available_delta IS '可用库存变化量（失败申请为 0）';
 COMMENT ON COLUMN t_inventory_transaction.locked_delta IS '锁定库存变化量';
 COMMENT ON COLUMN t_inventory_transaction.sold_delta IS '已售库存变化量';
+COMMENT ON COLUMN t_inventory_transaction.lost_delta IS '丢失/货损库存变化量（REFUND_LOST 时为正）';
 COMMENT ON COLUMN t_inventory_transaction.operation_status IS '操作状态：SUCCESS-已生效，FAILED-调整申请被拒绝（库存未变化）';
 COMMENT ON COLUMN t_inventory_transaction.error_message IS '失败原因（FAILED 时记录申请调整量与拒绝原因）';
 

@@ -9,8 +9,13 @@ const BIZ_TYPES = [
   { value: 'ORDER_COMMIT', label: 'ORDER_COMMIT（支付提交）' },
   { value: 'ORDER_SOLD', label: 'ORDER_SOLD（确认收货结转）' },
   { value: 'ORDER_RELEASE', label: 'ORDER_RELEASE（关单释放）' },
-  { value: 'REFUND_RESTOCK', label: 'REFUND_RESTOCK（退款回补）' }
+  { value: 'REFUND_RESTOCK', label: 'REFUND_RESTOCK（退款回补）' },
+  { value: 'REFUND_LOST', label: 'REFUND_LOST（仅退款货损核销）' }
 ]
+
+const deltaCell = v => v == null || v === 0
+  ? <span style={{ color: '#bfbfbf' }}>-</span>
+  : <span style={{ color: v > 0 ? '#52c41a' : '#f5222d' }}>{v > 0 ? `+${v}` : v}</span>
 
 const HEADER = ['商品ID', '商品名称', '调整量']
 
@@ -147,11 +152,14 @@ export default function StockMaintenance() {
 
   const logCols = [
     { title: '时间', dataIndex: 'createTime', width: 165, render: v => v ? new Date(v).toLocaleString() : '-' },
-    { title: '业务单号', dataIndex: 'bizNo', width: 200, ellipsis: true },
-    { title: '类型', dataIndex: 'operationType', width: 140 },
+    { title: '业务单号', dataIndex: 'bizNo', width: 210, ellipsis: true },
+    { title: '类型', dataIndex: 'operationType', width: 170, render: v => (BIZ_TYPES.find(t => t.value === v)?.label) || v },
     { title: '状态', dataIndex: 'operationStatus', width: 85, render: v => <Tag color={v === 'SUCCESS' ? 'green' : 'red'}>{v}</Tag> },
-    { title: '调整量', dataIndex: 'availableDelta', width: 80, render: v => v == null ? '-' : <span style={{ color: v > 0 ? '#52c41a' : v < 0 ? '#f5222d' : '#8c8c8c' }}>{v > 0 ? `+${v}` : v}</span> },
-    { title: '关联订单', dataIndex: 'orderNo', ellipsis: true, render: v => v || '-' },
+    { title: '可用', dataIndex: 'availableDelta', width: 70, align: 'center', render: deltaCell },
+    { title: '锁定', dataIndex: 'lockedDelta', width: 70, align: 'center', render: deltaCell },
+    { title: '已售', dataIndex: 'soldDelta', width: 70, align: 'center', render: deltaCell },
+    { title: '丢失', dataIndex: 'lostDelta', width: 70, align: 'center', render: v => v ? <Tag color="orange">{v > 0 ? `+${v}` : v}</Tag> : <span style={{ color: '#bfbfbf' }}>-</span> },
+    { title: '关联订单', dataIndex: 'orderNo', width: 180, ellipsis: true, render: v => v || '-' },
     { title: '错误信息', dataIndex: 'errorMessage', ellipsis: true, render: v => v ? <span style={{ color: '#f5222d' }}>{v}</span> : '-' }
   ]
 

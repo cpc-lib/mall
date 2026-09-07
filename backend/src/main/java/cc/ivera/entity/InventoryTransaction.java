@@ -29,6 +29,8 @@ public class InventoryTransaction extends BaseEntity {
 
     private Integer soldDelta;//已售库存变化量
 
+    private Integer lostDelta;//丢失/货损库存变化量（REFUND_LOST 时为正）
+
     private String operationStatus;//SUCCESS-已生效，FAILED-调整申请被拒绝
 
     private String errorMessage;//失败原因（FAILED 时记录申请调整量与拒绝原因）

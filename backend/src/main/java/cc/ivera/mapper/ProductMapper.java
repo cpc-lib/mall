@@ -23,4 +23,10 @@ public interface ProductMapper extends BaseMapper<Product> {
 
     /** 已售退款回补：available+=qty, sold-=qty WHERE sold>=qty。 */
     int releaseSoldStock(@Param("id") Long id, @Param("quantity") Integer quantity);
+
+    /** 仅退款未收货核销货损：locked-=qty, lost+=qty WHERE locked>=qty。 */
+    int writeOffLostStock(@Param("id") Long id, @Param("quantity") Integer quantity);
+
+    /** 仅退款已收货核销货损：sold-=qty, lost+=qty WHERE sold>=qty。 */
+    int writeOffSoldLostStock(@Param("id") Long id, @Param("quantity") Integer quantity);
 }

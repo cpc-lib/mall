@@ -382,6 +382,7 @@ button.m-quick-item {
   border: none !important; box-shadow: 0 2px 6px rgba(250, 84, 21, .28);
   font-weight: 600;
 }
+.ant-btn-primary, .ant-btn-primary:hover, .ant-btn-primary:focus { color: #fff !important; }
 .ant-btn-primary:hover { background: var(--m-primary-deep) !important; }
 .ant-btn-primary:active { transform: scale(.97); }
 .ant-btn-default { border-radius: var(--m-radius-sm); border-color: #d9dce1; color: var(--m-ink-2); font-weight: 500; }
