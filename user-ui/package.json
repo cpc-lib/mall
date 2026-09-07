@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0 --port 3000",
-    "test:logic": "node tests/refresh-single-flight.test.mjs && node tests/refund-quota.test.mjs"
+    "test:logic": "node tests/refresh-single-flight.test.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

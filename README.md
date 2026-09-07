@@ -181,9 +181,8 @@ npm run dev
 ## 测试
 
 ```powershell
-# 前端逻辑单测（Node 内置 test runner）
-cd user-ui   && npm run test:logic    # Token 单飞刷新 + 退款额度核算
-cd admin-ui  && npm run test:logic    # Token 单飞刷新
+# 前端逻辑单测（Node 内置 test runner，仅 user-ui）
+cd user-ui   && npm run test:logic    # Token 单飞刷新
 
 # 前端构建
 cd user-ui   && npm run build

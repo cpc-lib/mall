@@ -572,7 +572,7 @@ flowchart TB
 | `Addresses` | `/addresses` | 收货地址管理（Cascader 三级区域） |
 | `Success` | `/success` | 支付成功页 |
 
-逻辑单测（`npm run test:logic`）：Token 单飞刷新、退款额度核算。
+逻辑单测（`npm run test:logic`）：Token 单飞刷新。
 
 ### admin-ui — 管理后台（dev :3002，BrowserRouter）
 

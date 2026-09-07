@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3002",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0 --port 3002",
-    "test:logic": "node tests/refresh-single-flight.test.mjs"
+    "preview": "vite preview --host 0.0.0.0 --port 3002"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",

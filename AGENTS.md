@@ -44,10 +44,9 @@
 - 特征测试不得评判现状是否合理；可疑现状须在测试名或注释中标注 `现状`。
 - 触碰 DB、Redis、缓存、全局状态、MQ、配置或时钟的测试必须重置状态并使用临时隔离。
 - 特征测试禁止调用真实支付渠道、真实 Redis、真实 RabbitMQ 或真实 DM8，除非任务说明明确要求集成测试。
-- 前端逻辑测试使用 Node 内置 test runner：
-  - `user-ui`：`npm run test:logic`（Token 单飞刷新 + 退款额度核算）
-  - `admin-ui`：`npm run test:logic`（Token 单飞刷新）
-- 行为保持类改动，需在 `backend/` 跑 `mvn test`，并跑两个前端的 `test:logic`，确认无回归。
+- 前端逻辑测试使用 Node 内置 test runner（仅 user-ui）：
+  - `user-ui`：`npm run test:logic`（Token 单飞刷新）
+- 行为保持类改动，需在 `backend/` 跑 `mvn test`，并跑 user-ui 的 `test:logic`，确认无回归。
 - 重构后若测试失败，先说明锁定的是哪条行为、为何变化，再做最小修正。
 
 ## 文档同步规则
