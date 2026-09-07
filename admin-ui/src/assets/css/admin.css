@@ -1,0 +1,5 @@
+a:focus-visible, button:focus-visible { outline: 2px solid rgba(22, 119, 255, .45); outline-offset: 2px; border-radius: 2px; }
+
+.ant-card + .ant-card { margin-top: 16px; }
+
+.ant-table-tbody > tr > td { font-variant-numeric: tabular-nums; }

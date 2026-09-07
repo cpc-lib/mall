@@ -3,7 +3,7 @@
 .trae/
 
 # Java build
-payment-demo/target/
+**/target/
 *.class
 
 # Frontend build & dependencies

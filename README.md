@@ -1,4 +1,4 @@
-# Payment Demo — 支付集成与并发控制演示项目
+# 电商商城平台
 
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.3.7-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Java](https://img.shields.io/badge/Java-1.8-orange.svg)](https://www.oracle.com/java/technologies/javase-jdk8-downloads.html)
@@ -6,78 +6,87 @@
 
 ## 项目简介
 
-基于 Spring Boot 的支付业务全链路演示项目：集成**微信支付 V2/V3** 与**支付宝**沙箱通道，覆盖「浏览商品 → 购物车 → 下单 → 支付 → 发货/物流 → 确认收货 → 退款/退货 → 账单对账」完整交易闭环，并实现企业级并发控制、幂等保障、库存预占、分项退款与上传式账单对账。
+基于 Spring Boot 的电商商城平台：集成**微信支付 V2/V3** 与**支付宝**通道，覆盖「浏览商品 → 购物车 → 下单 → 支付 → 发货/物流 → 确认收货 → 退款/退货 → 账单对账」完整交易闭环，并实现企业级并发控制、幂等保障、库存预占、分项退款与上传式账单对账。
 
-前端按**用户商城**与**管理后台**两类角色拆分为 4 个独立工程（React + Vue 双栈对等实现），与后端 REST 契约完全对齐。
+前端拆分为两个独立工程，与后端 REST 契约对齐：
+
+- **user-ui** — 用户商城（React 18，移动 App 风格界面，含收货地址、购物车、订单、分项退款、用户中心）
+- **admin-ui** — 管理后台（React 18，左侧导航 + 列表 + 抽屉详情，含订单/发货/库存/退款/对账/支付配置管理）
 
 ## 核心特性
 
 **交易链路**
 - **微信支付 V3**：扫码支付（Native 二维码轮询）、退款、订单查询、账单下载；**微信支付 V2**：扫码支付与通知
 - **支付宝**：扫码支付（表单跳转）、退款、订单查询、账单下载
-- **多商品订单**：主子表结构，明细快照价；支付配置（渠道/应用）存数据库动态加载，订单绑定 `payment_app_id`
+- **多商品订单**：主子表结构，明细快照价；支付配置（渠道/应用）存数据库动态加载，订单绑定支付应用
 - **Redis 购物车**：实时读取商品最新价格与库存；管理员角色禁止访问购物车/下单接口
-- **库存预占模型**：下单 `LOCKED` 预占 → 支付成功 `COMMITTED` 扣减 / 关单取消 `RELEASED` 回补；超卖自动全额退款
+- **收货地址**：三级行政区划级联 + 详细地址，结算时选择收货地址
+- **库存预占模型**：下单 `LOCKED` 预占（可用转锁定，CAS 防超卖，不足则整单回滚）→ 支付成功 `COMMITTED`（仅推进状态，库存保持锁定）→ 确认收货结转已售；关单/取消 `RELEASED` 归还可用；全部本地事务同步执行
 - **订单履约**：待发货 → 模拟发货（运单号）→ 物流时间线 → 确认收货；已付款未发货取消自动生成退款申请
 - **分项退款**：6 种退款类型（未发货取消/退货退款/仅退款/差价退款/重复支付/晚到支付自动冲正），待审核可编辑/撤销，受理后冻结额度动态防超退，最后一件吃尾差
+- **主动查单**：用户端与管理端均可主动向渠道查询订单支付状态并同步
 
 **管理后台**
-- **退款受理**：受理/拒绝/退货签收/渠道重试/状态查询
-- **商品库存**：新增商品、库存调整、上架/下架、库存操作日志
-- **批量库存维护**：Excel（.xlsx）导入 → 生成导入记录 → 新页签全屏 Luckysheet 核对/编辑 → 确认入库（CAS 防重复执行）；失败行记录原因，库存流水分页查询
+- **订单管理**：多状态线筛选、详情抽屉、强制关单（幂等）、标记已付、渠道查单、支付单渠道尝试记录
+- **订单发货**：待发货列表、模拟发货
+- **商品库存**：新增商品、库存调整（单个/批量）、上架/下架、库存操作日志与流水分页
+- **批量库存维护**：Excel（.xlsx）导入 → 生成导入记录 → 全屏 Luckysheet 编辑器核对/编辑 → 确认入库（CAS 防重复执行）；失败行记录原因
 - **Excel 文件存储**：`stock.import.storage=local|minio` 可切换，本地磁盘或 MinIO 对象存储；记录级路由，历史文件按原后端读取
-- **用户管理**：分页/搜索、禁用启用、在线状态独立接口、用户详情抽屉、登录锁定（3 次失败锁 10 分钟，用户名+IP 双维度）
-- **密码重置**：用户提交找回申请 → 管理员受理生成随机密码（仅展示一次）或直接按 userId 重置
+- **退款受理**：受理/拒绝/退货签收/渠道重试/状态查询/差价退款
+- **用户管理**：分页搜索、禁用启用、用户详情、登录锁定（3 次失败锁 10 分钟，用户名 + IP 双维度）
+- **密码重置**：用户提交找回申请 → 管理员受理生成随机密码（仅展示一次）或直接按用户重置
 - **账单对账**：上传微信交易账单 CSV（ALL/SUCCESS/REFUND），自动解析入库并对账，8 类差异识别，人工标记处理，全链路幂等
+- **下载账单**：跳转微信/支付宝官方账单下载接口
 
 **工程保障**
-- **三层并发控制**：通知幂等检查（Redis）→ Redisson 分布式锁 → 数据库行锁 + CAS
+- **三层并发控制**：通知幂等检查（Redis）→ Redisson 分布式锁 → 数据库行锁 + CAS 状态更新
 - **双 Token 认证**：Access 30 分钟 + Refresh 7 天，401 单飞（single-flight）无感刷新
-- **MQ 容错**：库存扣减/回补最多 3 次重试，耗尽入死信队列，管理员可在后台重放
-- **达梦 DM8**：官方 Docker 镜像一键启动，`payment_demo.sql` 全量建表（20 张业务表）
+- **本地消息表（Outbox）**：关单/退款同步消息先落库再投递，broker 确认后标记，失败指数退避重试，耗尽转人工补偿；DB 定时任务兜底对账
+- **MQ 容错**：消费异常指数退避重试（2s→6s→18s 共 4 次），耗尽拒绝不回队，由幂等的 DB 兜底任务接管
+- **达梦 DM8**：官方镜像一键启动，`schema.sql` 一体化全量建表 + 种子数据
 
 ## 技术栈
 
 | 分类 | 技术 | 版本 |
 |------|------|------|
-| 后端框架 | Spring Boot | 2.3.7 |
+| 后端框架 | Spring Boot | 2.3.7.RELEASE |
 | 语言 | Java | 1.8 |
 | ORM | MyBatis-Plus | 3.3.1 |
-| 数据库 | 达梦 DM8（DmJdbcDriver18） | 8.x |
+| 数据库 | 达梦 DM8（DmJdbcDriver18） | 8.1.2.192 |
 | 缓存/锁 | Redis + Redisson | 5.0+ / 3.16.8 |
-| 消息队列 | RabbitMQ | 3.7+ |
-| 对象存储 | MinIO（io.minio 8.5.7，可选） | — |
-| 支付 SDK | WechatPay APIv3 0.3.0 / Alipay SDK 4.22.57 | — |
+| 消息队列 | RabbitMQ（Spring AMQP） | 3.7+ |
+| 对象存储 | MinIO（io.minio，可选） | 8.5.7 |
+| 支付 SDK | WechatPay APIv3 0.3.0 / wxpay-sdk 0.0.3 / Alipay SDK 4.22.57 | — |
 | API 文档 | Swagger | 2.7.0 |
-| 商城前端 | React 18 + Vite + Ant Design 5；Vue 2 + Element UI 2.15 | — |
-| 管理前端 | React 18 + Vite + Ant Design 5（Luckysheet）；Vue 2 + Element UI（Luckysheet） | — |
+| 商城前端 | React 18 + Vite 5 + Ant Design 5 + qrcode.react | — |
+| 管理前端 | React 18 + Vite 5 + Ant Design 5 + SheetJS(xlsx) + Luckysheet | — |
 
 ## 项目结构
 
 ```
-payment-demo-java-dm/
-├── payment-demo/                  # 后端 Spring Boot 应用
+mall/
+├── backend/                       # 后端 Spring Boot 应用（cc.ivera）
 │   ├── src/main/java/cc/ivera/
-│   │   ├── controller/            # 22 个 REST 控制器（商城 /api/* + 管理 /api/admin/*）
-│   │   ├── service/               # 业务服务（交易/退款/库存/对账/导入存储）
-│   │   ├── entity/ enums/ mapper/ # 实体（20 表）、状态枚举、MyBatis-Plus Mapper
-│   │   ├── security/              # 认证拦截、登录锁定 LoginGuardService
-│   │   ├── mq/                    # RabbitMQ 生产/消费（关单延迟、退款同步、库存）
-│   │   ├── job/                   # 定时任务（超时关单、模拟物流）
-│   │   └── config/                # Redis/Redisson/MQ/支付客户端/MinIO 配置
+│   │   ├── controller/            # 25 个 REST 控制器（商城 /api/* + 管理 /api/admin/*）
+│   │   ├── service/               # 业务服务（交易/退款/库存/对账/wxpay 门面/物流）
+│   │   ├── entity/ enums/         # 23 张表实体、25 个状态机枚举
+│   │   ├── mapper/                # Mapper 接口（XML 见 resources/mapper/）
+│   │   ├── security/              # AuthInterceptor、JwtTokenService、LoginGuardService
+│   │   ├── mq/                    # RabbitMQ 消费者（延迟关单、退款状态同步）
+│   │   ├── job/                   # 定时任务（关单兜底、退款同步兜底、本地消息重投、模拟物流）
+│   │   ├── lock/                  # DistributedLockTemplate（Redisson 实现）
+│   │   └── config/                # Redisson/MQ 拓扑/支付配置加载/Swagger/WebMvc
 │   ├── src/main/resources/
-│   │   └── application.yml        # 连接参数与业务配置（JWT/关单延迟/库存导入存储）
+│   │   ├── mapper/                # MyBatis XML（19 个）
+│   │   └── application.yml        # 连接参数与业务配置
+│   ├── docs/                      # DM8 与 RabbitMQ 运维手册
 │   └── env/
-│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查）
-│       └── sql/dm8/payment_demo.sql  # 全量建表 + 种子数据（20 张业务表）
-├── payment-demo-react/            # 用户商城（React，淘宝风格 UI，dev 端口 3000）
-├── payment-demo-vue/              # 用户商城（Vue2，dev 端口 3000）
-├── payment-demo-react-admin/      # 管理后台（React，左导航+列表+抽屉，dev 端口 3002）
-├── payment-demo-vue-admin/        # 管理后台（Vue2，dev 端口 3003）
-├── spec/                          # 规格状态账本（AGENTS.md 驱动）
-├── materials/                     # 行动卡参考材料
+│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查与初始化挂载）
+│       └── sql/dm8/schema.sql     # 一体化全量建表 + 种子数据
+├── user-ui/                       # 用户商城（React，移动 App 风格，dev 端口 3000）
+├── admin-ui/                      # 管理后台（React，dev 端口 3002）
 ├── AGENTS.md                      # 项目规则（issue 分类/分支命名/spec 治理/DoD）
-├── CODE_INTRO.md                  # 代码导览（架构/实体/路由/服务/对账详细设计）
+├── CODE_INTRO.md                  # 代码导览（架构/实体/路由/服务/MQ/前端）
 └── README.md
 ```
 
@@ -86,41 +95,53 @@ payment-demo-java-dm/
 ### 环境要求
 
 - JDK 1.8+、Maven 3.6+
-- Docker（用于达梦 DM8）；或本机已装 DM8 8.x
-- Redis 5.0+、RabbitMQ 3.7+
-- Node.js 16+
+- Docker（用于达梦 DM8）；Redis 5.0+、RabbitMQ 3.7+（自备或修改连接指向已有实例）
+- Node.js 18+
 
 ### 1. 启动达梦 DM8（Docker）
 
 ```powershell
-cd payment-demo/env
+cd backend/env
 docker compose -f docker-compose.dm8.yml up -d
-# 容器 healthy 后，用 DM 管理工具执行 sql/dm8/payment_demo.sql 全量建表
 ```
+
+容器 healthy 后初始化数据库。用 DM 管理工具连接 `localhost:5236`（默认 `SYSDBA / Cpc2026#@Dm`，schema `SYSDBA`），执行 `backend/env/sql/dm8/schema.sql`（一体化全量脚本，可重复执行，等同清库重建）：
+
+- 核心业务表（21 张）+ 种子数据（管理员账号、支付渠道/应用、示例商品）
+- 三级行政区划表 `t_region` 与全国数据
+- 收货地址表 `t_shipping_address`
 
 > 数据卷 `dm8-data` 保存数据库数据，**不要执行 `docker compose down -v`**，否则数据丢失需重新建表。
 
 ### 2. 配置并启动后端
 
-修改 `payment-demo/src/main/resources/application.yml` 中的 DM8 / Redis / RabbitMQ 连接（MinIO、JWT 密钥等可用环境变量覆盖），然后：
+`backend/src/main/resources/application.yml` 中的默认连接指向部署环境 `192.168.1.200`（DM8 / Redis / RabbitMQ / MinIO），本地运行请按实际情况修改：
+
+- **DM8** 支持环境变量覆盖：`DM_HOST`、`DM_PORT`、`DM_SCHEMA`、`DM_USERNAME`、`DM_PASSWORD`
+- **Redis / RabbitMQ**：直接修改 `spring.redis.*`、`spring.rabbitmq.*`
+- **JWT 密钥**：生产必须用环境变量 `AUTH_JWT_SECRET` 覆盖默认值
+- **Excel 存储**：`stock.import.storage` 设为 `local`（配合 `stock.import.dir`）或 `minio`（`STOCK_IMPORT_MINIO_*` 环境变量覆盖）
+- **支付商户参数**（微信私钥、支付宝密钥等）不在配置文件中，初始化后可在管理后台「支付配置」中维护（存于 `t_payment_channel`）
 
 ```powershell
-cd payment-demo
+cd backend
 mvn spring-boot:run
 ```
 
 后端须在 DM8 容器健康检查通过后再启动。
 
-### 3. 启动前端（4 选 N，按需）
+### 3. 启动前端
 
 ```powershell
-# 用户商城（二选一即可，功能对等；两者 dev 端口均为 3000，勿同时启动）
-cd payment-demo-react      && npm install && npm run dev     # React 商城 → http://localhost:3000
-cd payment-demo-vue        && npm install && npm run serve   # Vue 商城  → http://localhost:3000
+# 用户商城 → http://localhost:3000
+cd user-ui
+npm install
+npm run dev
 
-# 管理后台（二选一即可，功能对等）
-cd payment-demo-react-admin && npm install && npm run dev    # React 后台 → http://localhost:3002
-cd payment-demo-vue-admin   && npm install && npm run serve  # Vue 后台  → http://localhost:3003
+# 管理后台 → http://localhost:3002
+cd admin-ui
+npm install
+npm run dev
 ```
 
 前端通过 CORS 直连后端 `http://localhost:8080`（见各工程 `src/utils/request.js` 的 baseURL）。
@@ -131,15 +152,14 @@ cd payment-demo-vue-admin   && npm install && npm run serve  # Vue 后台  → h
 |------|------|
 | 后端 API | http://localhost:8080 |
 | Swagger 文档 | http://localhost:8080/swagger-ui.html |
-| React 商城 | http://localhost:3000 |
-| Vue 商城 | http://localhost:3000 |
-| React 管理后台 | http://localhost:3002 |
-| Vue 管理后台 | http://localhost:3003 |
+| 用户商城 | http://localhost:3000 |
+| 管理后台 | http://localhost:3002 |
 
 ### 开发账号
 
 - 管理员：`admin / Admin@123456`（仅可登录管理后台与用户管理接口，禁止购物车/下单）
-- 普通用户：注册入口在商城登录页；**生产部署必须替换默认凭据与 `AUTH_JWT_SECRET`**
+- 普通用户：注册入口在商城登录页
+- **生产部署必须替换默认凭据、数据库口令与 `AUTH_JWT_SECRET`**
 
 ## 对账功能
 
@@ -159,28 +179,23 @@ cd payment-demo-vue-admin   && npm install && npm run serve  # Vue 后台  → h
 ## 测试
 
 ```powershell
-# 后端：特征测试 + 单元测试
-cd payment-demo
-mvn test
-# 行为保持型重构回归：
-mvn "-Dtest=PublicApiCharacterizationTest,InfrastructureBehaviorCharacterizationTest" test
-
-# 前端工具函数单测（Node 内置 test runner）
-cd payment-demo-react      && npm test
-cd payment-demo-vue        && npm test
+# 前端逻辑单测（Node 内置 test runner）
+cd user-ui   && npm run test:logic    # Token 单飞刷新 + 退款额度核算
+cd admin-ui  && npm run test:logic    # Token 单飞刷新
 
 # 前端构建
-cd payment-demo-react       && npm run build
-cd payment-demo-vue         && npm run build
-cd payment-demo-react-admin && npm run build
-cd payment-demo-vue-admin   && npm run build
+cd user-ui   && npm run build
+cd admin-ui  && npm run build
+
+# 后端：当前无自动化测试套件（backend/src/test 为空）。
+# 按 AGENTS.md 规则，重构遗留行为前需先在 backend/src/test 补特征测试，之后用 mvn test 回归。
 ```
 
-## Spec 治理
+## 运维文档
 
-项目使用 `spec/` 目录作为公共行为与架构契约的状态账本（规则详见 [AGENTS.md](AGENTS.md)）：
+- [backend/docs/DAMENG_DM8_OPERATIONS.md](backend/docs/DAMENG_DM8_OPERATIONS.md) — DM8 启动/初始化/清库重建
+- [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md) — 队列拓扑、可靠性与冒烟测试清单
 
-- `spec/governance/` — 治理规范（issue 分类、PR 检查清单）
-- `spec/implemented/` — 已落地行为（交易模型 V2、管理端 UI 隔离、库存导入存储、支付渠道商户配置重构、UI 品味重设计等）
-- `spec/planned/` — 规划中变更
-- `spec/archived/` — 废弃/归档决策
+## 治理
+
+项目使用 `spec/` 目录作为公共行为与架构契约的状态账本（规则详见 [AGENTS.md](AGENTS.md)）：变更代码前先找到或创建对应 spec（`spec/planned/<domain>/` → 实现后移入 `spec/implemented/`；废弃决策入 `spec/archived/`）。实现、测试、文档与 spec 不一致即视为未完成。

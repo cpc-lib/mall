@@ -1,6 +1,8 @@
-# Payment Demo V5 Agent Rules
+# 电商商城平台 Agent Rules
 
 This file is the project-level rulebook for coding agents. Keep changes small, spec-led, and verifiable.
+
+Repository layout: `backend/` (Spring Boot 2.3.7, Java 8, package `cc.ivera`), `user-ui/` (React 18 user mall, port 3000), `admin-ui/` (React 18 admin console, port 3002). Both frontends talk to the backend at `http://localhost:8080` via CORS.
 
 ## Issue Classification
 
@@ -28,23 +30,21 @@ Branch, PR, and commit names must not include agent names, vendor names, author 
 
 ## Test Requirements
 
-- Before refactoring legacy behavior, add characterization tests that lock the current behavior.
+- The backend currently ships **no automated test suite** (`backend/src/test` is empty). Before refactoring any legacy backend behavior, add characterization tests under `backend/src/test` that lock the current behavior.
 - Characterization tests must not judge whether current behavior is reasonable.
 - Suspicious current behavior must be marked with `现状` in the test name or comment.
 - Tests that touch DB, Redis, cache, global state, MQ, config, or clock state must reset state and use temporary isolation.
-- Do not call real payment providers, real Redis, real RabbitMQ, or real MySQL from characterization tests unless an integration test spec explicitly requires it.
-- For behavior-preserving work, run:
-
-```powershell
-mvn "-Dtest=PublicApiCharacterizationTest,InfrastructureBehaviorCharacterizationTest" test
-```
-
+- Do not call real payment providers, real Redis, real RabbitMQ, or real DM8 from characterization tests unless an integration test spec explicitly requires it.
+- Frontend logic tests run with the Node built-in test runner:
+  - `user-ui`: `npm run test:logic` (refresh single-flight, refund quota)
+  - `admin-ui`: `npm run test:logic` (refresh single-flight)
+- For behavior-preserving work, run `mvn test` in `backend/` plus both frontend `test:logic` scripts and confirm no regressions.
 - If a test fails after a refactor, first explain which locked behavior changed, then make the smallest correction.
 
 ## Spec Reconciliation Rules
 
 - Treat `spec/` as the state ledger for public behavior, architecture contracts, compatibility rules, and governance.
-- Before changing code, find the related spec. If none exists, create one in `spec/planned/<domain>/`.
+- Before changing code, find the related spec. If none exists, create one in `spec/planned/<domain>/` (the directory may not exist yet in a fresh checkout — create it on first use).
 - A planned spec moves to `spec/implemented/<domain>/` only after implementation anchors and tests prove it is landed.
 - Partially delivered work stays in `planned/` with completed and remaining acceptance criteria marked clearly.
 - Deprecated or abandoned decisions move to `spec/archived/`, keeping the reason and date.
@@ -60,4 +60,3 @@ A change is done only when all applicable items are true:
 - Characterization tests and impacted tests pass.
 - Implementation anchors in the spec point to real files/classes/tests.
 - No unrelated business behavior, bug fix, or feature is bundled into the change.
-
