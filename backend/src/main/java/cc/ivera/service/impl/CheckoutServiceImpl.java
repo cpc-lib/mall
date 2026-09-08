@@ -5,6 +5,7 @@ import cc.ivera.config.PaymentConfigLoader;
 import cc.ivera.dto.checkout.CheckoutRequest;
 import cc.ivera.entity.OrderInfo;
 import cc.ivera.entity.OrderItem;
+import cc.ivera.entity.OrderShipment;
 import cc.ivera.entity.Product;
 import cc.ivera.enums.FulfillmentStatus;
 import cc.ivera.enums.OrderLifecycleStatus;
@@ -15,6 +16,7 @@ import cc.ivera.enums.PayType;
 import cc.ivera.exception.BizException;
 import cc.ivera.mapper.OrderInfoMapper;
 import cc.ivera.mapper.OrderItemMapper;
+import cc.ivera.mapper.OrderShipmentMapper;
 import cc.ivera.mapper.ProductMapper;
 import cc.ivera.service.CartService;
 import cc.ivera.service.CheckoutService;
@@ -34,7 +36,9 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class CheckoutServiceImpl implements CheckoutService {
@@ -168,9 +172,25 @@ public class CheckoutServiceImpl implements CheckoutService {
     }
     @Override public OrderDetailVO getOrder(Long userId,String orderNo) {
         QueryWrapper<OrderInfo> q=new QueryWrapper<>(); q.eq("order_no",orderNo).eq("user_id",userId); OrderInfo order=orderInfoMapper.selectOne(q);
-        if(order==null) throw new BizException("订单不存在或无权访问"); return detail(order,items(orderNo));
+        if(order==null) throw new BizException("订单不存在或无权访问");
+        OrderDetailVO vo=detail(order,items(orderNo));
+        fillShipmentStatus(java.util.Collections.singletonList(vo));
+        return vo;
     }
     private List<OrderItem> items(String orderNo){QueryWrapper<OrderItem> q=new QueryWrapper<>(); q.eq("order_no",orderNo).orderByAsc("id"); return orderItemMapper.selectList(q);}
+
+    /** 批量填充物流单最新状态（每单取 id 最大的运单），供前端按 DELIVERED 控制确认收货按钮。 */
+    private void fillShipmentStatus(List<OrderDetailVO> list){
+        if(list==null||list.isEmpty()) return;
+        List<String> orderNos=new ArrayList<>();
+        for(OrderDetailVO vo:list){ if(vo.getOrder()!=null) orderNos.add(vo.getOrder().getOrderNo()); }
+        if(orderNos.isEmpty()) return;
+        List<OrderShipment> shipments=orderShipmentMapper.selectList(new QueryWrapper<OrderShipment>()
+                .in("order_no",orderNos).orderByDesc("id"));
+        Map<String,String> latest=new HashMap<>();
+        for(OrderShipment s:shipments){ latest.putIfAbsent(s.getOrderNo(),s.getStatus()); }
+        for(OrderDetailVO vo:list){ vo.setShipmentStatus(latest.get(vo.getOrder().getOrderNo())); }
+    }
     private OrderDetailVO detail(OrderInfo o,List<OrderItem> i){
         // V1 兼容映射（spec 增量兼容）：老前端按 V1 中文状态值渲染与禁用按钮，
         // orderStatus 输出 V1 旧值；payStatus/fulfillmentStatus/refundStatus 等新字段原样透出。

@@ -279,7 +279,7 @@ flowchart TB
         direction LR
         G1["订单 CAS<br/>NOTPAY→SUCCESS<br/>NOTPAY→CLOSED"]
         G2["支付单 CAS<br/>CREATED/PAYING→SUCCESS"]
-        G3["物流单 CAS<br/>SHIPPED/IN_TRANSIT/DELIVERED→RECEIVED<br/>(用户主动确认即视为签收)"]
+        G3["物流单 CAS<br/>DELIVERED→RECEIVED<br/>(仅物流送达后用户可确认)"]
         G4["退款单 FOR UPDATE 行锁<br/>+ 状态机校验 ensureApplying"]
     end
 
@@ -324,7 +324,7 @@ flowchart TB
 | `reserveForOrder` 下单预占 | 订单+明细同事务插入 | `uk(order_item_id)` 挡重复预占；`reserveStock` 条件 UPDATE 防超卖 | 重复预占按明细跳过；库存不足**整单回滚**（订单不产生） |
 | `commitReservation` 支付提交 | 订单 CAS NOTPAY→SUCCESS；支付单 CAS | `casTransition(LOCKED→COMMITTED)` + 败者状态复核；流水 `biz_no` UK | 已 COMMITTED 幂等返回；遇 RELEASED 抛错；无记录放行（历史单） |
 | `releaseReservation` 关单释放 | 订单 CAS NOTPAY→CLOSED + 关闭活跃支付单 | `casTransition(LOCKED→RELEASED)` + 败者状态复核；流水 UK | 已 RELEASED 幂等返回；遇 COMMITTED 抛错（已成交不可释放）；无记录放行 |
-| `convertToSoldOnReceipt` 收货结转 | 物流 CAS SHIPPED/IN_TRANSIT/DELIVERED→RECEIVED（用户主动确认即签收） | `biz_no` 预检（ORDER_SOLD:orderNo:itemId）+ 结转数量 quantity-restockedQty + `commitSoldStock` 条件 UPDATE + 流水 UK | 已结转跳过；锁定不足仅告警不阻塞收货（旧模型兼容） |
+| `convertToSoldOnReceipt` 收货结转 | 物流 CAS DELIVERED→RECEIVED（仅物流送达后可确认收货） | `biz_no` 预检（ORDER_SOLD:orderNo:itemId）+ 结转数量 quantity-restockedQty + `commitSoldStock` 条件 UPDATE + 流水 UK | 已结转跳过；锁定不足仅告警不阻塞收货（旧模型兼容） |
 | `restockForRefund` 退款回补 | 退款单行锁 + 状态机（受理/签收各一次） | `biz_no` 预检（REFUND_RESTOCK:refundNo:itemId）+ `addRestockedQty` 上限守卫 + 流水 UK | 已回补跳过；超「已退+冻结」上限抛错（防超补） |
 | `writeOffLostForRefund` 仅退款货损核销 | 退款单行锁 + 受理状态机（REFUND_ONLY 未收货/已收货） | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock`/`writeOffSoldLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定/已售不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
 | `insertTransaction` 流水落库 | — | `uk(biz_no)` + DuplicateKeyException 捕获 | 重复流水跳过并留日志（审计终态兜底） |
@@ -341,9 +341,9 @@ flowchart TB
 
 ### 3.5 订单履约与退款
 
-- **t_order_shipment**：发货单（运单号、发货时间、物流时间线）；`MockLogisticsProvider`（logistics 子包）+ `MockLogisticsSimulationJob` 定时模拟物流推进
+- **t_order_shipment**：发货单（运单号、发货时间、物流时间线），物流状态机 `SHIPPED → IN_TRANSIT → DELIVERED → RECEIVED`；`MockLogisticsProvider`（logistics 子包）+ `MockLogisticsSimulationJob` 定时模拟推进（发货后 20s 运输中、再 40s 送达，`logistics.mock.*-delay-ms` 可配）
 - **收货地址**：`t_region`（三级行政区划，`RegionController` 公开级联查询）+ `t_shipping_address`（用户地址 CRUD，`UserAddressController`）；结算时选择地址并快照入订单
-- 用户端：查看物流时间线、确认收货；已付款未发货取消订单自动生成退款申请
+- 用户端：查看物流时间线；**确认收货仅物流 `DELIVERED` 后可操作**（订单列表 VO 透出 `shipmentStatus`，前端按此渲染按钮与「运输中/已送达」标签）；已付款未发货取消订单自动生成退款申请
 - 管理端：模拟发货、强制关单、退款受理
 - **退款单模型**（RefundOrder/RefundItem，区别于渠道退款记录 t_refund_info）：
   - 类型 `RefundType`（6 种）：未发货取消（受理后自动回补 locked→available）、退货退款（签收质检后回补 sold→available）、仅退款（核销货损：未收货 locked→lost、已收货 sold→lost）、差价退款（管理员发起手填金额，不动库存）、重复支付/晚到支付自动原路退款（`ExceptionRefundService` 系统冲正，不占售后额度）
@@ -566,7 +566,7 @@ flowchart TB
 | `Home` | `/` | 商品列表、加购 |
 | `Login` | `/login` | 登录/注册/忘记密码（品牌渐变 Hero + 悬浮白卡） |
 | `Cart` | `/cart` | 购物车、选择收货地址、选择支付方式、结算下单 |
-| `OrdersV2` | `/orders` | 订单列表、微信扫码弹窗（QRCodeSVG + 轮询）、支付宝跳转、主动查单、分项退款、取消/确认收货、物流查看 |
+| `OrdersV2` | `/orders` | 订单列表、微信扫码弹窗（QRCodeSVG + 轮询）、支付宝跳转、主动查单、分项退款、取消/确认收货（仅物流送达后可点）、物流查看 |
 | `RefundApplications` | `/refund-applications` | 退款申请列表、编辑/撤销（前端额度核算 `refundQuota.js`） |
 | `Account` | `/account` | 用户中心、弹窗式修改密码、退出登录 |
 | `Addresses` | `/addresses` | 收货地址管理（Cascader 三级区域） |

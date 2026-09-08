@@ -9,7 +9,6 @@ import { SHIPMENT_LABEL, statusTags } from '@/utils/statusLabels'
 
 export default function OrdersV2() {
   const [orders, setOrders] = useState([])
-  const [shipments, setShipments] = useState({})
   const [target, setTarget] = useState(null)
   const [refundType, setRefundType] = useState('REFUND_ONLY')
   const [reason, setReason] = useState('用户申请退款')
@@ -19,13 +18,7 @@ export default function OrdersV2() {
   const [payQuerying, setPayQuerying] = useState(false)
   const load = async () => {
     const o = await checkoutApi.list()
-    const list = o.data || []
-    setOrders(list)
-    const shipped = list.filter(d => d.order.fulfillmentStatus === 'SHIPPED')
-    const entries = await Promise.all(shipped.map(async d => {
-      try { const s = await shipmentApi.getShipment(d.order.orderNo); return [d.order.orderNo, s.data?.status || ''] } catch { return [d.order.orderNo, ''] }
-    }))
-    setShipments(Object.fromEntries(entries))
+    setOrders(o.data || [])
   }
   useEffect(() => { load() }, [])
   useEffect(() => {
@@ -133,13 +126,13 @@ export default function OrdersV2() {
           const noRefund = o.refundStatus == null || o.refundStatus === 'NONE'
           const canPay = o.payStatus === 'UNPAID' && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
           const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP' && noRefund
-          const canConfirm = o.fulfillmentStatus === 'SHIPPED' && noRefund
+          const canConfirm = o.fulfillmentStatus === 'SHIPPED' && d.shipmentStatus === 'DELIVERED' && noRefund
           const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus) && noRefund
           const canRefund = o.payStatus === 'PAID' && noRefund && d.items.some(i => availableRefundQuantity(i) > 0)
           return <div className="m-list-card" key={o.orderNo}>
             <div className="m-list-head">
               <div className="m-list-no">订单号 {o.orderNo}</div>
-              <div className="m-list-tags">{statusTags(o).map(t => <Tag key={t}>{t}</Tag>)}</div>
+              <div className="m-list-tags">{[...statusTags(o), (d.shipmentStatus === 'IN_TRANSIT' || d.shipmentStatus === 'DELIVERED') ? SHIPMENT_LABEL[d.shipmentStatus] : null].filter(Boolean).map(t => <Tag key={t}>{t}</Tag>)}</div>
             </div>
             <div className="m-list-sub">
               <span className="m-list-sub-label">{o.paymentType}</span>
