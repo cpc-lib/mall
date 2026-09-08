@@ -55,15 +55,18 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final OrderCloseMessageService orderCloseMessageService;
     private final InventoryService inventoryService;
     private final cc.ivera.service.ShippingAddressService addressService;
+    private final OrderShipmentMapper orderShipmentMapper;
 
     public CheckoutServiceImpl(CartService cartService, ProductMapper productMapper, OrderInfoMapper orderInfoMapper,
                                OrderItemMapper orderItemMapper, PaymentConfigLoader paymentConfigLoader,
                                OrderCloseMessageService orderCloseMessageService, InventoryService inventoryService,
-                               cc.ivera.service.ShippingAddressService addressService) {
+                               cc.ivera.service.ShippingAddressService addressService,
+                               OrderShipmentMapper orderShipmentMapper) {
         this.cartService = cartService; this.productMapper = productMapper; this.orderInfoMapper = orderInfoMapper;
         this.orderItemMapper = orderItemMapper; this.paymentConfigLoader = paymentConfigLoader;
         this.orderCloseMessageService = orderCloseMessageService; this.inventoryService = inventoryService;
         this.addressService = addressService;
+        this.orderShipmentMapper = orderShipmentMapper;
     }
 
     @Override
@@ -136,7 +139,8 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     @Override public List<OrderDetailVO> listMyOrders(Long userId) {
         QueryWrapper<OrderInfo> q=new QueryWrapper<>(); q.eq("user_id",userId).orderByDesc("create_time");
-        List<OrderDetailVO> list=new ArrayList<>(); for(OrderInfo order:orderInfoMapper.selectList(q)) list.add(detail(order, items(order.getOrderNo()))); return list;
+        List<OrderDetailVO> list=new ArrayList<>(); for(OrderInfo order:orderInfoMapper.selectList(q)) list.add(detail(order, items(order.getOrderNo())));
+        fillShipmentStatus(list); return list;
     }
     @Override public List<OrderDetailVO> listAllOrders(String payStatus, String orderStatus, String fulfillmentStatus,
                                                        String orderNo, String userId, String startTime, String endTime) {
@@ -157,6 +161,7 @@ public class CheckoutServiceImpl implements CheckoutService {
                 payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end)) {
             list.add(detail(order, items(order.getOrderNo())));
         }
+        fillShipmentStatus(list);
         return list;
     }
     /** 解析管理员订单筛选时间：接受 yyyy-MM-dd（按 dayPad 补时分秒）或 yyyy-MM-dd HH:mm:ss；空白返回 null。 */
