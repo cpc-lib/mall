@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cc.ivera.mapper.LocalMessageMapper">
+<mapper namespace="cc.ivera.shared.infrastructure.mq.LocalMessageMapper">
 
-    <!-- 发件箱扫描：指定状态下到达重试时间的消息，按创建时间、id 先进先出，LIMIT 截断批量 -->
-    <select id="selectPendingMessages" resultType="cc.ivera.entity.LocalMessage">
-        select *
-        from t_local_message
-        where status = #{status}
-          and next_retry_time &lt;= #{now}
-        order by create_time asc, id asc
-        limit #{limit}
-    </select>
+  <!-- 发件箱扫描：指定状态下到达重试时间的消息，按创建时间、id 先进先出，LIMIT 截断批量 -->
+  <select id="selectPendingMessages" resultType="cc.ivera.shared.infrastructure.mq.LocalMessage">
+    select *
+    from t_local_message
+    where status = #{status}
+    and next_retry_time &lt;= #{now}
+    order by create_time asc, id asc
+    limit #{limit}
+  </select>
 </mapper>

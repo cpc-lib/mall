@@ -1,0 +1,7 @@
+package cc.ivera.shared.domain.exception;
+
+public class OversoldException extends BizException {
+    public OversoldException(String message) {
+        super(message);
+    }
+}

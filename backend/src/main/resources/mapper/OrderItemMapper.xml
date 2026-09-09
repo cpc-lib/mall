@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cc.ivera.mapper.OrderItemMapper">
+<mapper namespace="cc.ivera.order.infrastructure.persistence.mapper.OrderItemMapper">
   <update id="increaseRefundedQuantity">
     update t_order_item
     set refunded_qty = refunded_qty + #{quantity}, update_time = CURRENT_TIMESTAMP
@@ -11,35 +11,35 @@
   <update id="freezeItemRefund">
     update t_order_item
     set refund_frozen_qty = refund_frozen_qty + #{qty},
-        refund_frozen_amount = refund_frozen_amount + #{amount},
-        update_time = CURRENT_TIMESTAMP
+    refund_frozen_amount = refund_frozen_amount + #{amount},
+    update_time = CURRENT_TIMESTAMP
     where id = #{id}
-      and quantity - refunded_qty - refund_frozen_qty &gt;= #{qty}
-      and pay_amount - refunded_amount - refund_frozen_amount &gt;= #{amount}
+    and quantity - refunded_qty - refund_frozen_qty &gt;= #{qty}
+    and pay_amount - refunded_amount - refund_frozen_amount &gt;= #{amount}
   </update>
 
   <!-- 释放明细层退款冻结（拒绝/撤回） -->
   <update id="releaseItemRefundFreeze">
     update t_order_item
     set refund_frozen_qty = refund_frozen_qty - #{qty},
-        refund_frozen_amount = refund_frozen_amount - #{amount},
-        update_time = CURRENT_TIMESTAMP
+    refund_frozen_amount = refund_frozen_amount - #{amount},
+    update_time = CURRENT_TIMESTAMP
     where id = #{id}
-      and refund_frozen_qty &gt;= #{qty}
-      and refund_frozen_amount &gt;= #{amount}
+    and refund_frozen_qty &gt;= #{qty}
+    and refund_frozen_amount &gt;= #{amount}
   </update>
 
   <!-- 明细层退款结转：冻结转已退 -->
   <update id="settleItemRefund">
     update t_order_item
     set refund_frozen_qty = refund_frozen_qty - #{qty},
-        refund_frozen_amount = refund_frozen_amount - #{amount},
-        refunded_qty = refunded_qty + #{qty},
-        refunded_amount = refunded_amount + #{amount},
-        update_time = CURRENT_TIMESTAMP
+    refund_frozen_amount = refund_frozen_amount - #{amount},
+    refunded_qty = refunded_qty + #{qty},
+    refunded_amount = refunded_amount + #{amount},
+    update_time = CURRENT_TIMESTAMP
     where id = #{id}
-      and refund_frozen_qty &gt;= #{qty}
-      and refund_frozen_amount &gt;= #{amount}
+    and refund_frozen_qty &gt;= #{qty}
+    and refund_frozen_amount &gt;= #{amount}
   </update>
 
   <!-- 补库存累计：restocked+qty 不超过 已退+冻结（未发货取消在结转前即回补，冻结同样构成可回补上限） -->
@@ -47,6 +47,6 @@
     update t_order_item
     set restocked_qty = restocked_qty + #{qty}, update_time = CURRENT_TIMESTAMP
     where id = #{id}
-      and restocked_qty + #{qty} &lt;= refunded_qty + refund_frozen_qty
+    and restocked_qty + #{qty} &lt;= refunded_qty + refund_frozen_qty
   </update>
 </mapper>

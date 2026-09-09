@@ -59,7 +59,7 @@ services:
         hard: 65536
 
     healthcheck:
-      test: ["CMD-SHELL", "ps -ef | grep -v grep | grep dmserver >/dev/null || exit 1"]
+      test: [ "CMD-SHELL", "ps -ef | grep -v grep | grep dmserver >/dev/null || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 12

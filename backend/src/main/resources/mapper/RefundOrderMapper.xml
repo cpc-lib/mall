@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cc.ivera.mapper.RefundOrderMapper">
-  <select id="selectByRefundNoForUpdate" resultType="cc.ivera.entity.RefundOrder">
+<mapper namespace="cc.ivera.refund.infrastructure.persistence.mapper.RefundOrderMapper">
+  <select id="selectByRefundNoForUpdate" resultType="cc.ivera.refund.infrastructure.persistence.po.RefundOrderPO">
     select * from t_refund_order where refund_no = #{refundNo} for update
   </select>
 </mapper>

@@ -1,84 +1,84 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cc.ivera.mapper.ProductMapper">
+<mapper namespace="cc.ivera.product.infrastructure.persistence.mapper.ProductMapper">
 
-    <select id="selectByIdForUpdate" resultType="cc.ivera.entity.Product">
-        select *
-        from t_product
-        where id = #{id}
-        for update
-    </select>
+  <select id="selectByIdForUpdate" resultType="cc.ivera.product.infrastructure.persistence.po.ProductPO">
+    select *
+    from t_product
+    where id = #{id}
+    for update
+  </select>
 
-    <!-- 管理员手工调减可用库存（交易链路已改为预占模型，不再走此路径） -->
-    <update id="deductStockIfEnough">
-        update t_product set available_stock = available_stock - #{quantity}, update_time = CURRENT_TIMESTAMP
-        where id = #{id} and available_stock &gt;= #{quantity}
-    </update>
+  <!-- 管理员手工调减可用库存（交易链路已改为预占模型，不再走此路径） -->
+  <update id="deductStockIfEnough">
+    update t_product set available_stock = available_stock - #{quantity}, update_time = CURRENT_TIMESTAMP
+    where id = #{id} and available_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 管理员手工调增可用库存 -->
-    <update id="increaseStock">
-        update t_product set available_stock = available_stock + #{quantity}, update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-    </update>
+  <!-- 管理员手工调增可用库存 -->
+  <update id="increaseStock">
+    update t_product set available_stock = available_stock + #{quantity}, update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+  </update>
 
-    <!-- 下单预占：可用转锁定，可用不足则 affectedRows=0（防超卖根闸门） -->
-    <update id="reserveStock">
-        update t_product
-        set available_stock = available_stock - #{quantity},
-            locked_stock = locked_stock + #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and available_stock &gt;= #{quantity}
-    </update>
+  <!-- 下单预占：可用转锁定，可用不足则 affectedRows=0（防超卖根闸门） -->
+  <update id="reserveStock">
+    update t_product
+    set available_stock = available_stock - #{quantity},
+    locked_stock = locked_stock + #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and available_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 释放预占：锁定归还可用（关单/取消），锁定不足则 affectedRows=0 -->
-    <update id="releaseReservedStock">
-        update t_product
-        set available_stock = available_stock + #{quantity},
-            locked_stock = locked_stock - #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and locked_stock &gt;= #{quantity}
-    </update>
+  <!-- 释放预占：锁定归还可用（关单/取消），锁定不足则 affectedRows=0 -->
+  <update id="releaseReservedStock">
+    update t_product
+    set available_stock = available_stock + #{quantity},
+    locked_stock = locked_stock - #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and locked_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 确认收货结转已售：锁定转已售，锁定不足则 affectedRows=0 -->
-    <update id="commitSoldStock">
-        update t_product
-        set locked_stock = locked_stock - #{quantity},
-            sold_stock = sold_stock + #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and locked_stock &gt;= #{quantity}
-    </update>
+  <!-- 确认收货结转已售：锁定转已售，锁定不足则 affectedRows=0 -->
+  <update id="commitSoldStock">
+    update t_product
+    set locked_stock = locked_stock - #{quantity},
+    sold_stock = sold_stock + #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and locked_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 已售退款回补：已售归还可用，已售不足则 affectedRows=0 -->
-    <update id="releaseSoldStock">
-        update t_product
-        set available_stock = available_stock + #{quantity},
-            sold_stock = sold_stock - #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and sold_stock &gt;= #{quantity}
-    </update>
+  <!-- 已售退款回补：已售归还可用，已售不足则 affectedRows=0 -->
+  <update id="releaseSoldStock">
+    update t_product
+    set available_stock = available_stock + #{quantity},
+    sold_stock = sold_stock - #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and sold_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 仅退款未收货核销货损：锁定转丢失，锁定不足则 affectedRows=0 -->
-    <update id="writeOffLostStock">
-        update t_product
-        set locked_stock = locked_stock - #{quantity},
-            lost_stock = lost_stock + #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and locked_stock &gt;= #{quantity}
-    </update>
+  <!-- 仅退款未收货核销货损：锁定转丢失，锁定不足则 affectedRows=0 -->
+  <update id="writeOffLostStock">
+    update t_product
+    set locked_stock = locked_stock - #{quantity},
+    lost_stock = lost_stock + #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and locked_stock &gt;= #{quantity}
+  </update>
 
-    <!-- 仅退款已收货核销货损：已售转丢失（货留用户不回仓），已售不足则 affectedRows=0 -->
-    <update id="writeOffSoldLostStock">
-        update t_product
-        set sold_stock = sold_stock - #{quantity},
-            lost_stock = lost_stock + #{quantity},
-            update_time = CURRENT_TIMESTAMP
-        where id = #{id}
-          and sold_stock &gt;= #{quantity}
-    </update>
+  <!-- 仅退款已收货核销货损：已售转丢失（货留用户不回仓），已售不足则 affectedRows=0 -->
+  <update id="writeOffSoldLostStock">
+    update t_product
+    set sold_stock = sold_stock - #{quantity},
+    lost_stock = lost_stock + #{quantity},
+    update_time = CURRENT_TIMESTAMP
+    where id = #{id}
+    and sold_stock &gt;= #{quantity}
+  </update>
 
 </mapper>

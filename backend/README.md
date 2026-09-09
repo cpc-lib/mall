@@ -1,27 +1,30 @@
 # backend — 电商商城平台后端服务
 
-Spring Boot 2.3.7（Java 8，包名 `cc.ivera`）单体后端，为 [user-ui](../user-ui)（用户商城）与 [admin-ui](../admin-ui)（管理后台）提供 REST API，默认端口 `8080`。
+Spring Boot 2.3.7（Java 8，包名 `cc.ivera`）单体后端，为 [user-ui](../user-ui)（用户商城）与 [admin-ui](../admin-ui)（管理后台）提供
+REST API，默认端口 `8080`。
 
 ## 功能概览
 
-- **交易链路**：购物车（Redis）→ 下单（库存预占 + CAS 防超卖）→ 支付（微信 Native V2/V3、支付宝扫码）→ 延迟关单（MQ + 兜底扫描）→ 发货/物流 → 确认收货（结转已售）
+- **交易链路**：购物车（Redis）→ 下单（库存预占 + CAS 防超卖）→ 支付（微信 Native V2/V3、支付宝扫码）→ 延迟关单（MQ + 兜底扫描）→
+  发货/物流 → 确认收货（结转已售）
 - **退款**：6 种类型分项退款，三层额度冻结防超退，退货签收回补，重复/晚到支付自动冲正
 - **对账**：微信交易账单 CSV 上传式对账，8 类差异识别，全链路幂等
-- **工程保障**：三层并发控制（Redis 通知幂等 → Redisson 分布式锁 → DB 行锁 + CAS）、双 Token 认证、本地消息表（Outbox）、RabbitMQ 消费重试与兜底任务
+- **工程保障**：三层并发控制（Redis 通知幂等 → Redisson 分布式锁 → DB 行锁 + CAS）、双 Token 认证、本地消息表（Outbox）、RabbitMQ
+  消费重试与兜底任务
 
 完整架构、实体模型、路由与服务清单见 [../CODE_INTRO.md](../CODE_INTRO.md)。
 
 ## 技术栈
 
-| 分类 | 技术 | 版本 |
-|------|------|------|
-| 框架 | Spring Boot | 2.3.7.RELEASE |
-| ORM | MyBatis-Plus | 3.3.1 |
-| 数据库 | 达梦 DM8（DmJdbcDriver18） | 8.1.2.192 |
-| 缓存/锁 | Redis + Redisson | 5.0+ / 3.16.8 |
-| 消息队列 | RabbitMQ（Spring AMQP） | 3.7+ |
-| 对象存储 | MinIO（可选，Excel 存储） | 8.5.7 |
-| 支付 SDK | WechatPay APIv3 0.3.0 / wxpay-sdk 0.0.3 / Alipay SDK 4.22.57 | — |
+| 分类     | 技术                                                           | 版本            |
+|--------|--------------------------------------------------------------|---------------|
+| 框架     | Spring Boot                                                  | 2.3.7.RELEASE |
+| ORM    | MyBatis-Plus                                                 | 3.3.1         |
+| 数据库    | 达梦 DM8（DmJdbcDriver18）                                       | 8.1.2.192     |
+| 缓存/锁   | Redis + Redisson                                             | 5.0+ / 3.16.8 |
+| 消息队列   | RabbitMQ（Spring AMQP）                                        | 3.7+          |
+| 对象存储   | MinIO（可选，Excel 存储）                                           | 8.5.7         |
+| 支付 SDK | WechatPay APIv3 0.3.0 / wxpay-sdk 0.0.3 / Alipay SDK 4.22.57 | —             |
 
 ## 目录结构
 
@@ -53,7 +56,8 @@ cd env
 docker compose -f docker-compose.dm8.yml up -d
 ```
 
-容器 healthy 后，用 DM 管理工具连接 `localhost:5236`（默认 `SYSDBA / Cpc2026#@Dm`，schema `SYSDBA`），执行 `env/sql/dm8/schema.sql`（可重复执行，等同清库重建）。详见 [docs/DAMENG_DM8_OPERATIONS.md](docs/DAMENG_DM8_OPERATIONS.md)。
+容器 healthy 后，用 DM 管理工具连接 `localhost:5236`（默认 `SYSDBA / Cpc2026#@Dm`，schema `SYSDBA`），执行
+`env/sql/dm8/schema.sql`（可重复执行，等同清库重建）。详见 [docs/DAMENG_DM8_OPERATIONS.md](docs/DAMENG_DM8_OPERATIONS.md)。
 
 ### 2. 配置连接
 
@@ -75,7 +79,8 @@ mvn spring-boot:run
 
 ## 测试
 
-当前无自动化测试套件（`src/test` 为空）。按 [../AGENTS.md](../AGENTS.md) 规则，重构遗留行为前需先补特征测试，之后用 `mvn test` 回归。
+当前无自动化测试套件（`src/test` 为空）。按 [../AGENTS.md](../AGENTS.md) 规则，重构遗留行为前需先补特征测试，之后用
+`mvn test` 回归。
 
 ## 运维文档
 

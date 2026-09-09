@@ -1,45 +1,45 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="cc.ivera.mapper.PaymentOrderMapper">
+<mapper namespace="cc.ivera.payment.infrastructure.persistence.mapper.PaymentOrderMapper">
 
-    <select id="selectByPaymentNoForUpdate" resultType="cc.ivera.entity.PaymentOrder">
-        select *
-        from t_payment_order
-        where payment_no = #{paymentNo}
-        for update
-    </select>
+  <select id="selectByPaymentNoForUpdate" resultType="cc.ivera.payment.infrastructure.persistence.po.PaymentOrderPO">
+    select *
+    from t_payment_order
+    where payment_no = #{paymentNo}
+    for update
+  </select>
 
-    <!-- 渠道资金防线：累计已退+冻结+本次 不超过实付金额 -->
-    <update id="freezeChannelRefund">
-        update t_payment_order
-        set refund_frozen_amount = refund_frozen_amount + #{amount}, update_time = CURRENT_TIMESTAMP
-        where payment_no = #{paymentNo}
-          and paid_amount - refunded_amount - refund_frozen_amount &gt;= #{amount}
-    </update>
+  <!-- 渠道资金防线：累计已退+冻结+本次 不超过实付金额 -->
+  <update id="freezeChannelRefund">
+    update t_payment_order
+    set refund_frozen_amount = refund_frozen_amount + #{amount}, update_time = CURRENT_TIMESTAMP
+    where payment_no = #{paymentNo}
+    and paid_amount - refunded_amount - refund_frozen_amount &gt;= #{amount}
+  </update>
 
-    <update id="settleChannelRefund">
-        update t_payment_order
-        set refund_frozen_amount = refund_frozen_amount - #{amount},
-            refunded_amount = refunded_amount + #{amount},
-            update_time = CURRENT_TIMESTAMP
-        where payment_no = #{paymentNo}
-          and refund_frozen_amount &gt;= #{amount}
-    </update>
+  <update id="settleChannelRefund">
+    update t_payment_order
+    set refund_frozen_amount = refund_frozen_amount - #{amount},
+    refunded_amount = refunded_amount + #{amount},
+    update_time = CURRENT_TIMESTAMP
+    where payment_no = #{paymentNo}
+    and refund_frozen_amount &gt;= #{amount}
+  </update>
 
-    <update id="closeActiveByOrderNo">
-        update t_payment_order
-        set status = 'CLOSED', update_time = CURRENT_TIMESTAMP
-        where order_no = #{orderNo}
-          and status in ('CREATED', 'PAYING')
-    </update>
+  <update id="closeActiveByOrderNo">
+    update t_payment_order
+    set status = 'CLOSED', update_time = CURRENT_TIMESTAMP
+    where order_no = #{orderNo}
+    and status in ('CREATED', 'PAYING')
+  </update>
 
-    <!-- 订单成交收口：关闭除成交支付单外的其它渠道活跃支付单（跨渠道多次发起支付后防悬挂） -->
-    <update id="closeActiveByOrderNoExceptPaymentNo">
-        update t_payment_order
-        set status = 'CLOSED', update_time = CURRENT_TIMESTAMP
-        where order_no = #{orderNo}
-          and payment_no != #{paymentNo}
-          and status in ('CREATED', 'PAYING')
-    </update>
+  <!-- 订单成交收口：关闭除成交支付单外的其它渠道活跃支付单（跨渠道多次发起支付后防悬挂） -->
+  <update id="closeActiveByOrderNoExceptPaymentNo">
+    update t_payment_order
+    set status = 'CLOSED', update_time = CURRENT_TIMESTAMP
+    where order_no = #{orderNo}
+    and payment_no != #{paymentNo}
+    and status in ('CREATED', 'PAYING')
+  </update>
 
 </mapper>
