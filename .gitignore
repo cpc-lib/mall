@@ -1,5 +1,6 @@
 # IDE / tooling
 .idea/
+.vscode/
 .trae/*
 !.trae/skills/
 
