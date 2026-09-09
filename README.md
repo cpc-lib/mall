@@ -9,6 +9,9 @@
 基于 Spring Boot 的电商商城平台：集成**微信支付 V2/V3** 与**支付宝**通道，覆盖「浏览商品 → 购物车 → 下单 → 支付 →
 发货/物流 → 确认收货 → 退款/退货 → 账单对账」完整交易闭环，并实现企业级并发控制、幂等保障、库存四桶预占与货损核销、分项退款与上传式账单对账。
 
+后端按 DDD 限界上下文组织为 8 个包（`shared` / `product` / `order` / `payment` / `refund` / `user` / `cart` / `bill`），每个上下文内部统一
+`interfaces / application / domain / infrastructure` 四层，架构导览见 [CODE_INTRO.md](CODE_INTRO.md)。
+
 前端拆分为两个独立工程，与后端 REST 契约对齐：
 
 - **user-ui** — 用户商城（React 18，移动 App 风格界面，含收货地址、购物车、订单、退款申请、用户中心）
@@ -34,13 +37,13 @@
 
 **管理后台**
 
-- **订单管理**：多状态线筛选、详情抽屉、强制关单（幂等）、标记已付、渠道查单、支付单渠道尝试记录
+- **订单管理**：多状态线筛选、详情抽屉、强制关单（幂等）、标记已付（线下收款生成 OFFLINE 渠道成功支付记录）、渠道查单、支付单渠道尝试记录
 - **订单发货**：待发货列表、模拟发货
 - **商品库存**：新增商品、库存调整（单个/批量）、上架/下架、库存流水（四桶 delta）服务端分页查询，货损列高亮
 - **批量库存维护**：Excel（.xlsx）导入 → 生成导入记录 → 全屏 Luckysheet 编辑器核对/编辑 → 确认入库（CAS 防重复执行）；失败行记录原因
 - **Excel 文件存储**：`stock.import.storage=local|minio` 可切换，本地磁盘或 MinIO 对象存储；记录级路由，历史文件按原后端读取
-- **退款受理**：受理/拒绝/退货签收/渠道重试/状态查询/差价退款
-- **用户管理**：分页搜索、禁用启用、用户详情、登录锁定（3 次失败锁 10 分钟，仅锁定输错密码的用户名，不按网络/IP 锁定）；管理员顶栏自助修改密码（改密后全部
+- **退款受理**：受理/拒绝/退货签收/渠道重试/状态查询/差价退款；线下收款单退款不调渠道，本地直接结转成功
+- **用户管理**：分页搜索、禁用启用、用户详情、登录锁定（3 次失败锁 10 分钟，仅锁定输错密码的用户名，不按网络/IP 锁定）；管理员顶栏弹窗式修改密码（改密后全部
   Token 失效强制重登录）
 - **密码重置**：用户提交找回申请 → 管理员受理生成随机密码（仅展示一次）或直接按用户重置
 - **账单对账**：上传微信交易账单 CSV（ALL/SUCCESS/REFUND），自动解析入库并对账，8 类差异识别，人工标记处理，全链路幂等
@@ -48,11 +51,12 @@
 
 **工程保障**
 
-- **三层并发控制**：通知幂等检查（Redis）→ Redisson 分布式锁 → 数据库行锁 + CAS 状态更新
+- **并发控制**：通知幂等检查（Redis notifyId，仅回调路径）→ Redisson 分布式锁（同维度操作事务外加锁串行化）→ CAS 条件更新（状态/数量条件
+  UPDATE）；代码中不使用 `select ... for update`，并发权威由 Redis 锁 + CAS 兜底
 - **双 Token 认证**：Access 30 分钟 + Refresh 7 天，401 单飞（single-flight）无感刷新
 - **本地消息表（Outbox）**：关单/退款同步消息先落库再投递，broker 确认后标记，失败指数退避重试，耗尽转人工补偿；DB 定时任务兜底对账
 - **MQ 容错**：消费异常指数退避重试（2s→6s→18s 共 4 次），耗尽拒绝不回队，由幂等的 DB 兜底任务接管
-- **达梦 DM8**：官方镜像一键启动，`schema.sql` 一体化全量建表 + 种子数据
+- **达梦 DM8**：官方镜像一键启动，`schema.sql` 一体化全量建表 + 种子数据（可重复执行，等同清库重建）
 
 ## 技术栈
 
@@ -74,28 +78,31 @@
 
 ```
 mall/
-├── backend/                       # 后端 Spring Boot 应用（cc.ivera）
+├── backend/                       # 后端 Spring Boot 应用（cc.ivera，DDD 8 限界上下文 × 四层）
 │   ├── src/main/java/cc/ivera/
-│   │   ├── controller/            # 24 个 REST 控制器（商城 /api/* + 管理 /api/admin/*）
-│   │   ├── service/               # 业务服务（交易/退款/库存/对账/wxpay 门面/物流）
-│   │   ├── entity/ enums/         # 19 张表实体、14 个状态机/业务枚举
-│   │   ├── mapper/                # Mapper 接口（XML 见 resources/mapper/）
-│   │   ├── security/              # AuthInterceptor、JwtTokenService、LoginGuardService
-│   │   ├── mq/                    # RabbitMQ 消费者（延迟关单、退款状态同步）
-│   │   ├── job/                   # 定时任务（关单兜底、退款同步兜底、本地消息重投、模拟物流）
-│   │   ├── lock/                  # DistributedLockTemplate（Redisson 实现）
-│   │   └── config/                # Redisson/MQ 拓扑/支付配置加载/Swagger/WebMvc
+│   │   ├── Application.java       # 启动类（@EnableRabbit / @EnableScheduling）
+│   │   ├── shared/                # 共享内核：Money/异常/锁模板/本地消息、security、web、配置
+│   │   ├── product/               # 商品与库存：商品 CRUD、库存四桶、预占、Excel 导入
+│   │   ├── order/                 # 订单与履约：下单、关单、发货、物流模拟、确认收货
+│   │   ├── payment/               # 支付：微信 V2/V3、支付宝、支付单/支付记录、渠道配置
+│   │   ├── refund/                # 退款：退款单/明细、额度策略、渠道退款、状态同步
+│   │   ├── user/                  # 用户/认证/收货地址/行政区划/密码重置
+│   │   ├── cart/                  # 购物车（Redis 仓储）
+│   │   └── bill/                  # 微信账单上传对账（CSV 解析、8 类差异）
+│   │   # 每个上下文内部分 interfaces / application / domain / infrastructure 四层；
+│   │   # PO、Mapper、Converter、RepositoryImpl 位于 infrastructure.persistence
 │   ├── src/main/resources/
-│   │   ├── mapper/                # MyBatis XML（18 个）
+│   │   ├── mapper/                # MyBatis XML（18 个，平铺，namespace 指向各上下文 persistence.mapper）
 │   │   └── application.yml        # 连接参数与业务配置
+│   ├── src/test/                  # 单元/特征测试（16 个测试类、121 个用例，纯 JUnit5 + Mockito）
 │   ├── docs/                      # DM8 与 RabbitMQ 运维手册
 │   └── env/
-│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查与初始化挂载）
-│       └── sql/dm8/               # schema.sql 一体化全量建表 + 种子数据（唯一 SQL 文件）
+│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查与 dm8-data 卷）
+│       └── sql/dm8/schema.sql     # 一体化全量建表 + 种子数据（唯一 SQL 脚本，可重复执行）
 ├── user-ui/                       # 用户商城（React，移动 App 风格，dev 端口 3000）
 ├── admin-ui/                      # 管理后台（React，dev 端口 3002）
-├── AGENTS.md                      # 项目规则（issue 分类/分支命名/测试要求/DoD）
-├── CODE_INTRO.md                  # 代码导览（架构/实体/路由/服务/MQ/前端）
+├── AGENTS.md                      # 项目规则（问题分类/分支命名/领域不变量/测试要求/DoD）
+├── CODE_INTRO.md                  # 代码导览（架构/上下文/实体/路由/服务/MQ/前端）
 └── README.md
 ```
 
@@ -121,8 +128,7 @@ docker compose -f docker-compose.dm8.yml up -d
 - 三级行政区划表 `t_region` 与全国数据
 - 收货地址表 `t_shipping_address`
 
-> 全新建库与存量库升级统一使用上述 schema.sql（历史增量结构已全部并入）；已废弃的遗留表（旧对账三表、t_stock_operation_log）仅保留
-> DROP 守卫清理，不再重建。
+> 脚本头部带遗留表 DROP 守卫（旧对账三表、`t_stock_operation_log`、旧退款申请表等），重复执行会先清后建。
 > 数据卷 `dm8-data` 保存数据库数据，**不要执行 `docker compose down -v`**，否则数据丢失需重新建表。
 
 ### 2. 配置并启动后端
@@ -193,15 +199,17 @@ npm run dev
 ## 测试
 
 ```powershell
-# 前端逻辑单测（Node 内置 test runner，仅 user-ui）
-cd user-ui   && npm run test:logic    # Token 单飞刷新
+# 后端单元/特征测试（16 个测试类、121 个用例；纯 JUnit5 + Mockito，不连真实 DM8/Redis/RabbitMQ/支付渠道）
+cd backend
+mvn test
+
+# 前端逻辑单测（Node 内置 test runner，仅 user-ui：Token 单飞刷新）
+cd user-ui
+npm run test:logic
 
 # 前端构建
-cd user-ui   && npm run build
-cd admin-ui  && npm run build
-
-# 后端：当前无自动化测试套件（backend/src/test 为空）。
-# 按 AGENTS.md 规则，重构遗留行为前需先在 backend/src/test 补特征测试，之后用 mvn test 回归。
+cd user-ui   ; npm run build
+cd admin-ui  ; npm run build
 ```
 
 ## 运维文档
