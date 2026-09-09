@@ -100,8 +100,9 @@ cc.ivera.<context>/
     - `ROLE_ADMIN` 必需：`/api/auth/admin/**`、`/api/admin/**`、含 `/admin/` 的路径、退款 accept/reject、
       `/api/payment-app|payment-channel|payment-config|reconciliation|refund-info`
     - `ROLE_ADMIN` 禁入：`/api/cart`、`/api/checkout`（返回 403「管理员账号不支持购物车与下单操作」）
-- **登录锁定 LoginGuardService**：连续 3 次密码错误，按「用户名 + IP」双维度各自计数并锁定 10 分钟（Redis key：
-  `auth:login_fail/lock:*`）；滑动窗口计数，锁定期间不触达数据库；Redis 异常时 fail-open 不阻断登录
+- **登录锁定 LoginGuardService**：连续 3 次密码错误，按用户名维度计数并锁定 10 分钟（Redis key：`auth:login_fail:` /
+  `auth:login_lock:`）；滑动窗口计数，锁定期间不触达数据库；Redis 异常时 fail-open 不阻断登录。仅锁定输错密码的用户名，
+  不按来源 IP 锁定，避免同一网络（NAT/办公网）下某个用户输错密码误伤其他用户
 - **密码重置**：`t_password_reset_request` 记录用户找回申请；管理员受理生成随机密码（仅展示一次）或直接按 userId 重置，重置后旧
   Token 全局失效并清除锁定
 
@@ -396,12 +397,15 @@ flowchart TB
 - **收货地址**：`t_region`（三级行政区划，`RegionController` 公开级联查询）+ `t_shipping_address`（用户地址 CRUD，
   `UserAddressController`）；结算时选择地址并快照入订单
 - 用户端：查看物流时间线；**确认收货仅物流 `DELIVERED` 后可操作**（订单列表 VO 透出 `shipmentStatus`
-  ，前端按此渲染按钮与「运输中/已送达」标签）；已付款未发货取消订单自动生成退款申请
-- 管理端：模拟发货、强制关单、退款受理
+  ，前端按此渲染按钮与「运输中/已送达」标签）；已付款未发货仅显示「取消订单」（整单自动受理退款 + 回补库存），
+  「申请退款」按钮在发货/收货后才显示
+- 管理端：模拟发货、强制关单、退款受理、标记付款（线下收款）
 - **退款单模型**（RefundOrder/RefundItem，区别于渠道退款记录 t_refund_info）：
     - 类型 `RefundType`（6 种）：未发货取消（受理后自动回补 locked→available）、退货退款（签收质检后回补
       sold→available）、仅退款（核销货损：未收货 locked→lost、已收货 sold→lost）、差价退款（管理员发起手填金额，不动库存）、重复支付/晚到支付自动原路退款（
       `ExceptionRefundService` 系统冲正，不占售后额度）
+    - **线下收款退款**：锚定 `OFFLINE` 支付单的退款不调用渠道退款接口，受理/签收后直接将渠道退款记录置成功，
+      由 `RefundSucceeded` 事件本地结转（冻结转已退、全额退关闭订单，库存回补规则不变）；微信/支付宝支付单仍走渠道原路退回
     - 状态 `RefundOrderStatus`：APPLYING（待审核，可编辑/撤销）→ 受理后冻结额度 → 审核/退货签收 → 渠道退款 → SUCCESS/FAILED
     - **防超退**：受理即冻结可退额度，前端 `refundQuota.js` 与后端 `RefundPolicy` 双重核算；最后一件吃尾差，金额以服务端为准
 
@@ -565,7 +569,7 @@ flowchart TB
 
 | Service                                                                      | 说明                                               |
 |------------------------------------------------------------------------------|--------------------------------------------------|
-| `AuthService` / `LoginGuardService`                                          | 双 Token 认证、Token 版本校验、登录失败双维度计数与锁定               |
+| `AuthService` / `LoginGuardService`                                          | 双 Token 认证、Token 版本校验、登录失败按用户名计数与锁定               |
 | `ProductService` / `ProductStockService`                                     | 商品 CRUD、库存 CAS 调整                                |
 | `CartService`                                                                | Redis 购物车（实时价/库存）                                |
 | `CheckoutService`                                                            | 多商品下单（快照价 + 收货地址 + 库存预占 + 支付单创建）                 |

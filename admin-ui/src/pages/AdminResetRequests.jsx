@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Descriptions, Drawer, Input, message, Modal, Space, Table, Tag, Typography } from 'antd'
 import authApi from '@/api/auth'
+import { RESET_STATUS_COLOR, RESET_STATUS_LABEL } from '@/utils/statusLabels'
 
 export default function AdminResetRequests() {
   const [resetRequests, setResetRequests] = useState([])
@@ -33,7 +34,7 @@ export default function AdminResetRequests() {
     { title: 'ID', dataIndex: 'id', width: 60 },
     { title: '用户名', dataIndex: 'username', width: 140, render: (v, r) => <a onClick={() => openDetail(r)}>{v}</a> },
     { title: '申请说明', dataIndex: 'remark', ellipsis: true, render: v => v || '-' },
-    { title: '状态', dataIndex: 'status', width: 100, render: v => <Tag color={v === 'PENDING' ? 'orange' : v === 'HANDLED' ? 'green' : 'default'}>{v === 'PENDING' ? '待处理' : v === 'HANDLED' ? '已处理' : '已拒绝'}</Tag> },
+    { title: '状态', dataIndex: 'status', width: 100, render: v => <Tag color={RESET_STATUS_COLOR[v] || 'default'}>{RESET_STATUS_LABEL[v] || v}</Tag> },
     { title: '申请时间', dataIndex: 'createTime', width: 170, render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: '处理时间', dataIndex: 'updateTime', width: 170, render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: '操作', width: 90, render: (_, r) => <Button size="small" onClick={() => openDetail(r)}>详情</Button> }
@@ -52,7 +53,7 @@ export default function AdminResetRequests() {
         <Descriptions column={1} bordered size="small" style={{ marginBottom: 16 }}>
           <Descriptions.Item label="ID">{detail.id}</Descriptions.Item>
           <Descriptions.Item label="用户名">{detail.username}</Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag color={detail.status === 'PENDING' ? 'orange' : detail.status === 'HANDLED' ? 'green' : 'default'}>{detail.status === 'PENDING' ? '待处理' : detail.status === 'HANDLED' ? '已处理' : '已拒绝'}</Tag></Descriptions.Item>
+          <Descriptions.Item label="状态"><Tag color={RESET_STATUS_COLOR[detail.status] || 'default'}>{RESET_STATUS_LABEL[detail.status] || detail.status}</Tag></Descriptions.Item>
           <Descriptions.Item label="申请说明">{detail.remark || '-'}</Descriptions.Item>
           <Descriptions.Item label="申请时间">{detail.createTime ? new Date(detail.createTime).toLocaleString() : '-'}</Descriptions.Item>
           <Descriptions.Item label="处理时间">{detail.updateTime ? new Date(detail.updateTime).toLocaleString() : '-'}</Descriptions.Item>

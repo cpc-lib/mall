@@ -3,7 +3,7 @@ import { Button, Empty, Input, InputNumber, message, Modal, Tag } from 'antd'
 import refundApi from '@/api/refundApply'
 import checkoutApi from '@/api/checkout'
 import { availableRefundQuantityExcluding, refundAmountEstimate } from '@/utils/refundQuota'
-import { REFUND_STATUS_LABEL, REFUND_TYPE_LABEL } from '@/utils/statusLabels'
+import { REFUND_STATUS_COLOR, REFUND_STATUS_LABEL, REFUND_TYPE_LABEL } from '@/utils/statusLabels'
 
 export default function RefundApplications() {
   const [list, setList] = useState([])
@@ -42,7 +42,7 @@ export default function RefundApplications() {
           <div className="m-list-head">
             <div className="m-list-no">退款号 {r.apply.refundNo}<br />订单号 {r.apply.orderNo}</div>
             <div className="m-list-tags">
-              <Tag color={r.apply.status === 'FAILED' ? 'red' : r.apply.status === 'SUCCESS' ? 'green' : 'blue'}>{REFUND_STATUS_LABEL[r.apply.status] || r.apply.status}</Tag>
+              <Tag color={REFUND_STATUS_COLOR[r.apply.status] || 'blue'}>{REFUND_STATUS_LABEL[r.apply.status] || r.apply.status}</Tag>
             </div>
           </div>
           <div className="m-list-sub">

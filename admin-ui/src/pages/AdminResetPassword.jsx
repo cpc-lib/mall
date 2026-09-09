@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Input, Space, Table, Tag, message, Typography } from 'antd'
 import authApi from '@/api/auth'
+import { ROLE_COLOR, USER_STATUS_COLOR, USER_STATUS_LABEL } from '@/utils/statusLabels'
 
 export default function AdminResetPassword() {
   const [records, setRecords] = useState([])
@@ -39,8 +40,8 @@ export default function AdminResetPassword() {
   const cols = [
     { title: 'ID', dataIndex: 'id', width: 70 },
     { title: '用户名', dataIndex: 'username', width: 160 },
-    { title: '角色', dataIndex: 'role', width: 120, render: v => <Tag color={v === 'ROLE_ADMIN' ? 'red' : 'blue'}>{v}</Tag> },
-    { title: '状态', dataIndex: 'userStatus', width: 100, render: v => <Tag color={v === 'ENABLED' ? 'green' : 'red'}>{v === 'ENABLED' ? '正常' : '已禁用'}</Tag> },
+    { title: '角色', dataIndex: 'role', width: 120, render: v => <Tag color={ROLE_COLOR[v] || 'blue'}>{v}</Tag> },
+    { title: '状态', dataIndex: 'userStatus', width: 100, render: v => <Tag color={USER_STATUS_COLOR[v] || 'red'}>{USER_STATUS_LABEL[v] || v}</Tag> },
     { title: '注册时间', dataIndex: 'createTime', width: 180, render: v => v ? new Date(v).toLocaleString() : '-' },
     {
       title: '说明', render: (_, u) => u.role === 'ROLE_ADMIN'

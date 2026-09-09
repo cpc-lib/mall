@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Descriptions, Drawer, Input, InputNumber, message, Space, Spin, Table, Tag, Typography } from 'antd'
 import stockApi from '@/api/adminStock'
+import { PRODUCT_STATUS_COLOR, OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL } from '@/utils/statusLabels'
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
@@ -69,7 +70,7 @@ export default function AdminProducts() {
     { title: '锁定库存', dataIndex: 'lockedStock', width: 90 },
     { title: '已售库存', dataIndex: 'soldStock', width: 90 },
     { title: '丢失库存', dataIndex: 'lostStock', width: 90, render: v => <Tag color={v > 0 ? 'orange' : 'default'}>{v || 0}</Tag> },
-    { title: '状态', dataIndex: 'productStatus', width: 90, render: v => <Tag color={v === 'ENABLED' ? 'green' : 'default'}>{v}</Tag> },
+    { title: '状态', dataIndex: 'productStatus', width: 90, render: v => <Tag color={PRODUCT_STATUS_COLOR[v] || 'default'}>{v}</Tag> },
     { title: '库存调整', width: 220, render: (_, p) => <Space><InputNumber value={stockDelta[p.id]} placeholder="±数量" onChange={v2 => setStockDelta(s => ({ ...s, [p.id]: v2 }))} style={{ width: 110 }} /><Button type="primary" onClick={() => adjustStock(p, stockDelta[p.id])}>确认调整</Button></Space> },
     { title: '上下架', width: 150, render: (_, p) => <Button onClick={() => setStatus(p, p.productStatus === 'ENABLED' ? 'DISABLED' : 'ENABLED')}>{p.productStatus === 'ENABLED' ? '下架' : '上架'}</Button> }
   ]
@@ -83,7 +84,7 @@ export default function AdminProducts() {
   const logCols = [
     { title: '时间', dataIndex: 'createTime', width: 150, render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: '类型', dataIndex: 'operationType', width: 104, render: v => BIZ_TYPE_LABEL[v] || v },
-    { title: '状态', dataIndex: 'operationStatus', width: 66, render: v => <Tag color={v === 'SUCCESS' ? 'green' : 'red'}>{v === 'SUCCESS' ? '成功' : v}</Tag> },
+    { title: '状态', dataIndex: 'operationStatus', width: 66, render: v => <Tag color={OPERATION_STATUS_COLOR[v] || 'red'}>{OPERATION_STATUS_LABEL[v] || v}</Tag> },
     { title: '可用', dataIndex: 'availableDelta', width: 52, align: 'center', render: deltaCell },
     { title: '锁定', dataIndex: 'lockedDelta', width: 52, align: 'center', render: deltaCell },
     { title: '已售', dataIndex: 'soldDelta', width: 52, align: 'center', render: deltaCell },
@@ -102,7 +103,7 @@ export default function AdminProducts() {
           <Descriptions.Item label="ID">{p.id}</Descriptions.Item>
           <Descriptions.Item label="商品名称">{p.title}</Descriptions.Item>
           <Descriptions.Item label="价格">¥{((p.price || 0) / 100).toFixed(2)}（{p.price}分）</Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag color={p.productStatus === 'ENABLED' ? 'green' : 'default'}>{p.productStatus}</Tag></Descriptions.Item>
+          <Descriptions.Item label="状态"><Tag color={PRODUCT_STATUS_COLOR[p.productStatus] || 'default'}>{p.productStatus}</Tag></Descriptions.Item>
           <Descriptions.Item label="可用库存">{p.stock}</Descriptions.Item>
           <Descriptions.Item label="锁定库存">{p.lockedStock}</Descriptions.Item>
           <Descriptions.Item label="已售库存">{p.soldStock}</Descriptions.Item>

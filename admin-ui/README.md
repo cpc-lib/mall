@@ -1,6 +1,7 @@
 # admin-ui — 管理后台前端
 
-管理后台单页应用（React 18 + Vite 5 + Ant Design 5），左侧导航 + 列表 + 抽屉详情布局，开发端口 `3002`，通过 CORS 直连后端 `http://localhost:8080`。
+管理后台单页应用（React 18 + Vite 5 + Ant Design 5），左侧导航 + 列表 + 抽屉详情布局，开发端口 `3002`，通过 CORS 直连后端
+`http://localhost:8080`。
 
 ## 功能概览
 

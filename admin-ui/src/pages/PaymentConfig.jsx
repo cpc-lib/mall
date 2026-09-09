@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Divider, Drawer, Form, Input, InputNumber, message, Modal, Select, Space, Tabs, Table, Tag, Typography } from 'antd'
 import paymentConfigApi from '@/api/paymentConfig'
+import { CONFIG_STATUS_COLOR } from '@/utils/statusLabels'
 
 const defaultChannelForm = () => ({
   id: null,
@@ -171,7 +172,7 @@ export default function PaymentConfig() {
       dataIndex: 'channelStatus',
       width: 110,
       render: (status) => (
-        <Tag color={status === 'ENABLED' ? 'success' : 'default'}>{status}</Tag>
+        <Tag color={CONFIG_STATUS_COLOR[status] || 'default'}>{status}</Tag>
       )
     },
     { title: '描述', dataIndex: 'channelDesc' },
@@ -202,7 +203,7 @@ export default function PaymentConfig() {
       dataIndex: 'appStatus',
       width: 110,
       render: (status) => (
-        <Tag color={status === 'ENABLED' ? 'success' : 'default'}>{status}</Tag>
+        <Tag color={CONFIG_STATUS_COLOR[status] || 'default'}>{status}</Tag>
       )
     },
     { title: '描述', dataIndex: 'appDesc' },

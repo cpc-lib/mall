@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Descriptions, Drawer, message, Table, Tag, Typography } from 'antd'
 import refundApi from '@/api/refundApply'
-import { REFUND_STATUS_LABEL, REFUND_TYPE_LABEL } from '@/utils/statusLabels'
+import { REFUND_STATUS_LABEL, REFUND_STATUS_COLOR, REFUND_TYPE_LABEL } from '@/utils/statusLabels'
 
 export default function AdminRefunds() {
   const [refunds, setRefunds] = useState([])
@@ -29,7 +29,7 @@ export default function AdminRefunds() {
     { title: '订单号', render: (_, v) => v.apply.orderNo },
     { title: '类型', render: (_, v) => REFUND_TYPE_LABEL[v.apply.refundType] || v.apply.refundType },
     { title: '金额', render: (_, v) => `¥${((v.apply.refundAmount || 0) / 100).toFixed(2)}` },
-    { title: '状态', render: (_, v) => <Tag color={v.apply.status === 'FAILED' ? 'red' : v.apply.status === 'SUCCESS' ? 'green' : 'blue'}>{REFUND_STATUS_LABEL[v.apply.status] || v.apply.status}</Tag> },
+    { title: '状态', render: (_, v) => <Tag color={REFUND_STATUS_COLOR[v.apply.status] || 'blue'}>{REFUND_STATUS_LABEL[v.apply.status] || v.apply.status}</Tag> },
     { title: '失败原因', width: 200, render: (_, v) => v.apply.status === 'FAILED' ? <span style={{ color: '#f50', fontSize: 12 }}>{v.failReason || '-'}</span> : '-' },
     { title: '明细', render: (_, v) => v.items.map(i => <div key={i.id}>item#{i.orderItemId} × {i.refundQty}</div>) },
     { title: '操作', width: 90, render: (_, v) => <Button size="small" onClick={() => openDetail(v)}>详情</Button> }
@@ -61,7 +61,7 @@ export default function AdminRefunds() {
           <Descriptions.Item label="退款号">{a.refundNo}</Descriptions.Item>
           <Descriptions.Item label="订单号">{a.orderNo}</Descriptions.Item>
           <Descriptions.Item label="退款类型">{REFUND_TYPE_LABEL[a.refundType] || a.refundType}</Descriptions.Item>
-          <Descriptions.Item label="状态"><Tag color={a.status === 'FAILED' ? 'red' : a.status === 'SUCCESS' ? 'green' : 'blue'}>{REFUND_STATUS_LABEL[a.status] || a.status}</Tag></Descriptions.Item>
+          <Descriptions.Item label="状态"><Tag color={REFUND_STATUS_COLOR[a.status] || 'blue'}>{REFUND_STATUS_LABEL[a.status] || a.status}</Tag></Descriptions.Item>
           <Descriptions.Item label="退款金额">¥{((a.refundAmount || 0) / 100).toFixed(2)}</Descriptions.Item>
           <Descriptions.Item label="申请时间">{a.createTime ? new Date(a.createTime).toLocaleString() : '-'}</Descriptions.Item>
           <Descriptions.Item label="退款原因" span={2}>{a.reason || '-'}</Descriptions.Item>

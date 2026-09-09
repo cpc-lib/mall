@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Card, InputNumber, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
 import * as XLSX from 'xlsx'
 import stockApi from '@/api/adminStock'
+import { OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL, STOCK_IMPORT_STATUS_LABEL, STOCK_IMPORT_STATUS_COLOR } from '@/utils/statusLabels'
 
 const BIZ_TYPES = [
   { value: 'MANUAL_ADJUST', label: 'MANUAL_ADJUST（手工调整）' },
@@ -154,7 +155,7 @@ export default function StockMaintenance() {
     { title: '时间', dataIndex: 'createTime', width: 165, render: v => v ? new Date(v).toLocaleString() : '-' },
     { title: '业务单号', dataIndex: 'bizNo', width: 210, ellipsis: true },
     { title: '类型', dataIndex: 'operationType', width: 170, render: v => (BIZ_TYPES.find(t => t.value === v)?.label) || v },
-    { title: '状态', dataIndex: 'operationStatus', width: 85, render: v => <Tag color={v === 'SUCCESS' ? 'green' : 'red'}>{v}</Tag> },
+    { title: '状态', dataIndex: 'operationStatus', width: 85, render: v => <Tag color={OPERATION_STATUS_COLOR[v] || 'red'}>{OPERATION_STATUS_LABEL[v] || v}</Tag> },
     { title: '可用', dataIndex: 'availableDelta', width: 70, align: 'center', render: deltaCell },
     { title: '锁定', dataIndex: 'lockedDelta', width: 70, align: 'center', render: deltaCell },
     { title: '已售', dataIndex: 'soldDelta', width: 70, align: 'center', render: deltaCell },
@@ -201,7 +202,7 @@ export default function StockMaintenance() {
             { title: '记录ID', dataIndex: 'id', width: 90 },
             { title: '文件名', dataIndex: 'fileName', ellipsis: true },
             { title: '明细条数', dataIndex: 'itemCount', width: 90 },
-            { title: '状态', dataIndex: 'status', width: 100, render: v => (v === 'PENDING' ? <Tag color="orange">待确认</Tag> : <Tag>已入库</Tag>) },
+            { title: '状态', dataIndex: 'status', width: 100, render: v => <Tag color={STOCK_IMPORT_STATUS_COLOR[v] || 'default'}>{STOCK_IMPORT_STATUS_LABEL[v] || v}</Tag> },
             { title: '导入时间', dataIndex: 'createTime', width: 165, render: v => (v ? new Date(v).toLocaleString() : '-') },
             {
               title: '操作', width: 110,

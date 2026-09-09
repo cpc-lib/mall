@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Card, DatePicker, Descriptions, Drawer, Input, InputNumber, message, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import shipmentApi from '@/api/shipment'
 import refundApi from '@/api/refundApply'
-import { PAY_LABEL, FULFILLMENT_LABEL } from '@/utils/statusLabels'
+import { PAY_LABEL, FULFILLMENT_LABEL, PAY_COLOR, PAYMENT_STATUS_COLOR, ORDER_REFUND_COLOR, ORDER_REFUND_LABEL } from '@/utils/statusLabels'
 
 export default function AdminOrders() {
   const [allOrders, setAllOrders] = useState([])
@@ -51,10 +51,10 @@ export default function AdminOrders() {
   const prettyRaw = raw => { try { return JSON.stringify(JSON.parse(raw), null, 2) } catch { return raw } }
   const poCols = [
     { title: '支付单号', dataIndex: 'paymentNo', width: 170 },
-    { title: '渠道', dataIndex: 'channel', width: 80 },
+    { title: '渠道', dataIndex: 'channel', width: 80, render: v => v === 'OFFLINE' ? '线下' : v },
     {
       title: '状态', dataIndex: 'status', width: 90,
-      render: s => <Tag color={s === 'SUCCESS' ? 'green' : s === 'PAYING' ? 'orange' : undefined}>{s}</Tag>
+      render: s => <Tag color={PAYMENT_STATUS_COLOR[s]}>{s}</Tag>
     },
     { title: '渠道交易号', dataIndex: 'channelOrderNo', render: v => v || '-', ellipsis: true },
     { title: '请求金额', width: 90, render: (_, r) => `¥${((r.requestAmount || 0) / 100).toFixed(2)}` },
@@ -73,10 +73,10 @@ export default function AdminOrders() {
     { title: '用户ID', render: (_, d) => d.order.userId },
     { title: '商品', render: (_, d) => d.items.map(i => <div key={i.id}>{i.productTitle} × {i.quantity}</div>) },
     { title: '金额', render: (_, d) => `¥${((d.order.totalFee || 0) / 100).toFixed(2)}` },
-    { title: '支付状态', render: (_, d) => <Tag color={d.order.payStatus === 'PAID' ? 'green' : 'orange'}>{PAY_LABEL[d.order.payStatus] || d.order.payStatus}</Tag> },
+    { title: '支付状态', render: (_, d) => <Tag color={PAY_COLOR[d.order.payStatus] || 'orange'}>{PAY_LABEL[d.order.payStatus] || d.order.payStatus}</Tag> },
     { title: '订单状态', render: (_, d) => d.order.orderStatus },
     { title: '履约状态', render: (_, d) => <Tag>{FULFILLMENT_LABEL[d.order.fulfillmentStatus] || d.order.fulfillmentStatus}</Tag> },
-    { title: '退款状态', render: (_, d) => <Tag color={d.order.refundStatus === 'REFUNDING' ? 'red' : undefined}>{d.order.refundStatus === 'NONE' ? '' : d.order.refundStatus}</Tag> },
+    { title: '退款状态', render: (_, d) => <Tag color={ORDER_REFUND_COLOR[d.order.refundStatus]}>{ORDER_REFUND_LABEL[d.order.refundStatus] ?? d.order.refundStatus}</Tag> },
     { title: '创建时间', render: (_, d) => d.order.createTime ? new Date(d.order.createTime).toLocaleString() : '-' },
     {
       title: '操作', width: 200, render: (_, d) => {
@@ -136,10 +136,10 @@ export default function AdminOrders() {
         <Descriptions column={2} bordered size="small" style={{ marginBottom: 16 }}>
           <Descriptions.Item label="订单号">{o.orderNo}</Descriptions.Item>
           <Descriptions.Item label="用户ID">{o.userId}</Descriptions.Item>
-          <Descriptions.Item label="支付状态"><Tag color={o.payStatus === 'PAID' ? 'green' : 'orange'}>{PAY_LABEL[o.payStatus] || o.payStatus}</Tag></Descriptions.Item>
+          <Descriptions.Item label="支付状态"><Tag color={PAY_COLOR[o.payStatus] || 'orange'}>{PAY_LABEL[o.payStatus] || o.payStatus}</Tag></Descriptions.Item>
           <Descriptions.Item label="订单状态">{o.orderStatus}</Descriptions.Item>
           <Descriptions.Item label="履约状态">{FULFILLMENT_LABEL[o.fulfillmentStatus] || o.fulfillmentStatus}</Descriptions.Item>
-          <Descriptions.Item label="退款状态">{o.refundStatus === 'NONE' ? '-' : o.refundStatus}</Descriptions.Item>
+          <Descriptions.Item label="退款状态">{ORDER_REFUND_LABEL[o.refundStatus] || '-'}</Descriptions.Item>
           <Descriptions.Item label="订单金额">¥{((o.totalFee || 0) / 100).toFixed(2)}</Descriptions.Item>
           <Descriptions.Item label="支付方式">{o.paymentType || '-'}</Descriptions.Item>
           <Descriptions.Item label="收货人">{o.receiverName || '-'}</Descriptions.Item>

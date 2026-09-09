@@ -11,6 +11,10 @@ export const REFUND_STATUS_LABEL = {
   APPLYING: '待审核', APPROVED: '已受理', REJECTED: '已拒绝', CANCELLED: '已撤销',
   REFUNDING: '退款中', SUCCESS: '退款成功', FAILED: '退款失败'
 }
+export const REFUND_STATUS_COLOR = {
+  APPLYING: 'blue', APPROVED: 'cyan', REJECTED: 'default', CANCELLED: 'default',
+  REFUNDING: 'orange', SUCCESS: 'green', FAILED: 'red'
+}
 
 export function statusTags(order) {
   if (order.payStatus || order.fulfillmentStatus || order.refundStatus) {

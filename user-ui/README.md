@@ -1,6 +1,7 @@
 # user-ui — 用户商城前端
 
-用户商城单页应用（React 18 + Vite 5 + Ant Design 5），移动 App 风格界面，开发端口 `3000`，通过 CORS 直连后端 `http://localhost:8080`。
+用户商城单页应用（React 18 + Vite 5 + Ant Design 5），移动 App 风格界面，开发端口 `3000`，通过 CORS 直连后端
+`http://localhost:8080`。
 
 ## 功能概览
 

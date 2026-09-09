@@ -11,6 +11,24 @@ export const REFUND_STATUS_LABEL = {
   APPLYING: '待审核', APPROVED: '已受理', REJECTED: '已拒绝', CANCELLED: '已撤销',
   REFUNDING: '退款中', SUCCESS: '退款成功', FAILED: '退款失败'
 }
+export const REFUND_STATUS_COLOR = {
+  APPLYING: 'blue', APPROVED: 'cyan', REJECTED: 'default', CANCELLED: 'default',
+  REFUNDING: 'orange', SUCCESS: 'green', FAILED: 'red'
+}
+export const PAYMENT_STATUS_COLOR = { SUCCESS: 'green', PAYING: 'orange' }
+export const RESET_STATUS_LABEL = { PENDING: '待处理', HANDLED: '已处理', REJECTED: '已拒绝' }
+export const RESET_STATUS_COLOR = { PENDING: 'orange', HANDLED: 'green', REJECTED: 'default' }
+export const ROLE_COLOR = { ROLE_ADMIN: 'red', ROLE_USER: 'blue' }
+export const USER_STATUS_LABEL = { ENABLED: '正常', DISABLED: '已禁用' }
+export const USER_STATUS_COLOR = { ENABLED: 'green', DISABLED: 'red' }
+export const PRODUCT_STATUS_COLOR = { ENABLED: 'green', DISABLED: 'default' }
+export const OPERATION_STATUS_LABEL = { SUCCESS: '成功', FAILED: '失败' }
+export const OPERATION_STATUS_COLOR = { SUCCESS: 'green', FAILED: 'red' }
+export const STOCK_IMPORT_STATUS_LABEL = { PENDING: '待确认', CONFIRMED: '已入库' }
+export const STOCK_IMPORT_STATUS_COLOR = { PENDING: 'orange', CONFIRMED: 'default' }
+export const PAY_COLOR = { UNPAID: 'orange', PAID: 'green' }
+export const ORDER_REFUND_COLOR = { REFUNDING: 'red' }
+export const CONFIG_STATUS_COLOR = { ENABLED: 'success', DISABLED: 'default' }
 
 export function statusTags(order) {
   if (order.payStatus || order.fulfillmentStatus || order.refundStatus) {
