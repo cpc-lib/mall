@@ -67,7 +67,7 @@ class BillPOConvertersTest {
     @Test
     void billImportConverterNullSafe() {
         assertNull(BillImportPOConverter.toPO(null));
-        assertNull(BillImportPOConverter.toDomain((BillImportPO) null));
+        assertNull(BillImportPOConverter.toDomain(null));
     }
 
     @Test
@@ -115,7 +115,7 @@ class BillPOConvertersTest {
     @Test
     void billRecordConverterNullSafe() {
         assertNull(BillRecordPOConverter.toPO(null));
-        assertNull(BillRecordPOConverter.toDomain((BillRecordPO) null));
+        assertNull(BillRecordPOConverter.toDomain(null));
     }
 
     @Test
@@ -164,6 +164,6 @@ class BillPOConvertersTest {
     @Test
     void billReconcileDiscrepancyConverterNullSafe() {
         assertNull(BillReconcileDiscrepancyPOConverter.toPO(null));
-        assertNull(BillReconcileDiscrepancyPOConverter.toDomain((BillReconcileDiscrepancyPO) null));
+        assertNull(BillReconcileDiscrepancyPOConverter.toDomain(null));
     }
 }

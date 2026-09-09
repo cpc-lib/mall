@@ -1,7 +1,6 @@
 package cc.ivera.product.domain.model;
 
 import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.shared.infrastructure.po.BaseEntity;
 import lombok.Data;
 
 import java.util.Date;

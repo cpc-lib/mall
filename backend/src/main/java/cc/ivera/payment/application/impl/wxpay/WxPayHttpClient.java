@@ -2,7 +2,6 @@ package cc.ivera.payment.application.impl.wxpay;
 
 import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.payment.application.impl.wxpay.WxPayPrivateKeyUtil;
 import com.wechat.pay.contrib.apache.httpclient.WechatPayHttpClientBuilder;
 import com.wechat.pay.contrib.apache.httpclient.auth.PrivateKeySigner;
 import com.wechat.pay.contrib.apache.httpclient.auth.ScheduledUpdateCertificatesVerifier;

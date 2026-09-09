@@ -117,7 +117,7 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
             int closed = paymentOrderRepository.closeActiveByOrderNoExceptPaymentNo(orderNo, paymentOrder.getPaymentNo());
             if (closed > 0) {
                 log.info("订单成交收口其它渠道活跃支付单，orderNo={}, settledPaymentNo={}, closed={}",
-                        orderNo, paymentOrder.getPaymentNo(), closed);
+                    orderNo, paymentOrder.getPaymentNo(), closed);
             }
             return true;
         }
@@ -131,7 +131,9 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         return false;
     }
 
-    /** 同渠道已有成交单、又一笔不同交易号支付成功：补建行 markSuccess 后按重复支付冲正（锚定本次支付）。 */
+    /**
+     * 同渠道已有成交单、又一笔不同交易号支付成功：补建行 markSuccess 后按重复支付冲正（锚定本次支付）。
+     */
     private void markAndRefundDuplicate(String orderNo, OrderInfo order, PaymentOrder paymentOrder,
                                         String channelOrderNo, Integer paidAmount) {
         Integer actualPaid = paidAmount != null ? paidAmount : order.getTotalFee();
@@ -146,8 +148,8 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         String resolvedChannel = StringUtils.hasText(channel) ? channel : order.getPaymentType();
         String channelToUse = StringUtils.hasText(resolvedChannel) ? resolvedChannel : PayType.WXPAY.getType();
         PaymentOrder paymentOrder = PaymentOrder.createCompatible(
-                OrderNoUtils.getPaymentNo(), order.getOrderNo(), channelToUse,
-                order.getTotalFee(), order.getExpireTime(), new Date());
+            OrderNoUtils.getPaymentNo(), order.getOrderNo(), channelToUse,
+            order.getTotalFee(), order.getExpireTime(), new Date());
         paymentOrderRepository.save(paymentOrder);
         return paymentOrder;
     }

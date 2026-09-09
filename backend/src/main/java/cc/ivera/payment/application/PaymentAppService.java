@@ -1,7 +1,7 @@
 package cc.ivera.payment.application;
 
-import cc.ivera.payment.interfaces.dto.PaymentAppRequest;
 import cc.ivera.payment.domain.model.PaymentApp;
+import cc.ivera.payment.interfaces.dto.PaymentAppRequest;
 
 import java.util.List;
 

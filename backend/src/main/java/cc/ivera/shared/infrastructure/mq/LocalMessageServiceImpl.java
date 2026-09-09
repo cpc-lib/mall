@@ -1,7 +1,5 @@
 package cc.ivera.shared.infrastructure.mq;
 
-import cc.ivera.shared.infrastructure.mq.LocalMessage;
-import cc.ivera.shared.infrastructure.mq.LocalMessageMapper;
 import cc.ivera.shared.domain.mq.LocalMessageBizType;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.infrastructure.util.JsonUtils;

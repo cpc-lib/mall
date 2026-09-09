@@ -21,8 +21,8 @@ public interface InventoryTransactionMapper extends BaseMapper<InventoryTransact
      * 库存流水分页：条件可选，按创建时间、id 倒序，LIMIT/OFFSET 手动分页。
      */
     List<InventoryTransactionPO> selectTransactionPage(@Param("productId") Long productId,
-                                                     @Param("bizType") String bizType,
-                                                     @Param("status") String status,
-                                                     @Param("limit") int limit,
-                                                     @Param("offset") long offset);
+                                                       @Param("bizType") String bizType,
+                                                       @Param("status") String status,
+                                                       @Param("limit") int limit,
+                                                       @Param("offset") long offset);
 }

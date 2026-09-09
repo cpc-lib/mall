@@ -51,6 +51,10 @@ public class Product {
         return product;
     }
 
+    private static int stock(Integer value) {
+        return value == null ? 0 : value;
+    }
+
     /**
      * 上架/下架状态变更。
      */
@@ -147,9 +151,5 @@ public class Product {
         this.lockedStock = locked;
         this.soldStock = sold;
         this.lostStock = lost;
-    }
-
-    private static int stock(Integer value) {
-        return value == null ? 0 : value;
     }
 }

@@ -23,15 +23,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.EnumMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -40,38 +32,31 @@ import java.util.stream.Collectors;
 @Slf4j
 public class RefundInfoServiceImpl implements RefundInfoService {
 
-    private final RefundInfoRepository refundInfoRepository;
-
-    private final OrderInfoService orderInfoService;
-
-    private final OrderRefundStatusService orderRefundStatusService;
-
-    private final ApplicationEventPublisher eventPublisher;
-
-    private final DistributedLockTemplate distributedLockTemplate;
-
-    private final TransactionTemplate transactionTemplate;
-
-    private final Map<RefundStatus, Consumer<String>> statusEventDispatch;
-
     private static final Set<String> REFUNDABLE_STATUSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
         OrderStatus.SUCCESS.getType(), OrderStatus.PARTIAL_REFUND.getType(), OrderStatus.REFUND_PROCESSING.getType()
     )));
-
     private static final Map<RefundStatus, List<RefundStatus>> SYNCABLE_STATUSES;
-    static {
-        Map<RefundStatus, List<RefundStatus>> m = new EnumMap<>(RefundStatus.class);
-        m.put(RefundStatus.SUCCESS,   Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED, RefundStatus.ABNORMAL));
-        m.put(RefundStatus.PROCESSING, Arrays.asList(RefundStatus.CREATED, RefundStatus.FAILED));
-        m.put(RefundStatus.ABNORMAL,  Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED));
-        m.put(RefundStatus.CLOSED,    Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED, RefundStatus.ABNORMAL));
-        m.put(RefundStatus.FAILED,    Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING));
-        SYNCABLE_STATUSES = Collections.unmodifiableMap(m);
-    }
-
     private static final Set<String> RELEASED_STATUSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
         RefundStatus.FAILED.getType(), RefundStatus.CLOSED.getType()
     )));
+
+    static {
+        Map<RefundStatus, List<RefundStatus>> m = new EnumMap<>(RefundStatus.class);
+        m.put(RefundStatus.SUCCESS, Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED, RefundStatus.ABNORMAL));
+        m.put(RefundStatus.PROCESSING, Arrays.asList(RefundStatus.CREATED, RefundStatus.FAILED));
+        m.put(RefundStatus.ABNORMAL, Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED));
+        m.put(RefundStatus.CLOSED, Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING, RefundStatus.FAILED, RefundStatus.ABNORMAL));
+        m.put(RefundStatus.FAILED, Arrays.asList(RefundStatus.CREATED, RefundStatus.PROCESSING));
+        SYNCABLE_STATUSES = Collections.unmodifiableMap(m);
+    }
+
+    private final RefundInfoRepository refundInfoRepository;
+    private final OrderInfoService orderInfoService;
+    private final OrderRefundStatusService orderRefundStatusService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final DistributedLockTemplate distributedLockTemplate;
+    private final TransactionTemplate transactionTemplate;
+    private final Map<RefundStatus, Consumer<String>> statusEventDispatch;
 
     public RefundInfoServiceImpl(
         RefundInfoRepository refundInfoRepository,

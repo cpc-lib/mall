@@ -27,14 +27,13 @@ public enum LocalMessageBizType {
         "payment.refund.status-sync.delay"
     );
 
+    private static final Map<String, LocalMessageBizType> BY_TYPE = Collections.unmodifiableMap(
+        Arrays.stream(values()).collect(Collectors.toMap(LocalMessageBizType::getType, t -> t))
+    );
     private final String type;
     private final Class<?> payloadClass;
     private final String exchange;
     private final String routingKey;
-
-    private static final Map<String, LocalMessageBizType> BY_TYPE = Collections.unmodifiableMap(
-        Arrays.stream(values()).collect(Collectors.toMap(LocalMessageBizType::getType, t -> t))
-    );
 
     LocalMessageBizType(String type, Class<?> payloadClass, String exchange, String routingKey) {
         this.type = type;

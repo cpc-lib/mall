@@ -94,28 +94,44 @@ public interface OrderRepository {
 
     // ===== 退款联动 CAS（退款上下文批次4 经订单应用服务调用，闸门为条件 UPDATE）=====
 
-    /** 订单层退款冻结：已退+冻结+本次 不超过实付。 */
+    /**
+     * 订单层退款冻结：已退+冻结+本次 不超过实付。
+     */
     int freezeOrderRefund(String orderNo, Integer amount);
 
-    /** 释放订单层退款冻结（拒绝/撤回）。 */
+    /**
+     * 释放订单层退款冻结（拒绝/撤回）。
+     */
     int releaseOrderRefundFreeze(String orderNo, Integer amount);
 
-    /** 订单层退款结转：冻结转已退。 */
+    /**
+     * 订单层退款结转：冻结转已退。
+     */
     int settleOrderRefund(String orderNo, Integer amount);
 
-    /** 按明细汇总回写订单退款汇总状态（幂等）。 */
+    /**
+     * 按明细汇总回写订单退款汇总状态（幂等）。
+     */
     int applyOrderRefundStatus(String orderNo);
 
-    /** 明细层退款冻结（数量+金额双上限，任一不足返回 0）。 */
+    /**
+     * 明细层退款冻结（数量+金额双上限，任一不足返回 0）。
+     */
     int freezeItemRefund(Long itemId, Integer qty, Integer amount);
 
-    /** 释放明细层退款冻结（拒绝/撤回）。 */
+    /**
+     * 释放明细层退款冻结（拒绝/撤回）。
+     */
     int releaseItemRefundFreeze(Long itemId, Integer qty, Integer amount);
 
-    /** 明细层退款结转：冻结转已退。 */
+    /**
+     * 明细层退款结转：冻结转已退。
+     */
     int settleItemRefund(Long itemId, Integer qty, Integer amount);
 
-    /** 补库/货损核销累计：restocked+qty 不超过 已退+冻结。 */
+    /**
+     * 补库/货损核销累计：restocked+qty 不超过 已退+冻结。
+     */
     int addRestockedQty(Long itemId, Integer qty);
 
     /**

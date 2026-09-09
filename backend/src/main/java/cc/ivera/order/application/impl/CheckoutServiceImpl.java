@@ -1,8 +1,7 @@
 package cc.ivera.order.application.impl;
 
-import cc.ivera.payment.domain.model.PaymentAppConfig;
-import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
-import cc.ivera.user.domain.model.ShippingAddress;
+import cc.ivera.cart.application.CartService;
+import cc.ivera.cart.interfaces.vo.CartItemVO;
 import cc.ivera.order.application.CheckoutService;
 import cc.ivera.order.application.OrderCloseMessageService;
 import cc.ivera.order.domain.model.OrderInfo;
@@ -12,17 +11,18 @@ import cc.ivera.order.domain.repository.OrderRepository;
 import cc.ivera.order.domain.repository.OrderShipmentRepository;
 import cc.ivera.order.interfaces.dto.CheckoutRequest;
 import cc.ivera.order.interfaces.vo.OrderDetailVO;
+import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.product.application.InventoryService;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.ReserveLine;
 import cc.ivera.product.domain.repository.ProductRepository;
-import cc.ivera.cart.application.CartService;
-import cc.ivera.user.application.ShippingAddressService;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
-import cc.ivera.cart.interfaces.vo.CartItemVO;
+import cc.ivera.user.application.ShippingAddressService;
+import cc.ivera.user.domain.model.ShippingAddress;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,19 +31,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 public class CheckoutServiceImpl implements CheckoutService {
-
-    /** 本地订单未支付超时（分钟），与 MQ 延迟关单 TTL、定时兜底扫描共用同一配置。 */
-    @Value("${payment.order.expire-minutes:3}")
-    private long orderExpireMinutes;
 
     private final CartService cartService;
     private final ProductRepository productRepository;
@@ -53,6 +45,11 @@ public class CheckoutServiceImpl implements CheckoutService {
     private final OrderCloseMessageService orderCloseMessageService;
     private final InventoryService inventoryService;
     private final ShippingAddressService addressService;
+    /**
+     * 本地订单未支付超时（分钟），与 MQ 延迟关单 TTL、定时兜底扫描共用同一配置。
+     */
+    @Value("${payment.order.expire-minutes:3}")
+    private long orderExpireMinutes;
 
     public CheckoutServiceImpl(CartService cartService, ProductRepository productRepository,
                                OrderRepository orderRepository, OrderShipmentRepository orderShipmentRepository,
@@ -69,6 +66,24 @@ public class CheckoutServiceImpl implements CheckoutService {
         this.addressService = addressService;
     }
 
+    /**
+     * 解析管理员订单筛选时间：接受 yyyy-MM-dd（按 dayPad 补时分秒）或 DatePatterns.DATETIME；空白返回 null。
+     */
+    private static Date parseFilterTime(String value, String dayPad, String label) {
+        if (value == null || value.trim().isEmpty()) return null;
+        String v = value.trim();
+        if (v.length() == 10) {
+            v = v + dayPad;
+        }
+        SimpleDateFormat sdf = new SimpleDateFormat(DatePatterns.DATETIME);
+        sdf.setLenient(false);
+        try {
+            return sdf.parse(v);
+        } catch (ParseException e) {
+            throw new BizException(label + "格式不正确，应为 yyyy-MM-dd 或 " + DatePatterns.DATETIME);
+        }
+    }
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderDetailVO createOrder(Long userId, CheckoutRequest request) {
@@ -76,23 +91,25 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (selected.isEmpty()) throw new BizException("请选择需要结算的购物车商品");
         String channelCode = channelCode(request.getPaymentType());
         PaymentAppConfig payConfig = request.getPaymentAppId() == null
-                ? paymentConfigLoader.getRequiredDefaultAppConfigByChannelCode(channelCode)
-                : paymentConfigLoader.getRequiredAppConfig(request.getPaymentAppId());
+            ? paymentConfigLoader.getRequiredDefaultAppConfigByChannelCode(channelCode)
+            : paymentConfigLoader.getRequiredAppConfig(request.getPaymentAppId());
         if (!channelCode.equals(payConfig.getChannelCode())) throw new BizException("支付应用与支付方式不匹配");
 
         int total = 0;
         List<Product> products = new ArrayList<>();
         for (CartItemVO cart : selected) {
             Product p = productRepository.findById(cart.getProductId());
-            if (p == null || !CommonStatus.ENABLED.getType().equals(p.getProductStatus())) throw new BizException("商品不可售，productId=" + cart.getProductId());
-            if (p.getStock() == null || p.getStock() < cart.getQuantity()) throw new BizException("当前库存不足，productId=" + cart.getProductId());
+            if (p == null || !CommonStatus.ENABLED.getType().equals(p.getProductStatus()))
+                throw new BizException("商品不可售，productId=" + cart.getProductId());
+            if (p.getStock() == null || p.getStock() < cart.getQuantity())
+                throw new BizException("当前库存不足，productId=" + cart.getProductId());
             total = Math.addExact(total, Math.multiplyExact(p.getPrice(), cart.getQuantity()));
             products.add(p);
         }
         // 收货信息（模拟物流对接）：addressId 优先取地址簿，否则用手工输入，最后兜底模拟值。
         ShippingAddress addr = request.getAddressId() != null
-                ? addressService.getById(userId, request.getAddressId())
-                : null;
+            ? addressService.getById(userId, request.getAddressId())
+            : null;
         String receiverName;
         String receiverPhone;
         String receiverAddress;
@@ -168,27 +185,11 @@ public class CheckoutServiceImpl implements CheckoutService {
         if (start != null && end != null && start.after(end)) throw new BizException("开始时间不能晚于结束时间");
         List<OrderDetailVO> list = new ArrayList<>();
         for (OrderInfo order : orderRepository.searchAdmin(
-                payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end)) {
+            payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end)) {
             list.add(detail(order, items(order.getOrderNo())));
         }
         fillShipmentStatus(list);
         return list;
-    }
-
-    /** 解析管理员订单筛选时间：接受 yyyy-MM-dd（按 dayPad 补时分秒）或 DatePatterns.DATETIME；空白返回 null。 */
-    private static Date parseFilterTime(String value, String dayPad, String label) {
-        if (value == null || value.trim().isEmpty()) return null;
-        String v = value.trim();
-        if (v.length() == 10) {
-            v = v + dayPad;
-        }
-        SimpleDateFormat sdf = new SimpleDateFormat(DatePatterns.DATETIME);
-        sdf.setLenient(false);
-        try {
-            return sdf.parse(v);
-        } catch (ParseException e) {
-            throw new BizException(label + "格式不正确，应为 yyyy-MM-dd 或 " + DatePatterns.DATETIME);
-        }
     }
 
     @Override
@@ -212,7 +213,9 @@ public class CheckoutServiceImpl implements CheckoutService {
         return orderRepository.listItemsByOrderNo(orderNo);
     }
 
-    /** 批量填充物流单最新状态（每单取 id 最大的运单），供前端按 DELIVERED 控制确认收货按钮。 */
+    /**
+     * 批量填充物流单最新状态（每单取 id 最大的运单），供前端按 DELIVERED 控制确认收货按钮。
+     */
     private void fillShipmentStatus(List<OrderDetailVO> list) {
         if (list == null || list.isEmpty()) return;
         List<String> orderNos = new ArrayList<>();
@@ -241,8 +244,10 @@ public class CheckoutServiceImpl implements CheckoutService {
     }
 
     private String channelCode(String paymentType) {
-        if (cc.ivera.payment.domain.enums.PayType.WXPAY.getType().equals(paymentType)) return PaymentConfigGateway.CHANNEL_WXPAY;
-        if (cc.ivera.payment.domain.enums.PayType.ALIPAY.getType().equals(paymentType)) return PaymentConfigGateway.CHANNEL_ALIPAY;
+        if (cc.ivera.payment.domain.enums.PayType.WXPAY.getType().equals(paymentType))
+            return PaymentConfigGateway.CHANNEL_WXPAY;
+        if (cc.ivera.payment.domain.enums.PayType.ALIPAY.getType().equals(paymentType))
+            return PaymentConfigGateway.CHANNEL_ALIPAY;
         throw new BizException("不支持的支付方式：" + paymentType);
     }
 

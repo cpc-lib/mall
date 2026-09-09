@@ -30,5 +30,5 @@ public interface BillReconcileDiscrepancyRepository {
      * 批次差异列表：importId 必填，bizType/discrepancyType/status 非空时分别过滤，按 id 升序。
      */
     List<BillReconcileDiscrepancy> listByImport(Long importId, String bizType,
-                                               String discrepancyType, String status);
+                                                String discrepancyType, String status);
 }

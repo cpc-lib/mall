@@ -1,19 +1,19 @@
 package cc.ivera.payment.application.impl.wxpay;
 
-import cc.ivera.payment.domain.model.PaymentAppConfig;
-import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.order.application.OrderInfoService;
 import cc.ivera.order.domain.model.OrderInfo;
-import cc.ivera.refund.domain.enums.RefundStatus;
-import cc.ivera.refund.domain.model.RefundInfo;
+import cc.ivera.payment.application.wxpay.WxPayRefundFacade;
 import cc.ivera.payment.domain.enums.wxpay.WxApiType;
 import cc.ivera.payment.domain.enums.wxpay.WxNotifyType;
 import cc.ivera.payment.domain.enums.wxpay.WxRefundStatus;
-import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.shared.domain.lock.DistributedLockTemplate;
-import cc.ivera.order.application.OrderInfoService;
+import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.refund.application.RefundInfoService;
 import cc.ivera.refund.application.RefundStatusSyncResult;
-import cc.ivera.payment.application.wxpay.WxPayRefundFacade;
+import cc.ivera.refund.domain.enums.RefundStatus;
+import cc.ivera.refund.domain.model.RefundInfo;
+import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.HttpClientUtils;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import com.github.wxpay.sdk.WXPayUtil;
@@ -30,18 +30,25 @@ import java.util.*;
 @Slf4j
 public class WxPayRefundService implements WxPayRefundFacade {
 
+    private static final Map<String, RefundStatus> WX_REFUND_STATUS_MAP;
+
+    static {
+        Map<String, RefundStatus> m = new HashMap<>();
+        m.put(WxRefundStatus.SUCCESS.getType(), RefundStatus.SUCCESS);
+        m.put(WxRefundStatus.PROCESSING.getType(), RefundStatus.PROCESSING);
+        m.put(WxRefundStatus.ABNORMAL.getType(), RefundStatus.ABNORMAL);
+        m.put(WxRefundStatus.CLOSED.getType(), RefundStatus.CLOSED);
+        m.put("REFUNDCLOSE", RefundStatus.CLOSED);
+        m.put("CHANGE", RefundStatus.ABNORMAL);
+        WX_REFUND_STATUS_MAP = Collections.unmodifiableMap(m);
+    }
+
     private final PaymentConfigGateway paymentConfigLoader;
-
     private final OrderInfoService orderInfoService;
-
     private final RefundInfoService refundInfoService;
-
     private final WxPayHttpClient wxPayHttpClient;
-
     private final WxPayNotificationDecoder wxPayNotificationDecoder;
-
     private final DistributedLockTemplate distributedLockTemplate;
-
     private final TransactionTemplate transactionTemplate;
 
     public WxPayRefundService(
@@ -239,18 +246,6 @@ public class WxPayRefundService implements WxPayRefundFacade {
             content,
             getAmountInteger(refundMap, "total"),
             getAmountInteger(refundMap, "refund"));
-    }
-
-    private static final Map<String, RefundStatus> WX_REFUND_STATUS_MAP;
-    static {
-        Map<String, RefundStatus> m = new HashMap<>();
-        m.put(WxRefundStatus.SUCCESS.getType(), RefundStatus.SUCCESS);
-        m.put(WxRefundStatus.PROCESSING.getType(), RefundStatus.PROCESSING);
-        m.put(WxRefundStatus.ABNORMAL.getType(), RefundStatus.ABNORMAL);
-        m.put(WxRefundStatus.CLOSED.getType(), RefundStatus.CLOSED);
-        m.put("REFUNDCLOSE", RefundStatus.CLOSED);
-        m.put("CHANGE", RefundStatus.ABNORMAL);
-        WX_REFUND_STATUS_MAP = Collections.unmodifiableMap(m);
     }
 
     private RefundStatus mapWxRefundStatus(String channelStatus) {

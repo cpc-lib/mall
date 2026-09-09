@@ -35,9 +35,9 @@ import java.util.List;
  * 异常支付自动冲正服务（V2）：
  * - 超卖熔断（trigger）：整单退款 + 订单置 OVER_SOLD_CLOSED；
  * - 重复支付（duplicatePayment）/ 晚到支付（latePayment）：
- *   系统免审创建 RefundOrder（refund_type=DUPLICATE_PAYMENT/LATE_PAYMENT），
- *   不冻结订单售后额度、不写 refund_item、不动订单 refund_status，
- *   仅在 PaymentOrder 渠道资金防线内（freeze→refund→settle）完成原路退款。
+ * 系统免审创建 RefundOrder（refund_type=DUPLICATE_PAYMENT/LATE_PAYMENT），
+ * 不冻结订单售后额度、不写 refund_item、不动订单 refund_status，
+ * 仅在 PaymentOrder 渠道资金防线内（freeze→refund→settle）完成原路退款。
  */
 @Service
 @Slf4j
@@ -90,13 +90,13 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
     @Override
     public void duplicatePayment(String paymentNo) {
         doExceptionPaymentRefund(paymentNo, RefundType.DUPLICATE_PAYMENT, "SYSTEM_DUPLICATE",
-                "重复支付自动原路退款", "duplicate:refund:");
+            "重复支付自动原路退款", "duplicate:refund:");
     }
 
     @Override
     public void latePayment(String paymentNo) {
         doExceptionPaymentRefund(paymentNo, RefundType.LATE_PAYMENT, "SYSTEM_LATE",
-                "订单关闭后晚到支付自动原路退款", "late:refund:");
+            "订单关闭后晚到支付自动原路退款", "late:refund:");
     }
 
     private void doExceptionPaymentRefund(String paymentNo, RefundType refundType, String applyType,
@@ -113,13 +113,13 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
                 return null;
             }
             if (!RefundApprovalStatus.APPROVED.getType().equals(paymentOrder.getStatus())
-                    && !"SUCCESS".equals(paymentOrder.getStatus())) {
+                && !"SUCCESS".equals(paymentOrder.getStatus())) {
                 log.warn("支付单非成功状态，无需冲正，paymentNo={}, status={}", paymentNo, paymentOrder.getStatus());
                 return null;
             }
             Integer refundable = safeNullable(paymentOrder.getPaidAmount())
-                    - safeNullable(paymentOrder.getRefundedAmount())
-                    - safeNullable(paymentOrder.getRefundFrozenAmount());
+                - safeNullable(paymentOrder.getRefundedAmount())
+                - safeNullable(paymentOrder.getRefundFrozenAmount());
             if (refundable == null || refundable <= 0) {
                 log.info("支付单无可冲正余额，幂等返回，paymentNo={}", paymentNo);
                 return null;
@@ -152,7 +152,7 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
                 log.error("渠道资金冲正结转失败，需人工核查，paymentNo={}, amount={}", paymentNo, refund.getRefund());
             } else {
                 log.info("异常支付冲正完成，paymentNo={}, refundNo={}, amount={}",
-                        paymentNo, refund.getRefundNo(), refund.getRefund());
+                    paymentNo, refund.getRefundNo(), refund.getRefund());
             }
             return null;
         });
@@ -169,7 +169,7 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
         }
         orderRepository.updateLegacyStatus(orderNo, OrderStatus.OVER_SOLD_CLOSED.getType());
         RefundInfo refund = createSystemRefund(order, RefundType.CANCEL_BEFORE_SHIP, "SYSTEM_OVERSOLD",
-                reason == null ? "支付成功后库存不足自动退款" : reason, order.getTotalFee(), null);
+            reason == null ? "支付成功后库存不足自动退款" : reason, order.getTotalFee(), null);
         List<OrderItem> items = orderRepository.listItemsByOrderNo(orderNo);
         for (OrderItem oi : items) {
             RefundItem ri = new RefundItem();
@@ -187,7 +187,9 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
         return refund;
     }
 
-    /** 系统免审退款单 + 渠道退款流水（不写 refund_item、不动订单 refund_status）。 */
+    /**
+     * 系统免审退款单 + 渠道退款流水（不写 refund_item、不动订单 refund_status）。
+     */
     private RefundInfo createSystemRefund(OrderInfo order, RefundType refundType, String applyType,
                                           String reason, Integer refundAmount, String paymentNo) {
         String refundNo = OrderNoUtils.getRefundNo();

@@ -47,7 +47,7 @@ class UserPOConvertersTest {
     @Test
     void userAccountConverterNullSafe() {
         assertNull(UserAccountPOConverter.toPO(null));
-        assertNull(UserAccountPOConverter.toDomain((UserAccountPO) null));
+        assertNull(UserAccountPOConverter.toDomain(null));
     }
 
     @Test
@@ -83,7 +83,7 @@ class UserPOConvertersTest {
     @Test
     void shippingAddressConverterNullSafe() {
         assertNull(ShippingAddressPOConverter.toPO(null));
-        assertNull(ShippingAddressPOConverter.toDomain((ShippingAddressPO) null));
+        assertNull(ShippingAddressPOConverter.toDomain(null));
     }
 
     @Test
@@ -114,7 +114,7 @@ class UserPOConvertersTest {
     @Test
     void passwordResetRequestConverterNullSafe() {
         assertNull(PasswordResetRequestPOConverter.toPO(null));
-        assertNull(PasswordResetRequestPOConverter.toDomain((PasswordResetRequestPO) null));
+        assertNull(PasswordResetRequestPOConverter.toDomain(null));
     }
 
     @Test
@@ -140,6 +140,6 @@ class UserPOConvertersTest {
     @Test
     void regionConverterNullSafe() {
         assertNull(RegionPOConverter.toPO(null));
-        assertNull(RegionPOConverter.toDomain((RegionPO) null));
+        assertNull(RegionPOConverter.toDomain(null));
     }
 }

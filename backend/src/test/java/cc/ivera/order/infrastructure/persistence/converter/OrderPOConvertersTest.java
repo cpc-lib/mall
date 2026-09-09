@@ -81,7 +81,7 @@ class OrderPOConvertersTest {
     @Test
     void orderInfoConverterNullSafeAndSkipsTransientFlag() {
         assertNull(OrderInfoPOConverter.toPO(null));
-        assertNull(OrderInfoPOConverter.toDomain((OrderInfoPO) null));
+        assertNull(OrderInfoPOConverter.toDomain(null));
     }
 
     @Test
@@ -131,7 +131,7 @@ class OrderPOConvertersTest {
     @Test
     void orderItemConverterNullSafe() {
         assertNull(OrderItemPOConverter.toPO(null));
-        assertNull(OrderItemPOConverter.toDomain((OrderItemPO) null));
+        assertNull(OrderItemPOConverter.toDomain(null));
     }
 
     @Test
@@ -171,6 +171,6 @@ class OrderPOConvertersTest {
     @Test
     void orderShipmentConverterNullSafe() {
         assertNull(OrderShipmentPOConverter.toPO(null));
-        assertNull(OrderShipmentPOConverter.toDomain((OrderShipmentPO) null));
+        assertNull(OrderShipmentPOConverter.toDomain(null));
     }
 }

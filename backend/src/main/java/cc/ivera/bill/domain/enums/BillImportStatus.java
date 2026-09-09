@@ -30,13 +30,11 @@ public enum BillImportStatus {
      */
     FAILED("FAILED", "失败");
 
-    private final String type;
-
-    private final String description;
-
     private static final Map<String, String> DESCRIPTION_MAP = Collections.unmodifiableMap(
         Arrays.stream(values()).collect(Collectors.toMap(BillImportStatus::getType, BillImportStatus::getDescription))
     );
+    private final String type;
+    private final String description;
 
     public static String descriptionOf(String type) {
         return type == null ? null : DESCRIPTION_MAP.getOrDefault(type, type);

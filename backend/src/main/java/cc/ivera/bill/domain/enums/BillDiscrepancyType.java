@@ -56,15 +56,12 @@ public enum BillDiscrepancyType {
      */
     REFUND_STATUS_MISMATCH("REFUND_STATUS_MISMATCH", BillRecordType.REFUND, "退款状态不一致");
 
-    private final String type;
-
-    private final BillRecordType bizType;
-
-    private final String description;
-
     private static final Map<String, String> DESCRIPTION_MAP = Collections.unmodifiableMap(
         Arrays.stream(values()).collect(Collectors.toMap(BillDiscrepancyType::getType, BillDiscrepancyType::getDescription))
     );
+    private final String type;
+    private final BillRecordType bizType;
+    private final String description;
 
     public static String descriptionOf(String type) {
         return type == null ? null : DESCRIPTION_MAP.getOrDefault(type, type);

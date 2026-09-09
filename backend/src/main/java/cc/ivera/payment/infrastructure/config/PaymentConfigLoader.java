@@ -181,9 +181,9 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
             return null;
         }
         return appConfigCache.values().stream()
-                .filter(config -> appCode.equals(config.getAppCode()))
-                .findFirst()
-                .orElse(null);
+            .filter(config -> appCode.equals(config.getAppCode()))
+            .findFirst()
+            .orElse(null);
     }
 
     @Override
@@ -192,16 +192,16 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
             return null;
         }
         return appConfigCache.values().stream()
-                .filter(config -> channelCode.equals(config.getChannelCode()))
-                .sorted((left, right) -> {
-                    PaymentApp leftApp = paymentAppRepository.findById(left.getAppId());
-                    PaymentApp rightApp = paymentAppRepository.findById(right.getAppId());
-                    Integer leftOrder = leftApp == null ? 0 : leftApp.getSortOrder();
-                    Integer rightOrder = rightApp == null ? 0 : rightApp.getSortOrder();
-                    return Integer.compare(leftOrder == null ? 0 : leftOrder, rightOrder == null ? 0 : rightOrder);
-                })
-                .findFirst()
-                .orElse(null);
+            .filter(config -> channelCode.equals(config.getChannelCode()))
+            .sorted((left, right) -> {
+                PaymentApp leftApp = paymentAppRepository.findById(left.getAppId());
+                PaymentApp rightApp = paymentAppRepository.findById(right.getAppId());
+                Integer leftOrder = leftApp == null ? 0 : leftApp.getSortOrder();
+                Integer rightOrder = rightApp == null ? 0 : rightApp.getSortOrder();
+                return Integer.compare(leftOrder == null ? 0 : leftOrder, rightOrder == null ? 0 : rightOrder);
+            })
+            .findFirst()
+            .orElse(null);
     }
 
     @Override
@@ -219,8 +219,8 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
             return new ArrayList<>();
         }
         return appConfigCache.values().stream()
-                .filter(config -> channelCode.equals(config.getChannelCode()))
-                .collect(Collectors.toList());
+            .filter(config -> channelCode.equals(config.getChannelCode()))
+            .collect(Collectors.toList());
     }
 
     @Override
@@ -233,7 +233,8 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
             return new HashMap<>();
         }
         try {
-            Map<String, Object> raw = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+            Map<String, Object> raw = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
+            });
             Map<String, String> result = new HashMap<>();
             for (Map.Entry<String, Object> entry : raw.entrySet()) {
                 result.put(entry.getKey(), entry.getValue() == null ? null : String.valueOf(entry.getValue()));

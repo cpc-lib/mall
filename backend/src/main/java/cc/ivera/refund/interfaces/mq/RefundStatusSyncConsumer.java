@@ -3,8 +3,8 @@ package cc.ivera.refund.interfaces.mq;
 
 import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.infrastructure.config.RefundStatusSyncRabbitConfig;
-import cc.ivera.shared.domain.mq.RefundStatusSyncMessage;
 import cc.ivera.shared.domain.mq.LocalMessageService;
+import cc.ivera.shared.domain.mq.RefundStatusSyncMessage;
 import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;

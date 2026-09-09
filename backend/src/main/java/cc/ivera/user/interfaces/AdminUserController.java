@@ -80,7 +80,8 @@ public class AdminUserController {
             userRepository.update(u);
         }
         // 禁用即踢下线：版本自增令存量 Access Token 全部失效，Refresh Token 因版本与状态双重校验失效（登录/刷新本就拒绝禁用用户）
-        if (CommonStatus.DISABLED.getType().equals(status)) redisTemplate.opsForValue().increment(VERSION_PREFIX + u.getId());
+        if (CommonStatus.DISABLED.getType().equals(status))
+            redisTemplate.opsForValue().increment(VERSION_PREFIX + u.getId());
         UserVO row = new UserVO();
         row.setId(u.getId());
         row.setUsername(u.getUsername());

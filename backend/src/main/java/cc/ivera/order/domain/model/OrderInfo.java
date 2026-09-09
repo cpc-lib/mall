@@ -70,6 +70,10 @@ public class OrderInfo {
     private Date createTime;
 
     private Date updateTime;
+    /**
+     * 非持久化补丁标记：CAS 更新时是否追加 paid_amount = total_fee（仅服务层补丁对象使用）。
+     */
+    private transient boolean applyPaidAmountFromTotalFee;
 
     /**
      * 新建待支付订单工厂：四维状态显式初始化（与 DDL 默认值一致），legacy=NOTPAY。
@@ -98,6 +102,25 @@ public class OrderInfo {
         order.setReceiverPhone(receiverPhone);
         order.setReceiverAddress(receiverAddress);
         return order;
+    }
+
+    /**
+     * legacy 状态条件更新补丁工厂：按目标 legacy 状态同步 V2 四维字段。
+     * SUCCESS → 交易 ACTIVE + 支付 PAID + 支付时间（仓储 CAS 同时落 paid_amount=total_fee）；
+     * CLOSED/CANCEL → 交易 CLOSED。
+     */
+    public static OrderInfo legacyStatusPatch(OrderStatus target, Date now) {
+        OrderInfo patch = new OrderInfo();
+        patch.setLegacyStatus(target.getType());
+        if (target == OrderStatus.SUCCESS) {
+            patch.setOrderStatus(OrderLifecycleStatus.ACTIVE.getType());
+            patch.setPayStatus(PayStatus.PAID.getType());
+            patch.setPaidTime(now);
+            patch.applyPaidAmountFromTotalFee = true;
+        } else if (target == OrderStatus.CLOSED || target == OrderStatus.CANCEL) {
+            patch.setOrderStatus(OrderLifecycleStatus.CLOSED.getType());
+        }
+        return patch;
     }
 
     /**
@@ -162,30 +185,6 @@ public class OrderInfo {
             throw new BizException("订单已退款或退款中，不可确认收货，refundStatus=" + refundStatus);
         }
     }
-
-    /**
-     * legacy 状态条件更新补丁工厂：按目标 legacy 状态同步 V2 四维字段。
-     * SUCCESS → 交易 ACTIVE + 支付 PAID + 支付时间（仓储 CAS 同时落 paid_amount=total_fee）；
-     * CLOSED/CANCEL → 交易 CLOSED。
-     */
-    public static OrderInfo legacyStatusPatch(OrderStatus target, Date now) {
-        OrderInfo patch = new OrderInfo();
-        patch.setLegacyStatus(target.getType());
-        if (target == OrderStatus.SUCCESS) {
-            patch.setOrderStatus(OrderLifecycleStatus.ACTIVE.getType());
-            patch.setPayStatus(PayStatus.PAID.getType());
-            patch.setPaidTime(now);
-            patch.applyPaidAmountFromTotalFee = true;
-        } else if (target == OrderStatus.CLOSED || target == OrderStatus.CANCEL) {
-            patch.setOrderStatus(OrderLifecycleStatus.CLOSED.getType());
-        }
-        return patch;
-    }
-
-    /**
-     * 非持久化补丁标记：CAS 更新时是否追加 paid_amount = total_fee（仅服务层补丁对象使用）。
-     */
-    private transient boolean applyPaidAmountFromTotalFee;
 
     public boolean isApplyPaidAmountFromTotalFee() {
         return applyPaidAmountFromTotalFee;

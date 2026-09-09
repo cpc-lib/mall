@@ -5,8 +5,8 @@ package cc.ivera.shared.infrastructure.constant;
  */
 public final class DatePatterns {
 
-    private DatePatterns() {}
-
     public static final String DATE = "yyyy-MM-dd";
     public static final String DATETIME = "yyyy-MM-dd HH:mm:ss";
+    private DatePatterns() {
+    }
 }

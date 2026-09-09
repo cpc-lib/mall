@@ -2,7 +2,6 @@ package cc.ivera.shared.web;
 
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.exception.ErrorCode;
-import cc.ivera.shared.web.R;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.validation.BindException;
 import org.springframework.validation.FieldError;

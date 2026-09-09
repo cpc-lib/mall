@@ -60,7 +60,7 @@ public class PaymentInfoServiceImpl implements PaymentInfoService {
     /**
      * 记录支付日志：微信支付 APIv2
      *
-     * @param params 通知参数
+     * @param params  通知参数
      * @param content 原始通知内容
      */
     @Override
@@ -119,9 +119,9 @@ public class PaymentInfoServiceImpl implements PaymentInfoService {
         } catch (DuplicateKeyException e) {
             // 支付平台通知天然可能重复投递。数据库唯一约束兜底后，这里按幂等成功处理。
             log.info("支付流水已存在，忽略重复通知，orderNo={}, paymentType={}, transactionId={}",
-                    paymentInfo.getOrderNo(),
-                    paymentInfo.getPaymentType(),
-                    paymentInfo.getTransactionId());
+                paymentInfo.getOrderNo(),
+                paymentInfo.getPaymentType(),
+                paymentInfo.getTransactionId());
         }
     }
 

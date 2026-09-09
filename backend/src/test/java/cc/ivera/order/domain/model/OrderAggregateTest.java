@@ -1,21 +1,13 @@
 package cc.ivera.order.domain.model;
 
+import cc.ivera.order.domain.enums.*;
 import cc.ivera.payment.domain.enums.PayStatus;
-import cc.ivera.order.domain.enums.FulfillmentStatus;
-import cc.ivera.order.domain.enums.OrderLifecycleStatus;
-import cc.ivera.order.domain.enums.OrderRefundStatus;
-import cc.ivera.order.domain.enums.OrderStatus;
-import cc.ivera.order.domain.enums.ShipmentStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * order 上下文聚合根/实体纯单元测试：不连数据库/Redis/MQ。

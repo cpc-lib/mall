@@ -39,17 +39,17 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         PaymentOrder active = paymentOrderRepository.findActiveByOrderNoAndChannel(order.getOrderNo(), channel);
         if (active != null) {
             log.info("订单存在同渠道活跃支付单，复用，orderNo={}, channel={}, paymentNo={}",
-                    order.getOrderNo(), channel, active.getPaymentNo());
+                order.getOrderNo(), channel, active.getPaymentNo());
             return active;
         }
 
         Date now = new Date();
         PaymentOrder paymentOrder = PaymentOrder.startNew(
-                OrderNoUtils.getPaymentNo(), order.getOrderNo(), channel,
-                order.getTotalFee(), order.getExpireTime(), now);
+            OrderNoUtils.getPaymentNo(), order.getOrderNo(), channel,
+            order.getTotalFee(), order.getExpireTime(), now);
         paymentOrderRepository.save(paymentOrder);
         log.info("创建支付单，orderNo={}, paymentNo={}, channel={}, expireTime={}",
-                order.getOrderNo(), paymentOrder.getPaymentNo(), channel, paymentOrder.getExpireTime());
+            order.getOrderNo(), paymentOrder.getPaymentNo(), channel, paymentOrder.getExpireTime());
         return paymentOrder;
     }
 

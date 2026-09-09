@@ -1,7 +1,7 @@
 package cc.ivera.payment.interfaces;
 
-import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.shared.web.R;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;

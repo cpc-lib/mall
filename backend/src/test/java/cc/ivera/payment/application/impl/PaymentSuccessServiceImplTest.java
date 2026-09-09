@@ -20,18 +20,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Date;
 import java.util.function.Supplier;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * PaymentSuccessServiceImpl 特征测试：mock 端口，不连真实 DB/Redis。
@@ -120,7 +111,7 @@ class PaymentSuccessServiceImplTest {
 
         boolean result = service.markOfflinePaid("ORD2");
 
-        assertEquals(false, result);
+        assertFalse(result);
         verify(paymentOrderRepository, never()).closeActiveByOrderNoExceptPaymentNo(anyString(), anyString());
     }
 }

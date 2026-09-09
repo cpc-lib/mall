@@ -3,7 +3,8 @@
 <mapper namespace="cc.ivera.bill.infrastructure.persistence.mapper.BillReconcileDiscrepancyMapper">
 
   <!-- 批次差异列表：importId 必填，bizType/discrepancyType/status 非空时分别过滤，id 升序 -->
-  <select id="selectDiscrepanciesByImport" resultType="cc.ivera.bill.infrastructure.persistence.po.BillReconcileDiscrepancyPO">
+  <select id="selectDiscrepanciesByImport"
+          resultType="cc.ivera.bill.infrastructure.persistence.po.BillReconcileDiscrepancyPO">
     select *
     from t_bill_reconcile_discrepancy
     where import_id = #{importId}

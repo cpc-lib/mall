@@ -102,7 +102,8 @@ public class AuthServiceImpl implements AuthService {
         long currentVersion = ensureVersion(userId);
         if (currentVersion != tokenVersion) throw new BizException("Refresh Token 版本已失效");
         UserAccount user = userRepository.findById(userId);
-        if (user == null || !CommonStatus.ENABLED.getType().equals(user.getUserStatus())) throw new BizException("用户不可用");
+        if (user == null || !CommonStatus.ENABLED.getType().equals(user.getUserStatus()))
+            throw new BizException("用户不可用");
         return issueTokenPair(user, currentVersion);
     }
 

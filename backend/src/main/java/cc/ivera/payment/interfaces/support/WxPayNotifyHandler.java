@@ -1,12 +1,11 @@
 package cc.ivera.payment.interfaces.support;
 
-import cc.ivera.payment.domain.model.PaymentAppConfig;
+import cc.ivera.payment.application.impl.wxpay.WxPayPrivateKeyUtil;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.util.HttpUtils;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
-import cc.ivera.payment.interfaces.support.WechatPay2ValidatorForRequest;
-import cc.ivera.payment.application.impl.wxpay.WxPayPrivateKeyUtil;
 import com.wechat.pay.contrib.apache.httpclient.auth.PrivateKeySigner;
 import com.wechat.pay.contrib.apache.httpclient.auth.ScheduledUpdateCertificatesVerifier;
 import com.wechat.pay.contrib.apache.httpclient.auth.Verifier;

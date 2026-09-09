@@ -61,7 +61,7 @@ class RefundPOConvertersTest {
     @Test
     void refundOrderConverterNullSafe() {
         assertNull(RefundOrderPOConverter.toPO(null));
-        assertNull(RefundOrderPOConverter.toDomain((RefundOrderPO) null));
+        assertNull(RefundOrderPOConverter.toDomain(null));
     }
 
     @Test
@@ -101,7 +101,7 @@ class RefundPOConvertersTest {
     @Test
     void refundItemConverterNullSafe() {
         assertNull(RefundItemPOConverter.toPO(null));
-        assertNull(RefundItemPOConverter.toDomain((RefundItemPO) null));
+        assertNull(RefundItemPOConverter.toDomain(null));
     }
 
     @Test
@@ -145,6 +145,6 @@ class RefundPOConvertersTest {
     @Test
     void refundInfoConverterNullSafe() {
         assertNull(RefundInfoPOConverter.toPO(null));
-        assertNull(RefundInfoPOConverter.toDomain((RefundInfoPO) null));
+        assertNull(RefundInfoPOConverter.toDomain(null));
     }
 }

@@ -15,7 +15,9 @@ public final class Money implements Comparable<Money> {
 
     public static final Money ZERO = new Money(0L);
 
-    /** 金额，单位分。 */
+    /**
+     * 金额，单位分。
+     */
     private final long fen;
 
     private Money(long fen) {

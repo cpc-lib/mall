@@ -25,13 +25,11 @@ public enum BillDiscrepancyStatus {
      */
     RESOLVED("RESOLVED", "已处理");
 
-    private final String type;
-
-    private final String description;
-
     private static final Map<String, String> DESCRIPTION_MAP = Collections.unmodifiableMap(
         Arrays.stream(values()).collect(Collectors.toMap(BillDiscrepancyStatus::getType, BillDiscrepancyStatus::getDescription))
     );
+    private final String type;
+    private final String description;
 
     public static String descriptionOf(String type) {
         return type == null ? null : DESCRIPTION_MAP.getOrDefault(type, type);

@@ -17,45 +17,29 @@ import java.util.Date;
 @Data
 public class PaymentOrder {
 
-    private Long id;
-
-    private String paymentNo;//商户支付单编号（每次发起支付生成）
-
-    private String orderNo;//商户订单编号
-
-    private String channel;//支付渠道：WXPAY、ALIPAY
-
-    private String channelOrderNo;//渠道侧交易号（微信 transaction_id / 支付宝 trade_no）
-
-    private String codeUrl;//支付二维码连接（NATIVE）
-
-    private Integer requestAmount;//请求支付金额(分)
-
-    private Integer paidAmount;//实际支付金额(分)
-
-    private Integer refundFrozenAmount;//渠道退款冻结金额(分)
-
-    private Integer refundedAmount;//渠道累计已退款金额(分)
-
-    private String status;//支付单状态：CREATED/PAYING/SUCCESS/CLOSED
-
-    private Date expireTime;//支付单过期时间（必须早于等于业务订单过期时间）
-
-    private Date paidTime;//支付成功时间
-
-    private Date createTime;
-
-    private Date updateTime;
-
     /**
      * 距订单过期不足 60 秒时拒绝发起新支付。
      */
     public static final long MIN_PAY_WINDOW_MS = 60_000L;
-
     /**
      * 支付单最长有效期：min(order.expire_time, now + 2h)。
      */
     public static final long MAX_PAYMENT_LIVE_MS = 2L * 60L * 60L * 1000L;
+    private Long id;
+    private String paymentNo;//商户支付单编号（每次发起支付生成）
+    private String orderNo;//商户订单编号
+    private String channel;//支付渠道：WXPAY、ALIPAY
+    private String channelOrderNo;//渠道侧交易号（微信 transaction_id / 支付宝 trade_no）
+    private String codeUrl;//支付二维码连接（NATIVE）
+    private Integer requestAmount;//请求支付金额(分)
+    private Integer paidAmount;//实际支付金额(分)
+    private Integer refundFrozenAmount;//渠道退款冻结金额(分)
+    private Integer refundedAmount;//渠道累计已退款金额(分)
+    private String status;//支付单状态：CREATED/PAYING/SUCCESS/CLOSED
+    private Date expireTime;//支付单过期时间（必须早于等于业务订单过期时间）
+    private Date paidTime;//支付成功时间
+    private Date createTime;
+    private Date updateTime;
 
     /**
      * 发起支付工厂（CREATED）：临近过期拒绝（距订单过期 &lt;60s）；

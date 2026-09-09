@@ -14,11 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * WxTradeBillParser 纯单测（无 Spring 依赖）：锁定微信交易账单 CSV 解析现状——
@@ -31,14 +27,18 @@ class WxTradeBillParserTest {
 
     private final WxTradeBillParser parser = new WxTradeBillParser();
 
-    /** SUCCESS 账单表头：无微信退款单号、无退款申请时间列。 */
+    /**
+     * SUCCESS 账单表头：无微信退款单号、无退款申请时间列。
+     */
     private static Map<String, String> successHeader() {
         return cols(
             "交易时间", "", "微信订单号", "", "商户订单号", "", "交易类型", "",
             "交易状态", "", "订单金额", "", "应结订单金额", "");
     }
 
-    /** ALL 账单表头：含微信退款单号，不含退款申请/成功时间列。 */
+    /**
+     * ALL 账单表头：含微信退款单号，不含退款申请/成功时间列。
+     */
     private static Map<String, String> allHeader() {
         Map<String, String> cols = successHeader();
         cols.put("微信退款单号", "");
@@ -48,13 +48,39 @@ class WxTradeBillParserTest {
         return cols;
     }
 
-    /** REFUND 账单表头：含退款申请/成功时间列与退款状态列。 */
+    /**
+     * REFUND 账单表头：含退款申请/成功时间列与退款状态列。
+     */
     private static Map<String, String> refundHeader() {
         Map<String, String> cols = allHeader();
         cols.put("退款状态", "");
         cols.put("退款申请时间", "");
         cols.put("退款成功时间", "");
         return cols;
+    }
+
+    private static Map<String, String> cols(String... kv) {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (int i = 0; i < kv.length; i += 2) {
+            map.put(kv[i], kv[i + 1]);
+        }
+        return map;
+    }
+
+    private static String headerLine(Map<String, String> columns) {
+        return String.join(",", columns.keySet());
+    }
+
+    /**
+     * 数据行每个字段值加微信账单的反引号前缀。
+     */
+    private static String dataLine(Map<String, String> columns) {
+        return columns.values().stream().map(v -> "`" + v).collect(Collectors.joining(","));
+    }
+
+    private static Date dateTime(String text) {
+        return Date.from(LocalDateTime.parse(text, DateTimeFormatter.ofPattern(DatePatterns.DATETIME))
+            .atZone(ZoneId.systemDefault()).toInstant());
     }
 
     @Test
@@ -125,6 +151,8 @@ class WxTradeBillParserTest {
         assertNotNull(rec.getRawLine());
         assertTrue(rec.getRawLine().startsWith("`2027-05-06"));
     }
+
+    // ==================== 测试辅助 ====================
 
     @Test
     void parse_allBillRefundRow_negativeRefundAmountTakenAbsolute() {
@@ -239,29 +267,5 @@ class WxTradeBillParserTest {
         assertEquals(1, result.getPayRecords().size());
         assertEquals(1, result.validRecordCount());
         assertEquals("MCH2", result.getPayRecords().get(0).getBizNo());
-    }
-
-    // ==================== 测试辅助 ====================
-
-    private static Map<String, String> cols(String... kv) {
-        Map<String, String> map = new LinkedHashMap<>();
-        for (int i = 0; i < kv.length; i += 2) {
-            map.put(kv[i], kv[i + 1]);
-        }
-        return map;
-    }
-
-    private static String headerLine(Map<String, String> columns) {
-        return String.join(",", columns.keySet());
-    }
-
-    /** 数据行每个字段值加微信账单的反引号前缀。 */
-    private static String dataLine(Map<String, String> columns) {
-        return columns.values().stream().map(v -> "`" + v).collect(Collectors.joining(","));
-    }
-
-    private static Date dateTime(String text) {
-        return Date.from(LocalDateTime.parse(text, DateTimeFormatter.ofPattern(DatePatterns.DATETIME))
-            .atZone(ZoneId.systemDefault()).toInstant());
     }
 }

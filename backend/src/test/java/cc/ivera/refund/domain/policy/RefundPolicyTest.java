@@ -5,10 +5,7 @@ import cc.ivera.order.domain.model.OrderItem;
 import cc.ivera.refund.domain.enums.RefundType;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * RefundPolicy 纯域策略单测（无副作用，不连数据库）：尾差分摊、可退额度、补库类型判定。
