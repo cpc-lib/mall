@@ -68,21 +68,21 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public LoginVO login(LoginRequest request, String clientIp) {
+    public LoginVO login(LoginRequest request) {
         String username = request.getUsername() == null ? null : request.getUsername().trim();
-        loginGuard.checkLocked(username, clientIp);
+        loginGuard.checkLocked(username);
         UserAccount user = userRepository.findByUsername(username);
         boolean userMissing = user == null;
         boolean passwordWrong = !userMissing && !passwordHasher.matches(request.getPassword(), user.getPasswordSalt(), user.getPasswordHash());
         if (userMissing || passwordWrong) {
-            loginGuard.recordFailure(username, clientIp);
+            loginGuard.recordFailure(username);
             throw new BizException("用户名或密码错误");
         }
         if (!CommonStatus.ENABLED.getType().equals(user.getUserStatus())) {
             // 现状：禁用用户统一返回“用户名或密码错误”，且不计入登录失败计数
             throw new BizException("用户名或密码错误");
         }
-        loginGuard.clear(username, clientIp);
+        loginGuard.clear(username);
         long version = ensureVersion(user.getId());
         return issueTokenPair(user, version);
     }

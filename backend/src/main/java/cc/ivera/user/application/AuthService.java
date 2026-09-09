@@ -11,7 +11,7 @@ import cc.ivera.user.interfaces.vo.LoginVO;
 public interface AuthService {
     UserAccount register(RegisterRequest request);
 
-    LoginVO login(LoginRequest request, String clientIp);
+    LoginVO login(LoginRequest request);
 
     LoginVO refresh(String refreshToken);
 

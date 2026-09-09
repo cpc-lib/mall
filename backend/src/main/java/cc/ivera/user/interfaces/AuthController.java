@@ -9,7 +9,6 @@ import cc.ivera.user.interfaces.vo.LoginVO;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
-import javax.servlet.http.HttpServletRequest;
 import javax.validation.Valid;
 
 @RestController
@@ -31,8 +30,8 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public R<LoginVO> login(@Valid @RequestBody LoginRequest request, HttpServletRequest httpRequest) {
-        return R.ok(authService.login(request, clientIp(httpRequest)));
+    public R<LoginVO> login(@Valid @RequestBody LoginRequest request) {
+        return R.ok(authService.login(request));
     }
 
     @PostMapping("/refresh")
@@ -62,14 +61,5 @@ public class AuthController {
     public R<?> submitPasswordResetRequest(@Valid @RequestBody PasswordResetRequestSubmitRequest request) {
         passwordResetRequestService.submit(request);
         return R.ok().setMessage("申请已提交，请联系管理员处理");
-    }
-
-    private String clientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.trim().isEmpty()) {
-            String first = xff.split(",")[0].trim();
-            if (!first.isEmpty() && first.length() <= 64) return first;
-        }
-        return request.getRemoteAddr();
     }
 }

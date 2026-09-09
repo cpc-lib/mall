@@ -7,16 +7,15 @@ import org.springframework.stereotype.Service;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 登录防爆破守卫：用户名 + 来源 IP 双维度失败计数与锁定。
- * 计数采用滑动窗口（每次失败刷新 TTL）；任一维度累计失败达到阈值即置锁，
+ * 登录防爆破守卫：按用户名维度进行失败计数与锁定。
+ * 计数采用滑动窗口（每次失败刷新 TTL）；同一用户名连续失败达到阈值即置锁，
  * 锁定期间即使密码正确也拒绝登录。Redis 异常时 fail-open，不阻断正常登录。
+ * 不按来源 IP 锁定，避免同一网络（NAT/办公网）下某个用户输错密码误伤其他用户。
  */
 @Service
 public class LoginGuardService {
     public static final String USERNAME_FAIL_PREFIX = "auth:login_fail:";
     public static final String USERNAME_LOCK_PREFIX = "auth:login_lock:";
-    public static final String IP_FAIL_PREFIX = "auth:login_fail_ip:";
-    public static final String IP_LOCK_PREFIX = "auth:login_lock_ip:";
 
     static final int MAX_ATTEMPTS = 3;
     static final long LOCK_SECONDS = 10 * 60L;
@@ -28,27 +27,35 @@ public class LoginGuardService {
     }
 
     /**
-     * 登录开始时调用：任一维度已锁定即抛出（先于查库，锁定登录不触达数据库）
+     * 登录开始时调用：用户名已锁定即抛出（先于查库，锁定登录不触达数据库）
      */
-    public void checkLocked(String username, String ip) {
+    public void checkLocked(String username) {
         throwIfLocked(USERNAME_LOCK_PREFIX + safe(username), "密码错误次数过多，账号已锁定，请约");
-        throwIfLocked(IP_LOCK_PREFIX + safe(ip), "当前网络环境已被临时锁定，请约");
     }
 
     /**
-     * 密码错误时调用：双维度各自计数，达到阈值置锁并清除计数器
+     * 密码错误时调用：按用户名计数，达到阈值置锁并清除计数器
      */
-    public void recordFailure(String username, String ip) {
-        recordOne(USERNAME_FAIL_PREFIX, USERNAME_LOCK_PREFIX, username);
-        recordOne(IP_FAIL_PREFIX, IP_LOCK_PREFIX, ip);
+    public void recordFailure(String username) {
+        String name = safe(username);
+        if (name.isEmpty()) return;
+        try {
+            String failKey = USERNAME_FAIL_PREFIX + name;
+            Long count = redisTemplate.opsForValue().increment(failKey);
+            if (count == null) return;
+            redisTemplate.expire(failKey, LOCK_SECONDS, TimeUnit.SECONDS);
+            if (count >= MAX_ATTEMPTS) {
+                redisTemplate.opsForValue().set(USERNAME_LOCK_PREFIX + name, "1", LOCK_SECONDS, TimeUnit.SECONDS);
+                redisTemplate.delete(failKey);
+            }
+        } catch (Exception ignored) { /* fail-open */ }
     }
 
     /**
-     * 登录成功时调用：清除双维度失败计数
+     * 登录成功时调用：清除该用户名的失败计数与锁定
      */
-    public void clear(String username, String ip) {
+    public void clear(String username) {
         clearUsername(username);
-        clearIp(ip);
     }
 
     /**
@@ -64,19 +71,6 @@ public class LoginGuardService {
         }
     }
 
-    /**
-     * 清除指定 IP 的失败计数与锁定
-     */
-    public void clearIp(String ip) {
-        try {
-            String addr = safe(ip);
-            if (addr.isEmpty()) return;
-            redisTemplate.delete(IP_FAIL_PREFIX + addr);
-            redisTemplate.delete(IP_LOCK_PREFIX + addr);
-        } catch (Exception ignored) {
-        }
-    }
-
     private void throwIfLocked(String lockKey, String messagePrefix) {
         try {
             if (!redisTemplate.hasKey(lockKey)) return;
@@ -85,21 +79,6 @@ public class LoginGuardService {
             throw new BizException(messagePrefix + minutes + "分钟后再试");
         } catch (BizException e) {
             throw e;
-        } catch (Exception ignored) { /* fail-open */ }
-    }
-
-    private void recordOne(String failPrefix, String lockPrefix, String identity) {
-        String id = safe(identity);
-        if (id.isEmpty()) return;
-        try {
-            String failKey = failPrefix + id;
-            Long count = redisTemplate.opsForValue().increment(failKey);
-            if (count == null) return;
-            redisTemplate.expire(failKey, LOCK_SECONDS, TimeUnit.SECONDS);
-            if (count >= MAX_ATTEMPTS) {
-                redisTemplate.opsForValue().set(lockPrefix + id, "1", LOCK_SECONDS, TimeUnit.SECONDS);
-                redisTemplate.delete(failKey);
-            }
         } catch (Exception ignored) { /* fail-open */ }
     }
 
