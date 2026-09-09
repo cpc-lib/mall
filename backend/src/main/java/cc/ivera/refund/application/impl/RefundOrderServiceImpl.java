@@ -38,15 +38,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -64,7 +56,11 @@ public class RefundOrderServiceImpl implements RefundOrderService {
 
     private static final String LEGACY_PENDING = "PENDING", LEGACY_ACCEPTED = "ACCEPTED", LEGACY_REJECTED = "REJECTED",
         LEGACY_CANCELLED = "CANCELLED", LEGACY_SUCCESS = "SUCCESS", LEGACY_FAILED = "FAILED";
-
+    private static final Map<String, String> V1_TO_V2_STATUS = Collections.unmodifiableMap(new HashMap<String, String>() {{
+        put(RefundStatus.SUCCESS.getType(), RefundOrderStatus.SUCCESS.getType());
+        put(RefundStatus.FAILED.getType(), RefundOrderStatus.FAILED.getType());
+        put(RefundStatus.ABNORMAL.getType(), RefundOrderStatus.FAILED.getType());
+    }});
     private final RefundOrderRepository refundOrderRepository;
     private final RefundItemRepository refundItemRepository;
     private final RefundInfoRepository refundInfoRepository;
@@ -77,6 +73,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     private final WxPayRefundFacade wxPayRefundFacade;
     private final RefundApplicationService refundApplicationService;
     private final RefundInfoService refundInfoService;
+
+    // ==================== 用户端：申请 / 编辑 / 撤回 / 未发货取消 ====================
 
     public RefundOrderServiceImpl(RefundOrderRepository refundOrderRepository,
                                   RefundItemRepository refundItemRepository,
@@ -103,8 +101,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         this.refundApplicationService = refundApplicationService;
         this.refundInfoService = refundInfoService;
     }
-
-    // ==================== 用户端：申请 / 编辑 / 撤回 / 未发货取消 ====================
 
     @Override
     public RefundApplyVO create(Long userId, RefundApplyRequest request) {
@@ -134,6 +130,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         });
     }
 
+    // ==================== 管理端：拒绝 / 受理 / 签收 / 重试 / 差价退款 ====================
+
     @Override
     public RefundApplyVO cancelPaidOrder(Long userId, String orderNo) {
         RefundInfo[] channelHolder = new RefundInfo[1];
@@ -144,8 +142,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
         return vo;
     }
-
-    // ==================== 管理端：拒绝 / 受理 / 签收 / 重试 / 差价退款 ====================
 
     @Override
     public void reject(String refundNo, String remark) {
@@ -183,13 +179,15 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         });
     }
 
+    // ==================== 结转（渠道退款成功，幂等） ====================
+
     @Override
     public RefundApplyVO createPriceAdjustment(String orderNo, Integer amount, String reason) {
         return lockTemplate.execute("refund:create:" + orderNo, 5000L, -1L, () ->
             tx.execute(s -> doCreatePriceAdjustment(orderNo, amount, reason)));
     }
 
-    // ==================== 结转（渠道退款成功，幂等） ====================
+    // ==================== 查询 ====================
 
     @Override
     public void settle(String refundNo) {
@@ -202,19 +200,17 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         });
     }
 
-    // ==================== 查询 ====================
-
     @Override
     public List<RefundApplyVO> listForUser(Long userId) {
         return details(refundOrderRepository.listByUserIdCreateTimeDesc(userId));
     }
 
+    // ==================== 内部：创建链路 ====================
+
     @Override
     public List<RefundApplyVO> listAll() {
         return details(refundOrderRepository.listAllCreateTimeDesc());
     }
-
-    // ==================== 内部：创建链路 ====================
 
     private RefundApplyVO doCreate(Long userId, RefundApplyRequest request, String forcedType, RefundInfo[] channelHolder) {
         OrderInfo order = orderRepository.findByOrderNo(request.getOrderNo());
@@ -350,6 +346,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return detail(refundOrder);
     }
 
+    // ==================== 内部：撤回/拒绝（释放冻结） ====================
+
     /**
      * 创建退款明细并逐项冻结（明细层原子；金额服务端计算）。
      */
@@ -389,8 +387,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return amount;
     }
 
-    // ==================== 内部：撤回/拒绝（释放冻结） ====================
-
     private void doCancelOrReject(Long userId, String refundNo, String remark, boolean userCancel) {
         RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
@@ -409,6 +405,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         refundOrderRepository.update(refundOrder);
     }
 
+    // ==================== 内部：受理/签收/重试（发起渠道退款） ====================
+
     /**
      * 释放本退款单占用的明细与订单冻结额度（DB 原子守卫内幂等）。
      */
@@ -421,8 +419,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             orderRepository.releaseOrderRefundFreeze(refundOrder.getOrderNo(), refundOrder.getRefundAmount());
         }
     }
-
-    // ==================== 内部：受理/签收/重试（发起渠道退款） ====================
 
     private RefundInfo prepareAccept(String refundNo, String remark) {
         RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
@@ -524,12 +520,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
         return vo;
     }
-
-    private static final Map<String, String> V1_TO_V2_STATUS = Collections.unmodifiableMap(new HashMap<String, String>() {{
-        put(RefundStatus.SUCCESS.getType(), RefundOrderStatus.SUCCESS.getType());
-        put(RefundStatus.FAILED.getType(), RefundOrderStatus.FAILED.getType());
-        put(RefundStatus.ABNORMAL.getType(), RefundOrderStatus.FAILED.getType());
-    }});
 
     private String mapV1RefundStatusToV2(String v1Status) {
         return V1_TO_V2_STATUS.get(v1Status);
