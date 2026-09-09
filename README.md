@@ -9,7 +9,8 @@
 基于 Spring Boot 的电商商城平台：集成**微信支付 V2/V3** 与**支付宝**通道，覆盖「浏览商品 → 购物车 → 下单 → 支付 →
 发货/物流 → 确认收货 → 退款/退货 → 账单对账」完整交易闭环，并实现企业级并发控制、幂等保障、库存四桶预占与货损核销、分项退款与上传式账单对账。
 
-前端拆分为两个独立工程，与后端 REST 契约对齐：
+后端按 DDD 限界上下文组织，共 8 个上下文（product / order / payment / refund / user / cart / bill / shared），每个上下文内部统一
+interfaces / application / domain / infrastructure 四层。前端拆分为两个独立工程，与后端 REST 契约对齐：
 
 - **user-ui** — 用户商城（React 18，移动 App 风格界面，含收货地址、购物车、订单、退款申请、用户中心）
 - **admin-ui** — 管理后台（React 18，左侧导航 + 列表 + 抽屉详情，含订单/发货/库存/退款/对账/支付配置管理）
@@ -26,10 +27,11 @@
 - **库存四桶模型**：`available / locked / sold / lost` 四桶恒等于入库总量。下单 `LOCKED` 预占（可用转锁定，CAS 防超卖，不足则整单回滚）→
   支付成功 `COMMITTED`（仅推进状态，库存保持锁定）→ 确认收货结转已售（locked→sold）；关单/取消 `RELEASED` 归还可用；全部本地事务同步执行
 - **订单履约**：待发货 → 模拟发货（运单号）→ 定时模拟物流推进（已发货 → 运输中 → 已送达）→ **送达后用户方可确认收货**
-  （订单列表透出物流状态并展示「运输中/已送达」标签）；已付款未发货取消自动生成退款申请
+  （订单列表透出物流状态并展示「运输中/已送达」标签）；已付款未发货仅显示「取消订单」，发货/收货后才显示「申请退款」
 - **分项退款**：6 种退款类型（未发货取消/退货退款/仅退款/差价退款/重复支付/晚到支付自动冲正），待审核可编辑/撤销，受理后冻结额度动态防超退，最后一件吃尾差；
   **仅退款支持一键整单全额退**（免手填数量，服务端按整单剩余可退自动生成明细）
 - **货损核销**：仅退款不退货时货物不回仓——已发货未收货 `locked→lost`、已收货 `sold→lost`，以 `biz_no`（退款单号+明细）幂等核销并写库存流水
+- **线下收款**：管理端可将订单标记为线下已付（自动生成 OFFLINE 渠道成功支付记录）；线下单退款不调外部渠道，本地直接结转
 - **主动查单**：用户端与管理端均可主动向渠道查询订单支付状态并同步
 
 **管理后台**
@@ -48,7 +50,8 @@
 
 **工程保障**
 
-- **三层并发控制**：通知幂等检查（Redis）→ Redisson 分布式锁 → 数据库行锁 + CAS 状态更新
+- **并发控制**：通知幂等检查（Redis notifyId）→ Redisson 分布式锁（同维度订单号/退款单号串行化）→ CAS 条件更新（状态机/库存/乐观锁）兜底；
+  不使用 `select ... for update`，并发权威由 Redis 锁 + CAS 保障
 - **双 Token 认证**：Access 30 分钟 + Refresh 7 天，401 单飞（single-flight）无感刷新
 - **本地消息表（Outbox）**：关单/退款同步消息先落库再投递，broker 确认后标记，失败指数退避重试，耗尽转人工补偿；DB 定时任务兜底对账
 - **MQ 容错**：消费异常指数退避重试（2s→6s→18s 共 4 次），耗尽拒绝不回队，由幂等的 DB 兜底任务接管
@@ -74,28 +77,33 @@
 
 ```
 mall/
-├── backend/                       # 后端 Spring Boot 应用（cc.ivera）
+├── backend/                          # 后端 Spring Boot 应用（cc.ivera，DDD 限界上下文）
 │   ├── src/main/java/cc/ivera/
-│   │   ├── controller/            # 24 个 REST 控制器（商城 /api/* + 管理 /api/admin/*）
-│   │   ├── service/               # 业务服务（交易/退款/库存/对账/wxpay 门面/物流）
-│   │   ├── entity/ enums/         # 19 张表实体、14 个状态机/业务枚举
-│   │   ├── mapper/                # Mapper 接口（XML 见 resources/mapper/）
-│   │   ├── security/              # AuthInterceptor、JwtTokenService、LoginGuardService
-│   │   ├── mq/                    # RabbitMQ 消费者（延迟关单、退款状态同步）
-│   │   ├── job/                   # 定时任务（关单兜底、退款同步兜底、本地消息重投、模拟物流）
-│   │   ├── lock/                  # DistributedLockTemplate（Redisson 实现）
-│   │   └── config/                # Redisson/MQ 拓扑/支付配置加载/Swagger/WebMvc
+│   │   ├── Application.java          # 启动类（@MapperScan basePackages = cc.ivera）
+│   │   ├── product/                  # 上下文：商品与库存（四桶/预占/流水/Excel 导入）
+│   │   ├── order/                    # 上下文：订单与履约（下单/关单/发货物流）
+│   │   ├── payment/                  # 上下文：支付（微信 V2/V3 + 支付宝、支付单/配置）
+│   │   ├── refund/                   # 上下文：退款（退款单/额度冻结/状态同步）
+│   │   ├── user/                     # 上下文：用户/收货地址/行政区划/找回密码
+│   │   ├── cart/                     # 上下文：购物车（Redis 持久化）
+│   │   ├── bill/                     # 上下文：微信账单上传对账
+│   │   └── shared/                   # 共享内核（锁/MQ/安全/配置/Money/异常）
+│   │   # 每个上下文内部四层：interfaces（Controller/DTO/VO/MQ/Job）
+│   │   #   → application（应用服务 + impl）→ domain（模型/枚举/策略/仓储与能力端口）
+│   │   #   → infrastructure（PO/Mapper/XML/Converter/RepositoryImpl/网关实现）
 │   ├── src/main/resources/
-│   │   ├── mapper/                # MyBatis XML（18 个）
-│   │   └── application.yml        # 连接参数与业务配置
-│   ├── docs/                      # DM8 与 RabbitMQ 运维手册
+│   │   ├── mapper/                   # MyBatis XML（18 个，平铺；namespace 指向各上下文 mapper）
+│   │   └── application.yml           # 连接参数与业务配置
+│   ├── src/test/java/                # 后端测试（16 个测试类 / 121 用例：聚合守卫/Converter 往返/解析器/Mockito）
+│   ├── docs/                         # DM8 与 RabbitMQ 运维手册
 │   └── env/
-│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查与初始化挂载）
-│       └── sql/dm8/               # schema.sql 一体化全量建表 + 种子数据（唯一 SQL 文件）
-├── user-ui/                       # 用户商城（React，移动 App 风格，dev 端口 3000）
-├── admin-ui/                      # 管理后台（React，dev 端口 3002）
-├── AGENTS.md                      # 项目规则（issue 分类/分支命名/测试要求/DoD）
-├── CODE_INTRO.md                  # 代码导览（架构/实体/路由/服务/MQ/前端）
+│       ├── docker-compose.dm8.yml    # DM8 容器（端口 5236，含健康检查与初始化挂载）
+│       └── sql/dm8/                  # schema.sql 一体化全量建表（22 张表）+ 种子数据
+├── user-ui/                          # 用户商城：React 18 + Vite + antd 5（dev :3000，移动 App 风格）
+├── admin-ui/                         # 管理后台：React 18 + Vite + antd 5 + Luckysheet（dev :3002）
+├── .trae/skills/                     # 工作流 skill（DDD 迁移 / 双前端同步 / 锁语义核查，团队共享）
+├── AGENTS.md                         # 项目规则（问题分类/分支命名/领域不变量/测试/DoD）
+├── CODE_INTRO.md                     # 代码导览（架构/实体/路由/幂等/MQ/前端）
 └── README.md
 ```
 
@@ -117,9 +125,8 @@ docker compose -f docker-compose.dm8.yml up -d
 容器 healthy 后初始化数据库。用 DM 管理工具连接 `localhost:5236`（默认 `SYSDBA / Cpc2026#@Dm`，schema `SYSDBA`），执行
 `backend/env/sql/dm8/schema.sql`（一体化全量脚本，可重复执行，等同清库重建）：
 
-- 核心业务表（20 张）+ 种子数据（管理员账号、支付渠道/应用、示例商品）
-- 三级行政区划表 `t_region` 与全国数据
-- 收货地址表 `t_shipping_address`
+- 业务表共 22 张 + 种子数据（管理员账号、支付渠道/应用、示例商品）
+- 含三级行政区划表 `t_region` 与全国数据、收货地址表 `t_shipping_address`、本地消息表 `t_local_message`
 
 > 全新建库与存量库升级统一使用上述 schema.sql（历史增量结构已全部并入）；已废弃的遗留表（旧对账三表、t_stock_operation_log）仅保留
 > DROP 守卫清理，不再重建。
@@ -193,18 +200,24 @@ npm run dev
 ## 测试
 
 ```powershell
+# 后端测试（16 个测试类 / 121 用例：领域聚合守卫、PO↔模型 Converter 往返、账单解析器、Mockito 应用服务）
+cd backend
+mvn test
+
 # 前端逻辑单测（Node 内置 test runner，仅 user-ui）
 cd user-ui   && npm run test:logic    # Token 单飞刷新
 
 # 前端构建
 cd user-ui   && npm run build
 cd admin-ui  && npm run build
-
-# 后端：当前无自动化测试套件（backend/src/test 为空）。
-# 按 AGENTS.md 规则，重构遗留行为前需先在 backend/src/test 补特征测试，之后用 mvn test 回归。
 ```
+
+> 后端测试不连真实 DM8 / Redis / RabbitMQ / 支付渠道（Mockito + 纯 POJO）。新增/重构行为按 [AGENTS.md](AGENTS.md)
+> 测试要求补充特征测试。
 
 ## 运维文档
 
 - [backend/docs/DAMENG_DM8_OPERATIONS.md](backend/docs/DAMENG_DM8_OPERATIONS.md) — DM8 启动/初始化/清库重建
 - [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md) — 队列拓扑、可靠性与冒烟测试清单
+- [CODE_INTRO.md](CODE_INTRO.md) — 架构 / 实体 / 路由 / 幂等 / MQ / 前端完整导览
+- [AGENTS.md](AGENTS.md) — 编码规则与领域不变量

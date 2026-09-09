@@ -3,11 +3,13 @@
 本文件是编码 Agent 的项目级规则手册。保持改动小步、有记录、可验证。
 
 仓库布局：`backend/`（Spring Boot 2.3.7，Java 8，包名 `cc.ivera`，数据库达梦 DM8，缓存/锁 Redis + Redisson，消息队列
-RabbitMQ，支付渠道微信 V2/V3 + 支付宝）、`user-ui/`（React 18 用户商城，dev 端口 3000）、`admin-ui/`（React 18 管理后台，dev 端口
-3002）。两个前端通过 CORS 直连后端 `http://localhost:8080`。
+RabbitMQ，支付渠道微信 V2/V3 + 支付宝；按 DDD 限界上下文组织为 product / order / payment / refund / user / cart /
+bill / shared 共 8 个上下文，每个上下文内部四层 interfaces / application / domain / infrastructure）、`user-ui/`（React
+18 用户商城，dev 端口 3000）、`admin-ui/`（React 18 管理后台，dev 端口 3002）。两个前端通过 CORS 直连后端
+`http://localhost:8080`。
 
 文档账本：`README.md`（面向使用者的功能与启动说明）、`CODE_INTRO.md`（面向开发者的架构/实体/路由/幂等设计导览）、
-`backend/docs/`（DM8 与 RabbitMQ 运维手册）。
+`backend/docs/`（DM8 与 RabbitMQ 运维手册）。工作区工作流 skill 位于 `.trae/skills/`（已纳入版本控制，团队共享）。
 
 ## 问题分类
 
@@ -46,13 +48,15 @@ RabbitMQ，支付渠道微信 V2/V3 + 支付宝）、`user-ui/`（React 18 用�
 
 ## 测试要求
 
-- 后端当前**无自动化测试套件**（`backend/src/test` 为空）。重构任何遗留后端行为前，先在 `backend/src/test` 补特征测试锁定现状。
+- 后端已有一套**特征测试/单元测试基线**（`backend/src/test`，按上下文同包结构组织，当前 16 个测试类 / 121 个用例）：
+  覆盖领域聚合守卫、PO ↔ 领域模型全字段 Converter 往返、纯解析器、Mockito 应用服务。
+- 重构任何遗留后端行为前，若现状无测试锁定，先在 `backend/src/test` 补特征测试锁定现状；新增/修改行为需补充针对性测试。
 - 特征测试不得评判现状是否合理；可疑现状须在测试名或注释中标注 `现状`。
 - 触碰 DB、Redis、缓存、全局状态、MQ、配置或时钟的测试必须重置状态并使用临时隔离。
 - 特征测试禁止调用真实支付渠道、真实 Redis、真实 RabbitMQ 或真实 DM8，除非任务说明明确要求集成测试。
 - 前端逻辑测试使用 Node 内置 test runner（仅 user-ui）：
     - `user-ui`：`npm run test:logic`（Token 单飞刷新）
-- 行为保持类改动，需在 `backend/` 跑 `mvn test`，并跑 user-ui 的 `test:logic`，确认无回归。
+- 行为保持类改动，需在 `backend/` 跑 `mvn test`，并跑 user-ui 的 `test:logic`，确认无回归；前端结构改动同时验证 user-ui 与 admin-ui 构建。
 - 重构后若测试失败，先说明锁定的是哪条行为、为何变化，再做最小修正。
 
 ## 文档同步规则
@@ -69,6 +73,6 @@ RabbitMQ，支付渠道微信 V2/V3 + 支付宝）、`user-ui/`（React 18 用�
 - 问题定性明确，或可从 PR/提交说明直接看出。
 - 公共 API 与兼容性影响无变化，或已在提交/PR 说明中记录（含迁移/回滚方式）。
 - 领域不变量未被破坏。
-- 特征测试与受影响测试全部通过。
+- 特征测试与受影响测试全部通过（后端 `mvn test`，必要时 user-ui `test:logic`）。
 - `CODE_INTRO.md` / `README.md` 与实现保持一致；DB 变更的 `schema.sql` 与增量脚本成对落地。
 - 未夹带任何无关的业务行为、缺陷修复或功能。
