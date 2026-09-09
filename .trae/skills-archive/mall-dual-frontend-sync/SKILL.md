@@ -3,7 +3,14 @@ name: "mall-dual-frontend-sync"
 description: "Checklist for parallel changes across payment-demo-react and payment-demo-vue malls: file anchor map, dual build verification, spec ledger sync. Invoke for any mall frontend/UI change."
 ---
 
-# 双商城前端对等改造清单（React 商城 ↔ Vue 商城）
+# 【已归档 · 2026-09-10】双商城前端对等改造清单（React 商城 ↔ Vue 商城）
+
+> **归档原因**：当前仓库已不存在 Vue 商城（无 `payment-demo-vue` 目录、无 :3003 管理端），仅有
+> `user-ui`（React :3000）与 `admin-ui`（React :3002）两套 React 工程，本清单「双端对等改造」前提失效，
+> 不再作为 skill 加载，仅保留供历史参考。
+>
+> 其中仍有效的约定已在别处存续：localStorage `mall_` / `admin_` 前缀隔离见 user-ui/admin-ui 代码、
+> 「同文件禁止并行 Edit」见 mall-ddd-context-migration 踩坑章节、PowerShell 约束见 AGENTS.md。
 
 本工作区有两套对等的**用户商城**前端，任何商城前端改动必须双端对等落地。
 管理后台（payment-demo-react-admin :3002 / payment-demo-vue-admin :3003）不在本清单范围。

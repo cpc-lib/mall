@@ -6,19 +6,21 @@ description: "mall backend DDD 限界上下文迁移清单：四层搬移、PO/�
 # mall backend DDD 限界上下文迁移流程
 
 把 `cc.ivera` 旧平铺包（entity/mapper/service/controller/vo/dto/enums/event/mq/job/config）按限界上下文
-迁入 `cc.ivera.<context>.{interfaces,application,domain,infrastructure}`。已完成上下文：shared/product/order/payment/refund/user。
+迁入 `cc.ivera.<context>.{interfaces,application,domain,infrastructure}`。**8 个上下文已全部迁移完成**
+（shared/product/order/payment/refund/user/cart/bill）；本清单保留为既有四层结构的参考，以及后续新增上下文时的迁移规范。
 **业务逻辑一行不改（等价搬移），对外 REST API 完全不变（URL/JSON/状态码/文案）。**
 
 ## 0. 硬约束（每批不得违反）
 
 - 不新增 Maven 依赖；不自动 git commit；中文交流；最小改动，禁止投机代码/预留占位。
-- 领域不变量不得破坏（库存四桶、防超卖 CAS、支付成交唯一、退款防超退、状态行锁+CAS），见 AGENTS.md。
+- 领域不变量不得破坏（库存四桶、防超卖 CAS、支付成交唯一、退款防超退、状态推进 Redis 分布式锁 + CAS），见 AGENTS.md。
 - 包结构：上下文内四层；PO 在 infrastructure（`XxxPO` 后缀，`@TableName` + `extends BaseEntity`，MP 注解保留）；
   纯领域实体在 `domain.model`（**类名与旧实体一致**、`@Data`、自带 `id/createTime/updateTime`）；手写全字段 Converter（null 安全）。
 - Repository 按聚合根设端口（`domain.repository`），实现落 `infrastructure.persistence.repository`；
-  CAS/行锁 SQL 闸门留在 Mapper/XML；LambdaWrapper 只允许出现在 RepositoryImpl。
+  CAS 条件 UPDATE 闸门留在 Mapper/XML（**禁止 select ... for update**，并发权威为 Redis 锁 + CAS）；LambdaWrapper 只允许出现在 RepositoryImpl。
 - 充血规则等价搬入聚合根/域策略；行为可疑的现状在测试名/注释标 `现状`，不评判。
-- 未迁移上下文临时直连新上下文 PO/Mapper 属允许例外（如 bill 未迁时直连 refund PO），记录留后续批次收口。
+- 跨上下文只允许依赖对方 `domain`（领域模型、repository/gateway 端口）或 application 服务接口，**禁止引用对方
+  infrastructure**（PO / Mapper / RepositoryImpl）；迁移期的临时直连例外已全部收口，不得再引入。
 
 ## 1. 标准流程（9 步，建议直接建 todo）
 
@@ -56,7 +58,7 @@ description: "mall backend DDD 限界上下文迁移清单：四层搬移、PO/�
 
 - `cc.ivera.<context>.domain` 内：`org.springframework` / `com.baomidou` / `infrastructure` → 零匹配。
 - `<context>.application` 与 `<context>.interfaces` 内：`persistence.(mapper|po|converter)` 直连 → 零匹配（RepositoryImpl 自身除外）。
-- 全库旧包名：`cc.ivera.(entity|mapper|service|vo|dto|event|mq|job|config|enums).<旧名>` → 零匹配（bill 等未迁上下文的临时例外除外）。
+- 全库旧包名：`cc.ivera.(entity|mapper|service|vo|dto|event|mq|job|config|enums).<旧名>` → 零匹配。
 - `src/main/resources` 内旧包名字符串 → 零匹配。
 
 ## 3. 踩坑固化
@@ -69,11 +71,13 @@ description: "mall backend DDD 限界上下文迁移清单：四层搬移、PO/�
 - **编译错误中文乱码（GBK）**：类名/行号/符号名可读，按「找不到符号 + 文件:行号」定位。
 - **PowerShell**：禁 tail/find/grep（用 Grep/Glob/Read 工具）；命令连接用 `;`；surefire 汇总读
   `target/surefire-reports/*.txt` 的 `Tests run` 行。
-- 旧逻辑取回：`git show HEAD:./src/main/java/cc/ivera/service/impl/XxxServiceImpl.java`。
+- 旧逻辑取回：旧平铺包已删除，仅存于 DDD 迁移前的历史提交——
+  `git show <迁移前提交>:src/main/java/cc/ivera/service/impl/XxxServiceImpl.java`。
 - 工作区前端改动（admin-ui/user-ui）与后端迁移无关，勿动。
 
 ## 4. 完成定义（对齐 AGENTS.md DoD）
 
-问题定性明确；无公共 API/兼容性变化（或已记录迁移/回滚）；领域不变量未破坏；
+问题定性明确；无公共 API/兼容性变化（或已记录迁移/回滚）；领域不变量与跨上下文依赖方向未破坏；
 `mvn clean test` 全绿 + user-ui `test:logic` 全绿；grep 兜底四项零残留；未夹带无关改动。
-CODE_INTRO.md 架构章节在全部上下文迁完后（当前计划：批次 7 bill 收口时）统一更新，批次中途不改。
+CODE_INTRO.md 架构章节已在全部上下文迁完后统一更新（DDD 八上下文四层结构见 CODE_INTRO.md 第 2 节）；
+后续结构变化按 AGENTS.md 文档同步规则即时更新，不再积压到批次末尾。
