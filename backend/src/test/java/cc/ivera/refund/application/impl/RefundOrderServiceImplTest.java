@@ -121,7 +121,6 @@ class RefundOrderServiceImplTest {
     private void stubCancelFlow(PaymentOrder successPayment) {
         OrderInfo order = paidWaitShipOrder();
         OrderItem item = orderItem();
-        when(orderRepository.findByOrderNoForUpdate("ORD1")).thenReturn(order);
         when(orderRepository.findByOrderNo("ORD1")).thenReturn(order);
         when(orderRepository.listItemsByOrderNo("ORD1")).thenReturn(Collections.singletonList(item));
         when(orderRepository.findItemById(10L)).thenReturn(item);
@@ -129,7 +128,7 @@ class RefundOrderServiceImplTest {
         when(orderRepository.freezeOrderRefund(eq("ORD1"), anyInt())).thenReturn(1);
         when(paymentOrderRepository.findSuccessPaymentOrderForRefund("ORD1")).thenReturn(successPayment);
         when(paymentOrderRepository.freezeChannelRefund(eq("PMO1"), anyInt())).thenReturn(1);
-        when(paymentOrderRepository.findByPaymentNoForUpdate("PMO1")).thenReturn(successPayment);
+        when(paymentOrderRepository.findByPaymentNo("PMO1")).thenReturn(successPayment);
         when(refundInfoRepository.findByRefundNo(anyString())).thenReturn(null);
         when(refundItemRepository.listByRefundNoAsc(anyString())).thenReturn(Collections.emptyList());
         RefundOrder refundOrder = new RefundOrder();

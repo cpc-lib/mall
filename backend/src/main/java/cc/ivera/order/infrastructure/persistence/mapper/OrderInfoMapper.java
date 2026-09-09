@@ -24,18 +24,13 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfoPO> {
                                            @Param("endTime") Date endTime);
 
     /**
-     * 按订单号查询并加行级排他锁。
+     * 查询指定商品 + 支付方式下最新的一笔未支付订单（V1 语义，legacy_status=NOTPAY），不加锁。
+     * 用途：创建订单时在同维度 Redis 分布式锁内复用未支付订单。
      */
-    OrderInfoPO selectByOrderNoForUpdate(@Param("orderNo") String orderNo);
-
-    /**
-     * 查询指定商品 + 支付方式下最新的一笔未支付订单（V1 语义，legacy_status=NOTPAY），并加行级排他锁。
-     * 用途：创建订单时配合 Redis 分布式锁，避免并发场景重复创建未支付订单。
-     */
-    OrderInfoPO selectNoPayOrderForUpdate(@Param("productId") Long productId,
-                                          @Param("paymentType") String paymentType,
-                                          @Param("orderStatus") String orderStatus,
-                                          @Param("paymentAppId") Long paymentAppId);
+    OrderInfoPO selectLatestNoPayOrder(@Param("productId") Long productId,
+                                       @Param("paymentType") String paymentType,
+                                       @Param("orderStatus") String orderStatus,
+                                       @Param("paymentAppId") Long paymentAppId);
 
     /**
      * 支付成功 CAS：WAIT_PAY → ACTIVE，同时置 pay_status=PAID、实付金额、支付时间。

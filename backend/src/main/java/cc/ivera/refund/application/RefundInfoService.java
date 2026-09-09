@@ -32,8 +32,6 @@ public interface RefundInfoService {
 
     RefundInfo getByRefundNo(String refundNo);
 
-    RefundInfo getByRefundNoForUpdate(String refundNo);
-
     List<RefundInfo> listByOrderNo(String orderNo);
 
     /**

@@ -22,11 +22,4 @@
     </foreach>
   </select>
 
-  <select id="selectByRefundNoForUpdate" resultType="cc.ivera.refund.infrastructure.persistence.po.RefundInfoPO">
-    select *
-    from t_refund_info
-    where refund_no = #{refundNo}
-    for update
-  </select>
-
 </mapper>

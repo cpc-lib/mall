@@ -32,14 +32,12 @@
     order by create_time desc
   </select>
 
-  <select id="selectByOrderNoForUpdate" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
-    select *
-    from t_order_info
-    where order_no = #{orderNo}
-    for update
-  </select>
-
-  <select id="selectNoPayOrderForUpdate" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
+  <!--
+    复用未支付订单：同维度（商品+支付方式+支付应用）最新一笔 NOTPAY 订单。
+    不加行锁：DM8 默认读已提交隔离级下，无匹配行时 for update 不产生间隙锁、锁不住并发插入；
+    并发复用由调用方同维度 Redis 分布式锁（硬门槛，拿不到即失败）串行化，本查询只负责读取。
+  -->
+  <select id="selectLatestNoPayOrder" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
     select *
     from t_order_info
     where id = (
@@ -62,7 +60,6 @@
     ) latest_order
     where rownum &lt;= 1
     )
-    for update
   </select>
 
   <!-- 支付成功 CAS：仅 WAIT_PAY 订单可转入 ACTIVE，同时落支付状态/实付/支付时间 -->

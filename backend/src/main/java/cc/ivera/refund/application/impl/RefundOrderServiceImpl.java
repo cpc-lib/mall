@@ -217,7 +217,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 内部：创建链路 ====================
 
     private RefundApplyVO doCreate(Long userId, RefundApplyRequest request, String forcedType, RefundInfo[] channelHolder) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(request.getOrderNo());
+        OrderInfo order = orderRepository.findByOrderNo(request.getOrderNo());
         if (order == null || !Objects.equals(order.getUserId(), userId)) {
             throw new BizException("订单不存在或无权访问");
         }
@@ -267,7 +267,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundApplyVO doUpdate(Long userId, String refundNo, RefundApplyUpdateRequest request) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         validateOwner(refundOrder, userId);
         ensureApplying(refundOrder);
         // 释放旧冻结（幂等守卫内），重建明细并重新冻结
@@ -284,7 +284,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundApplyVO doCancelPaidOrder(Long userId, String orderNo, RefundInfo[] channelHolder) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
         if (order == null || !Objects.equals(order.getUserId(), userId)) {
             throw new BizException("订单不存在或无权访问");
         }
@@ -321,7 +321,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundApplyVO doCreatePriceAdjustment(String orderNo, Integer amount, String reason) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
         if (order == null) {
             throw new BizException("订单不存在");
         }
@@ -392,7 +392,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 内部：撤回/拒绝（释放冻结） ====================
 
     private void doCancelOrReject(Long userId, String refundNo, String remark, boolean userCancel) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
             throw new BizException("退款申请不存在");
         }
@@ -425,7 +425,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 内部：受理/签收/重试（发起渠道退款） ====================
 
     private RefundInfo prepareAccept(String refundNo, String remark) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         ensureApplying(refundOrder);
         refundOrder.setStatus(RefundOrderStatus.APPROVED.getType());
         refundOrder.setLegacyApplyStatus(LEGACY_ACCEPTED);
@@ -464,7 +464,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundInfo prepareConfirmReturn(String refundNo, String remark) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
             throw new BizException("退款单不存在");
         }
@@ -482,7 +482,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundInfo prepareRetry(String refundNo) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
             throw new BizException("退款单不存在");
         }
@@ -494,7 +494,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
 
     @Override
     public RefundApplyVO queryRefundStatus(String refundNo) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        // 查询/对账路径：无事务包裹且后续含渠道远程调用，普通读即可
+        //（for update 在 autocommit 下行锁立即释放，无互斥效果；状态机写入仍在各带锁事务内）。
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
             throw new BizException("退款单不存在");
         }
@@ -573,9 +575,10 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     private void executeChannelRefund(OrderInfo order, RefundInfo refund) {
         // 线下/手工收款（管理员标记付款，OFFLINE 支付单）：无渠道资金，渠道退款直接置成功本地结转，
         // 由 RefundSucceeded 事件驱动 settle（冻结转已退、全额退关闭订单），与渠道回调成功路径一致。
+        // 此方法运行在事务提交后的渠道调用阶段，普通读即可（不可用 for update：autocommit 下锁立即释放且会在远程调用期间空持锁）。
         RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refund.getRefundNo());
         if (refundOrder != null && StringUtils.hasText(refundOrder.getPaymentNo())) {
-            PaymentOrder paymentOrder = paymentOrderRepository.findByPaymentNoForUpdate(refundOrder.getPaymentNo());
+            PaymentOrder paymentOrder = paymentOrderRepository.findByPaymentNo(refundOrder.getPaymentNo());
             if (paymentOrder != null && PaymentConfigGateway.CHANNEL_OFFLINE.equals(paymentOrder.getChannel())) {
                 log.info("线下收款订单退款本地结转，refundNo={}, orderNo={}, paymentNo={}",
                     refund.getRefundNo(), refund.getOrderNo(), refundOrder.getPaymentNo());
@@ -597,7 +600,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 内部：结转 ====================
 
     private void doSettle(String refundNo) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNoForUpdate(refundNo);
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         if (refundOrder == null) {
             // V1 历史渠道退款无本地退款单，无需结转
             return;

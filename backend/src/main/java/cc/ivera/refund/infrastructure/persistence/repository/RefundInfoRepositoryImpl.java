@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * 渠道退款流水仓储实现：CAS 条件更新/行锁查询/方言限量扫描全部收口于此。
+ * 渠道退款流水仓储实现：CAS 条件更新/方言限量扫描全部收口于此。
  */
 @Repository
 public class RefundInfoRepositoryImpl implements RefundInfoRepository {
@@ -35,14 +35,6 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
         refundInfo.setId(po.getId());
         refundInfo.setCreateTime(po.getCreateTime());
         refundInfo.setUpdateTime(po.getUpdateTime());
-    }
-
-    @Override
-    public RefundInfo findByRefundNoForUpdate(String refundNo) {
-        if (refundNo == null || refundNo.trim().isEmpty()) {
-            return null;
-        }
-        return RefundInfoPOConverter.toDomain(refundInfoMapper.selectByRefundNoForUpdate(refundNo));
     }
 
     @Override

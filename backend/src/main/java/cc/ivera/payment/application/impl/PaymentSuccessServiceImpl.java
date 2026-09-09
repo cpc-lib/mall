@@ -70,7 +70,7 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
             throw new BizException("支付成功处理缺少订单号");
         }
 
-        OrderInfo order = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
         if (order == null) {
             throw new BizException("支付成功处理对应订单不存在，orderNo=" + orderNo);
         }

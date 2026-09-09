@@ -227,12 +227,13 @@ public class WxPayOrderService implements WxPayOrderFacade {
                                                    Map<String, Object> plainTextMap,
                                                    String plainText,
                                                    String notifyId) {
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
-        if (lockedOrder == null) {
+        // 入口仅做存在性/报文校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
             throw new BizException("微信支付通知对应订单不存在，orderNo=" + orderNo);
         }
 
-        validateWxPayOrderNotify(lockedOrder, plainTextMap);
+        validateWxPayOrderNotify(order, plainTextMap);
 
         // V2：统一支付成功处理器（支付单状态机 + 订单 CAS + 预占提交 + 异常冲正）。
         String transactionId = getString(plainTextMap, "transaction_id");
@@ -254,7 +255,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
         }
         distributedLockTemplate.execute("payment:order:cancel:" + orderNo, 3000L, -1L, () ->
             transactionTemplate.execute(status -> {
-                OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+                OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
                 if (lockedOrder == null) {
                     throw new BizException("订单不存在，orderNo=" + orderNo);
                 }
@@ -378,7 +379,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
      * （CAS NOTPAY->CLOSED：关闭活跃支付单 + 释放预占库存）。
      */
     private void closeLocalOrderWhenChannelAbsent(String orderNo) {
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
         if (lockedOrder == null) {
             throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
         }
@@ -395,7 +396,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
                                               String result,
                                               String tradeState,
                                               boolean closeUnpaidOrder) {
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
         if (lockedOrder == null) {
             throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
         }

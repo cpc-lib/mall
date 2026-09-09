@@ -2,11 +2,10 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.payment.infrastructure.persistence.mapper.PaymentOrderMapper">
 
-  <select id="selectByPaymentNoForUpdate" resultType="cc.ivera.payment.infrastructure.persistence.po.PaymentOrderPO">
+  <select id="selectByPaymentNo" resultType="cc.ivera.payment.infrastructure.persistence.po.PaymentOrderPO">
     select *
     from t_payment_order
     where payment_no = #{paymentNo}
-    for update
   </select>
 
   <!-- 渠道资金防线：累计已退+冻结+本次 不超过实付金额 -->

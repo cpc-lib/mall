@@ -62,11 +62,6 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public OrderInfo findByOrderNoForUpdate(String orderNo) {
-        return OrderInfoPOConverter.toDomain(orderInfoMapper.selectByOrderNoForUpdate(orderNo));
-    }
-
-    @Override
     public OrderInfo findByOrderNoAndUserId(String orderNo, Long userId) {
         return OrderInfoPOConverter.toDomain(orderInfoMapper.selectOne(new LambdaQueryWrapper<OrderInfoPO>()
             .eq(OrderInfoPO::getOrderNo, orderNo)
@@ -74,9 +69,9 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public OrderInfo findNoPayForUpdate(Long productId, String paymentType, String legacyStatus, Long paymentAppId) {
+    public OrderInfo findLatestNoPayOrder(Long productId, String paymentType, String legacyStatus, Long paymentAppId) {
         return OrderInfoPOConverter.toDomain(
-            orderInfoMapper.selectNoPayOrderForUpdate(productId, paymentType, legacyStatus, paymentAppId));
+            orderInfoMapper.selectLatestNoPayOrder(productId, paymentType, legacyStatus, paymentAppId));
     }
 
     @Override

@@ -106,7 +106,8 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
             return;
         }
         lock.execute(lockPrefix + paymentNo, 5000L, -1L, () -> {
-            PaymentOrder paymentOrder = paymentOrderRepository.findByPaymentNoForUpdate(paymentNo);
+            // 事务外预检：普通读即可，并发权威守卫是下方事务内 freezeChannelRefund 的 CAS 条件更新。
+            PaymentOrder paymentOrder = paymentOrderRepository.findByPaymentNo(paymentNo);
             if (paymentOrder == null) {
                 log.warn("异常支付冲正未找到支付单，忽略，paymentNo={}", paymentNo);
                 return null;
@@ -158,7 +159,7 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
     }
 
     private RefundInfo prepareOversold(String orderNo, String reason) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
         if (order == null) {
             throw new BizException("订单不存在");
         }

@@ -88,9 +88,9 @@ public class OrderInfoServiceImpl implements OrderInfoService {
     }
 
     private OrderInfo doCreateOrReuseOrder(Long productId, String paymentType, Long paymentAppId, String paymentChannelCode) {
-        // 第一层防护：Redis 分布式锁，挡住多实例并发。
-        // 第二层防护：select ... for update，挡住同库事务并发。
-        OrderInfo noPayOrder = orderRepository.findNoPayForUpdate(
+        // 并发防护：同维度（商品+支付方式+支付应用）Redis 分布式锁硬串行（拿锁失败即拒绝），
+        // 本查询只在锁内读取可复用订单；RC 隔离级下行锁对“无行可锁/间隙插入”无防护，故不加 for update。
+        OrderInfo noPayOrder = orderRepository.findLatestNoPayOrder(
             productId,
             paymentType,
             OrderStatus.NOTPAY.getType(),
@@ -135,7 +135,7 @@ public class OrderInfoServiceImpl implements OrderInfoService {
         } catch (DuplicateKeyException e) {
             // 极小概率订单号碰撞，或者历史数据存在并发写入时，兜底重新查询未支付订单。
             log.warn("订单插入触发唯一约束，尝试复用已有订单，productId={}, paymentType={}", productId, paymentType, e);
-            OrderInfo existOrder = orderRepository.findNoPayForUpdate(
+            OrderInfo existOrder = orderRepository.findLatestNoPayOrder(
                 productId,
                 paymentType,
                 OrderStatus.NOTPAY.getType(),
@@ -219,14 +219,6 @@ public class OrderInfoServiceImpl implements OrderInfoService {
             return null;
         }
         return orderRepository.findByOrderNo(orderNo);
-    }
-
-    @Override
-    public OrderInfo getOrderByOrderNoForUpdate(String orderNo) {
-        if (!StringUtils.hasText(orderNo)) {
-            return null;
-        }
-        return orderRepository.findByOrderNoForUpdate(orderNo);
     }
 
     @Override

@@ -8,8 +8,6 @@ import org.apache.ibatis.annotations.Param;
 @Mapper
 public interface ProductMapper extends BaseMapper<ProductPO> {
 
-    ProductPO selectByIdForUpdate(@Param("id") Long id);
-
     int deductStockIfEnough(@Param("id") Long id, @Param("quantity") Integer quantity);
 
     int increaseStock(@Param("id") Long id, @Param("quantity") Integer quantity);

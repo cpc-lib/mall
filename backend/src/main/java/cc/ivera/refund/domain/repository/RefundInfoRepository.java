@@ -18,12 +18,8 @@ public interface RefundInfoRepository {
     void save(RefundInfo refundInfo);
 
     /**
-     * 按退款单号查询并加行级排他锁（退款通知/同步/审核串行化）。
-     */
-    RefundInfo findByRefundNoForUpdate(String refundNo);
-
-    /**
      * 按退款单号查询（不加锁）。
+     * 退款并发安全由 {@link #updateStatusIfCurrentIn} / casApproval* 等 CAS 条件更新保证。
      */
     RefundInfo findByRefundNo(String refundNo);
 

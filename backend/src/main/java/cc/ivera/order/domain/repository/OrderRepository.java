@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * 订单聚合仓储端口：OrderInfo 聚合根 + OrderItem 明细。
- * 状态推进一律走端口内 CAS/行锁方法，禁止先改后查。
+ * 状态推进一律走端口内 CAS 条件更新，禁止先改后查；并发互斥由调用方 Redis 分布式锁串行化。
  */
 public interface OrderRepository {
 
@@ -25,19 +25,15 @@ public interface OrderRepository {
     OrderInfo findByOrderNo(String orderNo);
 
     /**
-     * 按订单号查询并加行级排他锁。
-     */
-    OrderInfo findByOrderNoForUpdate(String orderNo);
-
-    /**
      * 归属校验查询：订单号 + 用户编号精确匹配，不存在返回 null。
      */
     OrderInfo findByOrderNoAndUserId(String orderNo, Long userId);
 
     /**
-     * 查询指定商品 + 支付方式（+支付应用）下最新一笔未支付订单（V1 legacy NOTPAY），加行级排他锁。
+     * 查询指定商品 + 支付方式（+支付应用）下最新一笔未支付订单（V1 legacy NOTPAY），不加锁。
+     * 并发复用由调用方同维度 Redis 分布式锁串行化保证。
      */
-    OrderInfo findNoPayForUpdate(Long productId, String paymentType, String legacyStatus, Long paymentAppId);
+    OrderInfo findLatestNoPayOrder(Long productId, String paymentType, String legacyStatus, Long paymentAppId);
 
     /**
      * 全量订单按创建时间倒序（V1 订单列表接口）。

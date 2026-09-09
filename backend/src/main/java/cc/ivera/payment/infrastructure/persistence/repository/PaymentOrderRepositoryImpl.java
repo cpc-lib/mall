@@ -38,8 +38,8 @@ public class PaymentOrderRepositoryImpl implements PaymentOrderRepository {
     }
 
     @Override
-    public PaymentOrder findByPaymentNoForUpdate(String paymentNo) {
-        return PaymentOrderPOConverter.toDomain(paymentOrderMapper.selectByPaymentNoForUpdate(paymentNo));
+    public PaymentOrder findByPaymentNo(String paymentNo) {
+        return PaymentOrderPOConverter.toDomain(paymentOrderMapper.selectByPaymentNo(paymentNo));
     }
 
     @Override

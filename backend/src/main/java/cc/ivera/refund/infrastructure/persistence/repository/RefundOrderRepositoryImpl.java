@@ -38,11 +38,6 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     }
 
     @Override
-    public RefundOrder findByRefundNoForUpdate(String refundNo) {
-        return RefundOrderPOConverter.toDomain(refundOrderMapper.selectByRefundNoForUpdate(refundNo));
-    }
-
-    @Override
     public RefundOrder findByRefundNo(String refundNo) {
         return RefundOrderPOConverter.toDomain(refundOrderMapper.selectOne(new LambdaQueryWrapper<RefundOrderPO>()
             .eq(RefundOrderPO::getRefundNo, refundNo)));

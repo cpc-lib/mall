@@ -202,12 +202,12 @@ public class AliPayServiceImpl implements AliPayService {
         log.info("支付宝支付通知加锁处理开始，orderNo={}, notifyId={}", orderNo, notifyId);
 
         // 支付宝异步通知同样可能重复投递，和主动查单、关单并发。
-        // Redis 分布式锁 + 数据库行锁 + 状态条件更新共同保证幂等。
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
-        if (lockedOrder == null) {
+        // 入口仅做存在性/报文校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
             throw new BizException("支付宝支付通知对应订单不存在，orderNo=" + orderNo);
         }
-        validateAliPayOrderNotify(lockedOrder, params);
+        validateAliPayOrderNotify(order, params);
 
         // V2：统一支付成功处理器（支付单状态机 + 订单 CAS + 预占提交 + 异常冲正）。
         String tradeNo = params.get("trade_no");
@@ -321,15 +321,21 @@ public class AliPayServiceImpl implements AliPayService {
 
         if (AliPayTradeState.SUCCESS.getType().equals(tradeStatus)) {
             log.warn("支付宝核实订单已支付 ===> {}", orderNo);
-            // V2：查单确认支付成功也走统一支付成功处理器。
+            // V2：查单确认支付成功也走统一支付成功处理器；handlePaymentSuccess 内的行锁 + CAS
+            // 须在事务内生效，用分布式锁 + transactionTemplate 包裹，与微信侧 checkOrderStatus 对齐。
             String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
             String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
             Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-            boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-                orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
-            if (firstSettled) {
-                paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
-            }
+            distributedLockTemplate.execute("payment:ali:check:order:" + orderNo, 5000L, -1L, () ->
+                transactionTemplate.execute(status -> {
+                    boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
+                        orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
+                    if (firstSettled) {
+                        paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
+                    }
+                    return null;
+                })
+            );
         }
     }
 
@@ -365,15 +371,21 @@ public class AliPayServiceImpl implements AliPayService {
                     tradeStatusDesc = "渠道无此交易（从未发起支付）";
                 } else if (AliPayTradeState.SUCCESS.getType().equals(tradeStatus)) {
                     tradeStatusDesc = "交易支付成功";
-                    // V2：查单确认支付成功走统一支付成功处理器（幂等）。
+                    // V2：查单确认支付成功走统一支付成功处理器（幂等）；handlePaymentSuccess 内的行锁 + CAS
+                    // 须在事务内生效，用分布式锁 + transactionTemplate 包裹，与微信侧 queryAndSyncStatus 对齐。
                     String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
                     String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
                     Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-                    boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-                        orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
-                    if (firstSettled) {
-                        paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
-                    }
+                    distributedLockTemplate.execute("payment:ali:query:order:" + orderNo, 5000L, -1L, () ->
+                        transactionTemplate.execute(status -> {
+                            boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
+                                orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
+                            if (firstSettled) {
+                                paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
+                            }
+                            return null;
+                        })
+                    );
                 } else if (AliPayTradeState.FINISHED.getType().equals(tradeStatus)) {
                     tradeStatusDesc = "交易结束，不可退款";
                 } else if (AliPayTradeState.CLOSED.getType().equals(tradeStatus)) {

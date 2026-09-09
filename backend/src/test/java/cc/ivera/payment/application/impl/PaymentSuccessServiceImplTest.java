@@ -77,7 +77,7 @@ class PaymentSuccessServiceImplTest {
     @Test
     void markOfflinePaid_recordsOfflineSuccessPaymentOrderAndAdvancesOrder() {
         OrderInfo order = order("ORD1", OrderStatus.NOTPAY.getType());
-        when(orderInfoService.getOrderByOrderNoForUpdate("ORD1")).thenReturn(order);
+        when(orderInfoService.getOrderByOrderNo("ORD1")).thenReturn(order);
         when(paymentOrderRepository.findActiveByOrderNoAndChannel(eq("ORD1"), eq(PaymentConfigGateway.CHANNEL_OFFLINE))).thenReturn(null);
         when(paymentOrderRepository.findLatestSuccessByOrderNoAndChannel(eq("ORD1"), eq(PaymentConfigGateway.CHANNEL_OFFLINE))).thenReturn(null);
         when(paymentOrderService.markSuccess(anyString(), isNull(), eq(100))).thenReturn(true);
@@ -103,7 +103,7 @@ class PaymentSuccessServiceImplTest {
 
     @Test
     void markOfflinePaid_orderMissing_throws() {
-        when(orderInfoService.getOrderByOrderNoForUpdate("ORD404")).thenReturn(null);
+        when(orderInfoService.getOrderByOrderNo("ORD404")).thenReturn(null);
         assertThrows(BizException.class, () -> service.markOfflinePaid("ORD404"));
         verify(paymentOrderRepository, never()).save(any());
     }
@@ -111,7 +111,7 @@ class PaymentSuccessServiceImplTest {
     @Test
     void markOfflinePaid_concurrentCasLoses_returnsFalse() {
         OrderInfo order = order("ORD2", OrderStatus.NOTPAY.getType());
-        when(orderInfoService.getOrderByOrderNoForUpdate("ORD2")).thenReturn(order);
+        when(orderInfoService.getOrderByOrderNo("ORD2")).thenReturn(order);
         when(paymentOrderRepository.findActiveByOrderNoAndChannel(anyString(), anyString())).thenReturn(null);
         when(paymentOrderRepository.findLatestSuccessByOrderNoAndChannel(anyString(), anyString())).thenReturn(null);
         when(paymentOrderService.markSuccess(anyString(), isNull(), eq(100))).thenReturn(true);

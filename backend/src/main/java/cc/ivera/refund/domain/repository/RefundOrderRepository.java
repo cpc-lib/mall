@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * 退款单聚合仓储端口（聚合根 RefundOrder）。
- * 状态流转一律先对退款单行加锁（findByRefundNoForUpdate）再在事务内更新，禁止先改后查。
+ * 状态流转一律在事务内走 CAS 条件更新，禁止先改后查；并发互斥由调用方 Redis 分布式锁串行化。
  */
 public interface RefundOrderRepository {
 
@@ -21,12 +21,7 @@ public interface RefundOrderRepository {
     void update(RefundOrder refundOrder);
 
     /**
-     * 按退款单号查询并加行级排他锁。
-     */
-    RefundOrder findByRefundNoForUpdate(String refundNo);
-
-    /**
-     * 按退款单号查询（不加锁，渠道失败回查/幂等监听用）。
+     * 按退款单号查询（渠道失败回查/幂等监听/状态机读用）。
      */
     RefundOrder findByRefundNo(String refundNo);
 

@@ -9,9 +9,9 @@ import org.apache.ibatis.annotations.Param;
 public interface PaymentOrderMapper extends BaseMapper<PaymentOrderPO> {
 
     /**
-     * 按支付单编号查询并加行级排他锁（支付成功处理/关单互斥）。
+     * 按支付单编号普通查询（不加锁）：事务提交后的渠道调用/状态读取使用。
      */
-    PaymentOrderPO selectByPaymentNoForUpdate(@Param("paymentNo") String paymentNo);
+    PaymentOrderPO selectByPaymentNo(@Param("paymentNo") String paymentNo);
 
     /**
      * 渠道资金冻结：累计退款不超实付（refunded + frozen + amount <= paid）。

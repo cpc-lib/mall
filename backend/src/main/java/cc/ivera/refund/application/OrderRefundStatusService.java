@@ -6,8 +6,11 @@ import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.refund.domain.enums.RefundStatus;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collections;
 
@@ -21,17 +24,39 @@ public class OrderRefundStatusService {
 
     private final RefundInfoRepository refundInfoRepository;
 
+    private final DistributedLockTemplate distributedLockTemplate;
+
+    private final TransactionTemplate transactionTemplate;
+
     public OrderRefundStatusService(
         OrderInfoService orderInfoService,
-        RefundInfoRepository refundInfoRepository
+        RefundInfoRepository refundInfoRepository,
+        DistributedLockTemplate distributedLockTemplate,
+        TransactionTemplate transactionTemplate
     ) {
         this.orderInfoService = orderInfoService;
         this.refundInfoRepository = refundInfoRepository;
+        this.distributedLockTemplate = distributedLockTemplate;
+        this.transactionTemplate = transactionTemplate;
     }
 
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 刷新订单退款汇总状态。并发互斥靠 Redis 分布式锁（按订单号串行化），
+     * 移除底层 FOR UPDATE 后避免锁在 autocommit 下空转；外层事务挂起、独立提交，
+     * 即使外层事务回滚，订单状态反映已有退款流水仍然正确，下一轮刷新会修正。
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void refreshOrderRefundStatus(String orderNo) {
-        OrderInfo orderInfo = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+        distributedLockTemplate.execute("payment:refund:status:" + orderNo, 5000L, -1L, () ->
+            transactionTemplate.execute(status -> {
+                doRefreshOrderRefundStatus(orderNo);
+                return null;
+            })
+        );
+    }
+
+    private void doRefreshOrderRefundStatus(String orderNo) {
+        OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
         if (orderInfo == null) {
             return;
         }

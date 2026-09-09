@@ -30,8 +30,6 @@ public interface OrderInfoService {
 
     OrderInfo getOrderByOrderNo(String orderNo);
 
-    OrderInfo getOrderByOrderNoForUpdate(String orderNo);
-
     /**
      * 待发货订单：已支付 + 待发货 + 无退款，按支付时间升序（管理员待发货列表）。
      */

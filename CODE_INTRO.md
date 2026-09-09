@@ -87,7 +87,7 @@ cc.ivera.<context>/
 |-----|--------------------------------|------------------|
 | 第一层 | 通知幂等检查（Redis + notifyId）       | 防止重复处理支付/退款通知    |
 | 第二层 | Redisson 分布式锁（看门狗自动续期）         | 防止并发操作同一订单/账单日   |
-| 第三层 | 数据库行锁 + CAS 状态更新（version/条件更新） | 最终一致性保障，冲突返回友好提示 |
+| 第三层 | CAS 条件更新（version/条件 UPDATE） | 最终一致性保障，冲突返回友好提示 |
 
 ### 3.2 认证与授权（shared.security）
 
@@ -165,7 +165,7 @@ flowchart TB
 
     subgraph SRC["② 三方状态到达入口（可重复/并发）"]
         direction LR
-        E1["渠道回调 notify<br/>锁: payment:wx:notify:pay:{orderNo}<br/>+ 事务 + 订单行锁 + 验签验金额<br/>(V2 另有 Redis notifyId 24h 去重)"]
+        E1["渠道回调 notify<br/>锁: payment:wx:notify:pay:{orderNo}<br/>+ 事务 + 验签验金额（普通读，权威由 Redis 锁 + CAS 兜底）<br/>(V2 另有 Redis notifyId 24h 去重)"]
         E2["主动查单（用户轮询/管理端渠道查单）<br/>锁: payment:wx:check:order:{orderNo}"]
         E3["延迟关单（MQ 到期 / 兜底扫描60s<br/>→ 先查渠道真实状态）"]
     end
@@ -174,7 +174,7 @@ flowchart TB
 
     subgraph CORE["③ 统一支付成功处理器 PaymentSuccessService"]
         direction TB
-        H1["订单 FOR UPDATE 行锁"]
+        H1["订单普通读（findByOrderNo）<br/>权威靠 Redis 锁 + CAS"]
         H1 --> H2["渠道感知定位支付单<br/>同渠道活跃单 > 已成交单兼容补建"]
         H2 --> H3["支付单 CAS CREATED/PAYING→SUCCESS<br/>(并发败者幂等返回)"]
         H3 --> H4{订单状态分派}
@@ -322,7 +322,7 @@ flowchart TB
         G1["订单 CAS<br/>NOTPAY→SUCCESS<br/>NOTPAY→CLOSED"]
         G2["支付单 CAS<br/>CREATED/PAYING→SUCCESS"]
         G3["物流单 CAS<br/>DELIVERED→RECEIVED<br/>(仅物流送达后用户可确认)"]
-        G4["退款单 FOR UPDATE 行锁<br/>+ 状态机校验 ensureApplying"]
+        G4["退款单 Redis 锁 refund:xxx:{refundNo}<br/>+ 状态机校验 ensureApplying"]
     end
 
     L2 -->|"闸门通过才进入库存域"| L3
@@ -367,8 +367,8 @@ flowchart TB
 | `commitReservation` 支付提交        | 订单 CAS NOTPAY→SUCCESS；支付单 CAS          | `casTransition(LOCKED→COMMITTED)` + 败者状态复核；流水 `biz_no` UK                                                                        | 已 COMMITTED 幂等返回；遇 RELEASED 抛错；无记录放行（历史单）     |
 | `releaseReservation` 关单释放       | 订单 CAS NOTPAY→CLOSED + 关闭活跃支付单         | `casTransition(LOCKED→RELEASED)` + 败者状态复核；流水 UK                                                                                  | 已 RELEASED 幂等返回；遇 COMMITTED 抛错（已成交不可释放）；无记录放行 |
 | `convertToSoldOnReceipt` 收货结转   | 物流 CAS DELIVERED→RECEIVED（仅物流送达后可确认收货） | `biz_no` 预检（ORDER_SOLD:orderNo:itemId）+ 结转数量 quantity-restockedQty + `commitSoldStock` 条件 UPDATE + 流水 UK                         | 已结转跳过；锁定不足仅告警不阻塞收货（旧模型兼容）                     |
-| `restockForRefund` 退款回补         | 退款单行锁 + 状态机（受理/签收各一次）                  | `biz_no` 预检（REFUND_RESTOCK:refundNo:itemId）+ `addRestockedQty` 上限守卫 + 流水 UK                                                      | 已回补跳过；超「已退+冻结」上限抛错（防超补）                       |
-| `writeOffLostForRefund` 仅退款货损核销 | 退款单行锁 + 受理状态机（REFUND_ONLY 未收货/已收货）     | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock`/`writeOffSoldLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定/已售不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
+| `restockForRefund` 退款回补         | Redis 锁 refund:xxx:{refundNo} + 状态机（受理/签收各一次）                  | `biz_no` 预检（REFUND_RESTOCK:refundNo:itemId）+ `addRestockedQty` 上限守卫 + 流水 UK                                                      | 已回补跳过；超「已退+冻结」上限抛错（防超补）                       |
+| `writeOffLostForRefund` 仅退款货损核销 | Redis 锁 refund:xxx:{refundNo} + 受理状态机（REFUND_ONLY 未收货/已收货）     | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock`/`writeOffSoldLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定/已售不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
 | `insertTransaction` 流水落库        | —                                      | `uk(biz_no)` + DuplicateKeyException 捕获                                                                                          | 重复流水跳过并留日志（审计终态兜底）                            |
 
 **要点**

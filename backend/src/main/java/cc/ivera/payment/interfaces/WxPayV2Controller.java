@@ -232,12 +232,12 @@ public class WxPayV2Controller {
         log.info("微信支付v2通知加锁处理开始，orderNo={}, transactionId={}", orderNo, transactionId);
 
         // 支付成功通知可能重复投递，也可能和延迟关单、主动查单并发。
-        // Redis 分布式锁控制多实例并发，select ... for update 控制数据库行级并发。
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
-        if (lockedOrder == null) {
+        // 此处仅做存在性/金额校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
             throw new BizException("微信支付v2通知订单不存在，orderNo=" + orderNo);
         }
-        if (notifyTotalFee == null || !notifyTotalFee.equals(lockedOrder.getTotalFee().longValue())) {
+        if (notifyTotalFee == null || !notifyTotalFee.equals(order.getTotalFee().longValue())) {
             throw new BizException("微信支付v2通知金额与本地订单金额不一致，orderNo=" + orderNo);
         }
 

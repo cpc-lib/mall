@@ -13,12 +13,15 @@ import cc.ivera.refund.domain.enums.RefundStatus;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -45,6 +48,10 @@ public class RefundInfoServiceImpl implements RefundInfoService {
 
     private final ApplicationEventPublisher eventPublisher;
 
+    private final DistributedLockTemplate distributedLockTemplate;
+
+    private final TransactionTemplate transactionTemplate;
+
     private final Map<RefundStatus, Consumer<String>> statusEventDispatch;
 
     private static final Set<String> REFUNDABLE_STATUSES = Collections.unmodifiableSet(new HashSet<>(Arrays.asList(
@@ -70,12 +77,16 @@ public class RefundInfoServiceImpl implements RefundInfoService {
         RefundInfoRepository refundInfoRepository,
         OrderInfoService orderInfoService,
         OrderRefundStatusService orderRefundStatusService,
-        ApplicationEventPublisher eventPublisher
+        ApplicationEventPublisher eventPublisher,
+        DistributedLockTemplate distributedLockTemplate,
+        TransactionTemplate transactionTemplate
     ) {
         this.refundInfoRepository = refundInfoRepository;
         this.orderInfoService = orderInfoService;
         this.orderRefundStatusService = orderRefundStatusService;
         this.eventPublisher = eventPublisher;
+        this.distributedLockTemplate = distributedLockTemplate;
+        this.transactionTemplate = transactionTemplate;
         Map<RefundStatus, Consumer<String>> dispatch = new EnumMap<>(RefundStatus.class);
         dispatch.put(RefundStatus.SUCCESS, refundNo -> eventPublisher.publishEvent(new RefundSucceededEvent(refundNo)));
         dispatch.put(RefundStatus.FAILED, refundNo -> eventPublisher.publishEvent(new RefundQuotaReleasedEvent(refundNo)));
@@ -84,13 +95,21 @@ public class RefundInfoServiceImpl implements RefundInfoService {
     }
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RefundInfo createRefundApplication(String orderNo, Integer refundAmount, String reason) {
         if (orderNo == null || orderNo.trim().isEmpty()) {
             throw new BizException("订单号不能为空");
         }
+        // 退款申请并发互斥靠 Redis 分布式锁（按订单号串行化），事务在锁内开启，
+        // 移除底层 FOR UPDATE 后并发安全由「锁 + DuplicateKeyException 兜底」保障。
+        String lockKey = "payment:refund:create:" + orderNo;
+        return distributedLockTemplate.execute(lockKey, 5000L, -1L, () ->
+            transactionTemplate.execute(status -> doCreateRefundApplication(orderNo, refundAmount, reason))
+        );
+    }
 
-        OrderInfo orderInfo = orderInfoService.getOrderByOrderNoForUpdate(orderNo);
+    private RefundInfo doCreateRefundApplication(String orderNo, Integer refundAmount, String reason) {
+        OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
         if (orderInfo == null) {
             throw new BizException("订单不存在");
         }
@@ -220,8 +239,9 @@ public class RefundInfoServiceImpl implements RefundInfoService {
         }
 
         // 退款成功通知、主动查单同步、后台补偿任务都可能并发到达。
-        // 这里先对退款单行加 for update，保证同一 refundNo 在本地串行处理。
-        RefundInfo lockedRefundInfo = getByRefundNoForUpdate(syncResult.getRefundNo());
+        // 普通读即可：状态推进走下方 updateRefundIfStatusIn 的 CAS 条件更新（仅一方成功），
+        // 事件也只在 CAS 成功后发布，并发输家自然幂等，无需行锁串行。
+        RefundInfo lockedRefundInfo = getByRefundNo(syncResult.getRefundNo());
         if (lockedRefundInfo == null) {
             log.warn("退款状态同步失败，本地退款单不存在，refundNo={}", syncResult.getRefundNo());
             return false;
@@ -353,11 +373,6 @@ public class RefundInfoServiceImpl implements RefundInfoService {
     @Override
     public RefundInfo getByRefundNo(String refundNo) {
         return refundInfoRepository.findByRefundNo(refundNo);
-    }
-
-    @Override
-    public RefundInfo getByRefundNoForUpdate(String refundNo) {
-        return refundInfoRepository.findByRefundNoForUpdate(refundNo);
     }
 
     @Override

@@ -16,9 +16,10 @@ public interface PaymentOrderRepository {
     void save(PaymentOrder paymentOrder);
 
     /**
-     * 按支付单编号查询并加行级排他锁（支付成功处理/关单互斥）。
+     * 按支付单编号普通查询（不加行锁）：用于事务提交后的渠道调用阶段或纯读取。
+     * 事务内的支付单状态流转不走行锁查询，统一由 markPaying/markSuccess 等 CAS 条件更新守卫。
      */
-    PaymentOrder findByPaymentNoForUpdate(String paymentNo);
+    PaymentOrder findByPaymentNo(String paymentNo);
 
     /**
      * 同订单同渠道最新一笔活跃支付单（CREATED/PAYING），渠道感知复用。

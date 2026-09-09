@@ -71,7 +71,7 @@ public class ShipmentServiceImpl implements ShipmentService {
     }
 
     private OrderShipment doShip(String orderNo) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
         if (order == null) {
             throw new BizException("订单不存在，orderNo=" + orderNo);
         }
@@ -109,7 +109,7 @@ public class ShipmentServiceImpl implements ShipmentService {
     }
 
     private void doConfirmReceipt(String orderNo) {
-        OrderInfo order = orderRepository.findByOrderNoForUpdate(orderNo);
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
         if (order == null) {
             throw new BizException("订单不存在，orderNo=" + orderNo);
         }
