@@ -1,6 +1,7 @@
 # IDE / tooling
 .idea/
-.trae/
+.trae/*
+!.trae/skills/
 
 # Java build
 **/target/
