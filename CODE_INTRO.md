@@ -591,7 +591,7 @@ flowchart TB
 | `OrderCloseMessageService`                                                   | 订单关闭延迟消息（Outbox）                                 |
 | `LocalMessageService`                                                        | 本地消息表投递/确认/重试/补偿                                 |
 | `AliPayService`                                                              | 支付宝支付/退款/查单/关单/账单                                |
-| payment 应用层 `wxpay/WxPayOrderFacade` / `WxPayRefundFacade` / `WxPayBillFacade` | 微信 V3 订单/退款/账单门面（application.impl.wxpay 下含 HttpClient 与通知解密） |
+| payment 应用层 `wxpay/WxPayOrderFacade` / `WxPayRefundFacade` / `WxPayBillFacade`（门面接口） | 微信 V3 订单/退款/账单门面；实现为 `impl/wxpay/WxPayOrderService` / `WxPayRefundService` / `WxPayBillService`，同包另有 `WxPayHttpClient`、`WxPayNotificationDecoder`、`WxChannelPaymentQueryHandler`、`WxPayPrivateKeyUtil` 配套组件 |
 | `PaymentChannelService` / `PaymentAppService` + `PaymentConfigLoader`（payment 基础设施层） | 支付配置加载/缓存/维护                                     |
 | `StockImportService`                                                         | Excel 导入记录/确认入库（CAS）/失败明细/文件存储路由                 |
 | `bill.application.BillReconcileService`                                      | 账单上传对账（幂等/种类互斥/8 类差异）                            |
