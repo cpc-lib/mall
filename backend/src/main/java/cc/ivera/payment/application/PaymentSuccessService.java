@@ -21,4 +21,13 @@ public interface PaymentSuccessService {
      * false=幂等命中/重复支付冲正/晚到支付冲正/并发 CAS 失败
      */
     boolean handlePaymentSuccess(String orderNo, String channel, String channelOrderNo, Integer paidAmount);
+
+    /**
+     * 管理员标记付款（线下/手工收款，演示与线下收款场景）：以 OFFLINE 渠道补记一笔 SUCCESS 支付单，
+     * 推进订单 NOTPAY → SUCCESS，并收口同订单其它渠道的活跃支付单。
+     * 自带分布式锁 + 事务包裹。
+     *
+     * @return true=本次调用完成了订单首次成交推进；false=订单已非未支付或被并发处理
+     */
+    boolean markOfflinePaid(String orderNo);
 }

@@ -128,7 +128,8 @@ export default function OrdersV2() {
           const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP' && noRefund
           const canConfirm = o.fulfillmentStatus === 'SHIPPED' && d.shipmentStatus === 'DELIVERED' && noRefund
           const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus) && noRefund
-          const canRefund = o.payStatus === 'PAID' && noRefund && d.items.some(i => availableRefundQuantity(i) > 0)
+          // 未发货已付款只走「取消订单」（整单取消、补库存），不显示「申请退款」；发货/收货后才走仅退款/退货退款
+          const canRefund = o.payStatus === 'PAID' && noRefund && o.fulfillmentStatus !== 'WAIT_SHIP' && d.items.some(i => availableRefundQuantity(i) > 0)
           return <div className="m-list-card" key={o.orderNo}>
             <div className="m-list-head">
               <div className="m-list-no">订单号 {o.orderNo}</div>

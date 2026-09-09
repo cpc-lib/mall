@@ -6,13 +6,16 @@ import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.payment.application.PaymentOrderService;
 import cc.ivera.payment.application.PaymentSuccessService;
 import cc.ivera.payment.domain.enums.PayType;
+import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.payment.domain.repository.PaymentOrderRepository;
 import cc.ivera.refund.application.ExceptionRefundService;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
 import java.util.Date;
@@ -33,14 +36,32 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
 
     private final ExceptionRefundService exceptionRefundService;
 
+    private final DistributedLockTemplate lockTemplate;
+
+    private final TransactionTemplate tx;
+
     public PaymentSuccessServiceImpl(OrderInfoService orderInfoService,
                                      PaymentOrderRepository paymentOrderRepository,
                                      PaymentOrderService paymentOrderService,
-                                     ExceptionRefundService exceptionRefundService) {
+                                     ExceptionRefundService exceptionRefundService,
+                                     DistributedLockTemplate lockTemplate,
+                                     TransactionTemplate tx) {
         this.orderInfoService = orderInfoService;
         this.paymentOrderRepository = paymentOrderRepository;
         this.paymentOrderService = paymentOrderService;
         this.exceptionRefundService = exceptionRefundService;
+        this.lockTemplate = lockTemplate;
+        this.tx = tx;
+    }
+
+    @Override
+    public boolean markOfflinePaid(String orderNo) {
+        if (!StringUtils.hasText(orderNo)) {
+            throw new BizException("标记付款缺少订单号");
+        }
+        return lockTemplate.execute("payment:offline:mark:" + orderNo, 5000L, -1L,
+            () -> tx.execute(s ->
+                handlePaymentSuccess(orderNo, PaymentConfigGateway.CHANNEL_OFFLINE, null, null)));
     }
 
     @Override

@@ -7,11 +7,13 @@ import cc.ivera.order.domain.repository.OrderRepository;
 import cc.ivera.payment.application.AliPayService;
 import cc.ivera.payment.application.wxpay.WxPayRefundFacade;
 import cc.ivera.payment.domain.enums.PayType;
+import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.payment.domain.repository.PaymentOrderRepository;
 import cc.ivera.product.application.InventoryService;
 import cc.ivera.product.domain.model.RefundStockLine;
 import cc.ivera.refund.application.RefundApplicationService;
+import cc.ivera.refund.application.RefundInfoService;
 import cc.ivera.refund.application.RefundOrderService;
 import cc.ivera.refund.domain.enums.RefundApprovalStatus;
 import cc.ivera.refund.domain.enums.RefundOrderStatus;
@@ -34,6 +36,7 @@ import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -73,6 +76,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     private final AliPayService aliPayService;
     private final WxPayRefundFacade wxPayRefundFacade;
     private final RefundApplicationService refundApplicationService;
+    private final RefundInfoService refundInfoService;
 
     public RefundOrderServiceImpl(RefundOrderRepository refundOrderRepository,
                                   RefundItemRepository refundItemRepository,
@@ -84,7 +88,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
                                   TransactionTemplate tx,
                                   AliPayService aliPayService,
                                   WxPayRefundFacade wxPayRefundFacade,
-                                  RefundApplicationService refundApplicationService) {
+                                  RefundApplicationService refundApplicationService,
+                                  RefundInfoService refundInfoService) {
         this.refundOrderRepository = refundOrderRepository;
         this.refundItemRepository = refundItemRepository;
         this.refundInfoRepository = refundInfoRepository;
@@ -96,6 +101,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         this.aliPayService = aliPayService;
         this.wxPayRefundFacade = wxPayRefundFacade;
         this.refundApplicationService = refundApplicationService;
+        this.refundInfoService = refundInfoService;
     }
 
     // ==================== 用户端：申请 / 编辑 / 撤回 / 未发货取消 ====================
@@ -565,6 +571,19 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private void executeChannelRefund(OrderInfo order, RefundInfo refund) {
+        // 线下/手工收款（管理员标记付款，OFFLINE 支付单）：无渠道资金，渠道退款直接置成功本地结转，
+        // 由 RefundSucceeded 事件驱动 settle（冻结转已退、全额退关闭订单），与渠道回调成功路径一致。
+        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refund.getRefundNo());
+        if (refundOrder != null && StringUtils.hasText(refundOrder.getPaymentNo())) {
+            PaymentOrder paymentOrder = paymentOrderRepository.findByPaymentNoForUpdate(refundOrder.getPaymentNo());
+            if (paymentOrder != null && PaymentConfigGateway.CHANNEL_OFFLINE.equals(paymentOrder.getChannel())) {
+                log.info("线下收款订单退款本地结转，refundNo={}, orderNo={}, paymentNo={}",
+                    refund.getRefundNo(), refund.getOrderNo(), refundOrder.getPaymentNo());
+                refundInfoService.updateRefundToSuccess(refund.getRefundNo(), null,
+                    "线下收款（管理员标记付款），无渠道资金退回，退款本地结转");
+                return;
+            }
+        }
         String paymentType = order.getPaymentType();
         if (PayType.WXPAY.getType().equals(paymentType)) {
             wxPayRefundFacade.executeRefund(refund);

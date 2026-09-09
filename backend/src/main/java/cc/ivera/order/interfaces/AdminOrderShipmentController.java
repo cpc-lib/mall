@@ -11,6 +11,7 @@ import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.order.domain.model.OrderShipment;
 import cc.ivera.order.interfaces.vo.OrderDetailVO;
 import cc.ivera.payment.application.ChannelPaymentQueryDispatcher;
+import cc.ivera.payment.application.PaymentSuccessService;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.web.R;
 import cc.ivera.payment.interfaces.vo.ChannelOrderQueryVO;
@@ -38,17 +39,20 @@ public class AdminOrderShipmentController {
     private final CheckoutService checkoutService;
     private final OrderInfoService orderInfoService;
     private final ChannelPaymentQueryDispatcher channelPaymentQueryDispatcher;
+    private final PaymentSuccessService paymentSuccessService;
 
     public AdminOrderShipmentController(ShipmentService shipmentService,
                                         PaymentOrderRepository paymentOrderRepository,
                                         CheckoutService checkoutService,
                                         OrderInfoService orderInfoService,
-                                        ChannelPaymentQueryDispatcher channelPaymentQueryDispatcher) {
+                                        ChannelPaymentQueryDispatcher channelPaymentQueryDispatcher,
+                                        PaymentSuccessService paymentSuccessService) {
         this.shipmentService = shipmentService;
         this.paymentOrderRepository = paymentOrderRepository;
         this.checkoutService = checkoutService;
         this.orderInfoService = orderInfoService;
         this.channelPaymentQueryDispatcher = channelPaymentQueryDispatcher;
+        this.paymentSuccessService = paymentSuccessService;
     }
 
     @ApiOperation("待发货订单列表（已支付未发货）")
@@ -87,14 +91,14 @@ public class AdminOrderShipmentController {
         return R.ok().setMessage("订单已强制关闭，预占库存已释放");
     }
 
-    @ApiOperation("手动标记支付成功（仅未支付订单，提交预占库存）")
+    @ApiOperation("手动标记支付成功（线下收款，仅未支付订单；补记 OFFLINE 支付单，该单退款本地结转）")
     @PostMapping("/{orderNo}/mark-paid")
     public R<?> markPaid(@PathVariable String orderNo) {
         OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
         if (order == null) throw new BizException("订单不存在");
         if (!PayStatus.UNPAID.getType().equals(order.getPayStatus()))
             throw new BizException("仅未支付订单可标记支付，当前支付状态：" + order.getPayStatus());
-        boolean ok = orderInfoService.updateStatusByOrderNoIfStatus(orderNo, OrderStatus.NOTPAY, OrderStatus.SUCCESS);
+        boolean ok = paymentSuccessService.markOfflinePaid(orderNo);
         if (!ok) throw new BizException("标记失败：订单状态可能已被并发修改，请刷新后重试");
         return R.ok().setMessage("订单已标记为支付成功，预占库存已提交");
     }

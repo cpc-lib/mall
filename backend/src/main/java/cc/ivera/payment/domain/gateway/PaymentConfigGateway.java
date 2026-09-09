@@ -16,6 +16,11 @@ public interface PaymentConfigGateway {
     String CHANNEL_ALIPAY = "ALIPAY";
 
     /**
+     * 线下/手工收款渠道（管理员标记付款）：无渠道资金，退款时本地结转，不调用渠道退款接口。
+     */
+    String CHANNEL_OFFLINE = "OFFLINE";
+
+    /**
      * 重新加载所有启用配置（管理端增删改渠道/应用后调用）。
      */
     void reloadConfigs();

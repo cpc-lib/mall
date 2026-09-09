@@ -1,0 +1,165 @@
+package cc.ivera.refund.application.impl;
+
+import cc.ivera.order.domain.model.OrderInfo;
+import cc.ivera.order.domain.model.OrderItem;
+import cc.ivera.order.domain.repository.OrderRepository;
+import cc.ivera.payment.application.AliPayService;
+import cc.ivera.payment.application.wxpay.WxPayRefundFacade;
+import cc.ivera.payment.domain.model.PaymentOrder;
+import cc.ivera.payment.domain.repository.PaymentOrderRepository;
+import cc.ivera.product.application.InventoryService;
+import cc.ivera.refund.application.RefundApplicationService;
+import cc.ivera.refund.application.RefundInfoService;
+import cc.ivera.refund.domain.model.RefundInfo;
+import cc.ivera.refund.domain.model.RefundOrder;
+import cc.ivera.refund.domain.repository.RefundInfoRepository;
+import cc.ivera.refund.domain.repository.RefundItemRepository;
+import cc.ivera.refund.domain.repository.RefundOrderRepository;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.util.Collections;
+import java.util.function.Supplier;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * RefundOrderServiceImpl 特征测试：mock 全部端口，不连真实 DB/Redis/MQ/渠道。
+ * 锁定「已付款未发货取消」链路的渠道出口路由：
+ * - OFFLINE 支付单（管理员标记付款）：退款本地结转，不调用微信/支付宝渠道退款；
+ * - WXPAY 支付单：走微信渠道退款（现状不变）。
+ */
+class RefundOrderServiceImplTest {
+
+    private RefundOrderRepository refundOrderRepository;
+    private RefundItemRepository refundItemRepository;
+    private RefundInfoRepository refundInfoRepository;
+    private OrderRepository orderRepository;
+    private PaymentOrderRepository paymentOrderRepository;
+    private InventoryService inventoryService;
+    private AliPayService aliPayService;
+    private WxPayRefundFacade wxPayRefundFacade;
+    private RefundApplicationService refundApplicationService;
+    private RefundInfoService refundInfoService;
+    private RefundOrderServiceImpl service;
+
+    @BeforeEach
+    void setUp() {
+        refundOrderRepository = mock(RefundOrderRepository.class);
+        refundItemRepository = mock(RefundItemRepository.class);
+        refundInfoRepository = mock(RefundInfoRepository.class);
+        orderRepository = mock(OrderRepository.class);
+        paymentOrderRepository = mock(PaymentOrderRepository.class);
+        inventoryService = mock(InventoryService.class);
+        aliPayService = mock(AliPayService.class);
+        wxPayRefundFacade = mock(WxPayRefundFacade.class);
+        refundApplicationService = mock(RefundApplicationService.class);
+        refundInfoService = mock(RefundInfoService.class);
+        DistributedLockTemplate lockTemplate = mock(DistributedLockTemplate.class);
+        TransactionTemplate tx = mock(TransactionTemplate.class);
+        when(lockTemplate.execute(anyString(), anyLong(), anyLong(), any(Supplier.class))).thenAnswer(inv ->
+            ((Supplier<?>) inv.getArgument(3)).get());
+        when(tx.execute(any())).thenAnswer(inv ->
+            ((TransactionCallback<?>) inv.getArgument(0)).doInTransaction(new SimpleTransactionStatus()));
+        service = new RefundOrderServiceImpl(refundOrderRepository, refundItemRepository, refundInfoRepository,
+            orderRepository, paymentOrderRepository, inventoryService, lockTemplate, tx,
+            aliPayService, wxPayRefundFacade, refundApplicationService, refundInfoService);
+    }
+
+    private OrderInfo paidWaitShipOrder() {
+        OrderInfo order = new OrderInfo();
+        order.setOrderNo("ORD1");
+        order.setUserId(1L);
+        order.setPayStatus("PAID");
+        order.setOrderStatus("ACTIVE");
+        order.setFulfillmentStatus("WAIT_SHIP");
+        order.setPaymentType("微信");
+        order.setTotalFee(100);
+        return order;
+    }
+
+    private OrderItem orderItem() {
+        OrderItem item = new OrderItem();
+        item.setId(10L);
+        item.setOrderNo("ORD1");
+        item.setProductId(20L);
+        item.setUnitPrice(100);
+        item.setPayAmount(100);
+        item.setQuantity(1);
+        item.setRefundedQty(0);
+        item.setRefundFrozenQty(0);
+        item.setRefundedAmount(0);
+        item.setRefundFrozenAmount(0);
+        return item;
+    }
+
+    private PaymentOrder successPayment(String channel) {
+        PaymentOrder po = new PaymentOrder();
+        po.setPaymentNo("PMO1");
+        po.setOrderNo("ORD1");
+        po.setChannel(channel);
+        po.setStatus("SUCCESS");
+        po.setRequestAmount(100);
+        po.setPaidAmount(100);
+        return po;
+    }
+
+    private void stubCancelFlow(PaymentOrder successPayment) {
+        OrderInfo order = paidWaitShipOrder();
+        OrderItem item = orderItem();
+        when(orderRepository.findByOrderNoForUpdate("ORD1")).thenReturn(order);
+        when(orderRepository.findByOrderNo("ORD1")).thenReturn(order);
+        when(orderRepository.listItemsByOrderNo("ORD1")).thenReturn(Collections.singletonList(item));
+        when(orderRepository.findItemById(10L)).thenReturn(item);
+        when(orderRepository.freezeItemRefund(eq(10L), anyInt(), anyInt())).thenReturn(1);
+        when(orderRepository.freezeOrderRefund(eq("ORD1"), anyInt())).thenReturn(1);
+        when(paymentOrderRepository.findSuccessPaymentOrderForRefund("ORD1")).thenReturn(successPayment);
+        when(paymentOrderRepository.freezeChannelRefund(eq("PMO1"), anyInt())).thenReturn(1);
+        when(paymentOrderRepository.findByPaymentNoForUpdate("PMO1")).thenReturn(successPayment);
+        when(refundInfoRepository.findByRefundNo(anyString())).thenReturn(null);
+        when(refundItemRepository.listByRefundNoAsc(anyString())).thenReturn(Collections.emptyList());
+        RefundOrder refundOrder = new RefundOrder();
+        refundOrder.setRefundNo("RFD1");
+        refundOrder.setPaymentNo("PMO1");
+        when(refundOrderRepository.findByRefundNo(anyString())).thenReturn(refundOrder);
+    }
+
+    @Test
+    void cancelPaidOrder_offlinePayment_settlesLocallyWithoutChannelCall() {
+        stubCancelFlow(successPayment("OFFLINE"));
+
+        service.cancelPaidOrder(1L, "ORD1");
+
+        // 线下收款：退款本地结转（置成功，由事件驱动结转），绝不调用真实渠道退款
+        verify(refundInfoService).updateRefundToSuccess(anyString(), isNull(), anyString());
+        verify(wxPayRefundFacade, never()).executeRefund(any());
+        verify(aliPayService, never()).executeRefund(any());
+        // 未发货取消受理即补库存
+        verify(inventoryService).restockForRefund(anyString(), anyList(), eq(false));
+    }
+
+    @Test
+    void cancelPaidOrder_wxpayPayment_callsWxChannelRefund() {
+        stubCancelFlow(successPayment("WXPAY"));
+
+        service.cancelPaidOrder(1L, "ORD1");
+
+        // 现状行为：真实渠道支付单走微信退款接口
+        verify(wxPayRefundFacade).executeRefund(any(RefundInfo.class));
+        verify(refundInfoService, never()).updateRefundToSuccess(anyString(), any(), anyString());
+    }
+}
