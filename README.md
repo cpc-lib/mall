@@ -147,14 +147,14 @@ CAS 条件 UPDATE
 
 ## 4. RabbitMQ 与最终一致性
 
-项目当前使用 `AUTO ACK`，不是手写 `MANUAL ACK`：
+项目当前使用 `MANUAL ACK`：只有业务处理与本地消息状态回写成功后才显式确认消息。
 
 ```yaml
 spring:
   rabbitmq:
     listener:
       simple:
-        acknowledge-mode: auto
+        acknowledge-mode: manual
         default-requeue-rejected: false
         retry:
           enabled: true
@@ -169,16 +169,17 @@ spring:
 ```text
 业务成功
 → markConsumed
-→ Listener 正常返回
-→ Spring AUTO ACK
+→ Channel.basicAck(deliveryTag, false)
 
-业务异常
+业务 / markConsumed / basicAck 异常
 → 异常向外抛出
 → Spring Retry
-→ 重试耗尽 Reject
+→ 重试耗尽 RejectAndDontRequeue
 → Release Queue DLX
 → Failure Queue
 ```
+
+这是 **at-least-once** 语义：如果业务与 `markConsumed` 已成功，但 broker ACK 因连接故障失败，消息可能再次投递；现有订单/退款 CAS、分布式锁与 `biz_no` 幂等必须继续保留，用来安全承接重复消费。
 
 订单超时关单和退款状态同步均采用独立失败拓扑：
 
@@ -192,7 +193,7 @@ Dead Letter Exchange
 Release Queue
     ↓
 Consumer
-    ├─ success → AUTO ACK
+    ├─ success → MANUAL basicAck
     └─ retry exhausted
           ↓
      Failure Exchange
@@ -209,7 +210,7 @@ Parking Lot Queue 不配置自动消费者，不自动回灌，避免 poison mes
 此外还有两层保障：
 
 - `t_local_message` Transactional Outbox：业务事务内先落 `PENDING`，事务提交后发消息，broker confirm 后置 `SENT`，消费完成后置 `CONSUMED`。
-- DB 兜底调度：`TimeoutOrderCloseScheduler`、`RefundStatusSyncScheduler` 独立扫描数据库状态，保证即使 MQ 故障仍能最终收敛。
+- DB 最终一致性兜底：`TimeoutOrderCloseScheduler` 扫描超时 `NOTPAY` 订单并重新走渠道反查/关单链路，`RefundStatusSyncScheduler` 扫描 `APPROVED + PROCESSING` 退款并重新走 `queryRefundStatus`。两者均按“单条失败不阻塞整批”执行，即使 MQ 不可用、Retry 耗尽进入 Failure Queue 或消息未及时消费，数据库状态仍会持续收敛。
 
 详细拓扑、迁移、Failure Queue 处理与回滚见 [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md)。
 
@@ -294,7 +295,7 @@ mall/
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   └── mapper/
-│   ├── src/test/java/       # 20 个测试类、129 个后端用例
+│   ├── src/test/java/       # 22 个测试类、139 个后端用例
 │   ├── docs/
 │   │   ├── DAMENG_DM8_OPERATIONS.md
 │   │   └── RABBITMQ_OPERATIONS.md
@@ -391,10 +392,12 @@ backend/src/main/resources/application.yml
 |---|---|
 | `spring.datasource.*` | DM8 连接；支持 `DM_HOST/DM_PORT/DM_SCHEMA/DM_USERNAME/DM_PASSWORD` |
 | `spring.redis.*` | Redis |
-| `spring.rabbitmq.*` | RabbitMQ、publisher confirm/returns、listener retry/AUTO ACK |
+| `spring.rabbitmq.*` | RabbitMQ、publisher confirm/returns、listener retry/MANUAL ACK |
 | `payment.auth.*` | Access/Refresh TTL、JWT Secret |
-| `payment.order.expire-minutes` | 未支付订单超时与延迟关单 TTL |
-| `payment.refund.status-sync-delay-ms` | 退款状态同步延迟与兜底周期 |
+| `payment.order.expire-minutes` | 未支付订单超时与 Order Close 延迟队列 TTL |
+| `payment.order.timeout-scan-ms` | `TimeoutOrderCloseScheduler` DB 兜底扫描周期，默认 60000ms |
+| `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
+| `payment.refund.status-sync-scan-ms` | `RefundStatusSyncScheduler` DB 兜底扫描周期，默认 60000ms |
 | `stock.import.storage` | `local` / `minio` |
 | `stock.import.dir` | 本地 Excel 存储目录 |
 | `stock.import.minio.*` | MinIO endpoint/凭据/bucket |
@@ -477,7 +480,7 @@ http://localhost:3002
 
 ### 后端
 
-当前基线：**20 个测试类、129 个用例**。
+当前基线：**22 个测试类、139 个用例**。
 
 ```powershell
 cd backend
@@ -495,6 +498,7 @@ mvn test
 - 登录失败保护。
 - Order Close / Refund Sync Consumer 失败传播契约。
 - Release Queue Failure DLX / Failure Queue / Parking Lot Queue 拓扑。
+- `TimeoutOrderCloseScheduler` / `RefundStatusSyncScheduler` DB 最终一致性兜底：扫描目标状态、复用既有业务链路、单笔失败不阻塞后续记录。
 
 ### 用户前端
 
@@ -560,7 +564,7 @@ npm run build
 资金正确性：渠道查询 + 支付/退款状态机 + 冲正
 库存正确性：四桶模型 + 条件 UPDATE + biz_no
 并发正确性：Redisson 锁 + CAS + 唯一约束
-消息可靠性：Outbox + publisher confirm + AUTO ACK + Retry + Failure DLQ
+消息可靠性：Outbox + publisher confirm + MANUAL ACK + Retry + Failure DLQ
 最终一致性：DB Scheduler 独立兜底
 ```
 

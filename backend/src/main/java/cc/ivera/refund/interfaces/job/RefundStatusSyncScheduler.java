@@ -34,9 +34,10 @@ public class RefundStatusSyncScheduler {
     }
 
     /**
-     * 扫描间隔与 MQ 延迟关单 TTL 共用 payment.refund.status-sync-delay-ms（默认 60s）。
+     * DB 最终一致性扫描周期独立于 MQ 延迟时间，默认 60s。
+     * 即使 MQ 不可用、重试耗尽进入 Failure Queue，或消息未能及时消费，仍按数据库状态持续收敛。
      */
-    @Scheduled(fixedDelayString = "${payment.refund.status-sync-delay-ms:60000}")
+    @Scheduled(fixedDelayString = "${payment.refund.status-sync-scan-ms:60000}")
     public void scan() {
         List<RefundInfo> refunds = refundInfoRepository.listProcessingApproved();
         for (RefundInfo refundInfo : refunds) {

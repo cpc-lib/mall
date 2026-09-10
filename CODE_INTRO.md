@@ -43,7 +43,7 @@ admin-ui  React 18 + Vite 5 + Ant Design 5 + SheetJS + Luckysheet
 - 并发串行化：Redisson 分布式锁。
 - 库存：四桶模型 + 条件 UPDATE + 流水 + `biz_no`。
 - 跨事务消息：Transactional Outbox + publisher confirm。
-- MQ 消费：AUTO ACK + Spring Retry + Failure DLQ。
+- MQ 消费：MANUAL ACK + Spring Retry + Failure DLQ。
 - MQ 故障后的业务收敛：DB Scheduler。
 - 支付异常：渠道查询 + 重复/晚到支付冲正。
 
@@ -467,7 +467,7 @@ flowchart TD
 当前使用：
 
 ```yaml
-acknowledge-mode: auto
+acknowledge-mode: manual
 ```
 
 正确语义：
@@ -475,23 +475,24 @@ acknowledge-mode: auto
 ```text
 业务处理成功
 → markConsumed
-→ Listener return
-→ Spring ACK
+→ Channel.basicAck(deliveryTag, false)
 ```
 
 异常：
 
 ```text
-业务方法抛异常
+业务方法 / markConsumed / basicAck 抛异常
 → Listener 异常退出
 → Spring Retry
 → 4 次仍失败
-→ reject(requeue=false)
+→ RejectAndDontRequeue
 → release queue DLX
 → failure queue
 ```
 
-不要在现有同步消费者中额外 catch 后吞异常，否则会破坏 AUTO ACK 的失败识别边界。
+MANUAL 模式下不在第一次业务异常时手工 `basicNack`，否则会提前结束当前 broker delivery 并破坏既有 Spring Retry；异常必须继续向外抛。对于明确选择忽略的空/无效消息，则显式 `basicAck`，避免长期停留在 unacked。
+
+该链路属于 **at-least-once**：如果业务处理与 `markConsumed` 已成功，但 `basicAck` 因连接异常失败，broker 可能再次投递同一消息；因此消费者侧的分布式锁、状态 CAS、唯一键与 `biz_no` 幂等是 MANUAL ACK 可靠性的必要组成部分。
 
 ### 10.4 订单关单 MQ 拓扑
 
@@ -569,8 +570,8 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 
 | 类 | 作用 |
 |---|---|
-| `TimeoutOrderCloseScheduler` | 扫描超时未支付订单，重新走渠道反查/关单 |
-| `RefundStatusSyncScheduler` | 扫描处理中退款，向渠道重新同步状态 |
+| `TimeoutOrderCloseScheduler` | DB 最终一致性兜底：按 `payment.order.timeout-scan-ms` 周期扫描超时 `NOTPAY` 订单，重新走渠道反查/必要时关单/CAS 本地状态；单笔失败不阻塞同批其它订单 |
+| `RefundStatusSyncScheduler` | DB 最终一致性兜底：按 `payment.refund.status-sync-scan-ms` 周期扫描 `APPROVED + PROCESSING` 退款，复用 `queryRefundStatus`；单笔失败不阻塞同批其它退款 |
 | `LocalMessageSendJob` | 每 30 秒扫描 PENDING Outbox 并重投 |
 | `MockLogisticsSimulationJob` | 模拟物流状态推进 |
 
@@ -779,12 +780,14 @@ REFUND_STATUS_MISMATCH
 | `server.port` | 后端端口，默认 8080 |
 | `spring.datasource.*` | DM8 |
 | `spring.redis.*` | Redis |
-| `spring.rabbitmq.*` | RabbitMQ 连接、confirm、returns、AUTO ACK、Retry |
+| `spring.rabbitmq.*` | RabbitMQ 连接、confirm、returns、MANUAL ACK、Retry |
 | `payment.auth.access-ttl-seconds` | Access Token TTL |
 | `payment.auth.refresh-ttl-seconds` | Refresh Token TTL |
 | `payment.auth.jwt-secret` | JWT 签名密钥 |
-| `payment.order.expire-minutes` | 订单超时 / Order Close delay TTL |
-| `payment.refund.status-sync-delay-ms` | Refund Sync delay |
+| `payment.order.expire-minutes` | 订单业务超时 / Order Close delay TTL |
+| `payment.order.timeout-scan-ms` | TimeoutOrderCloseScheduler DB 兜底扫描周期，默认 60000ms |
+| `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
+| `payment.refund.status-sync-scan-ms` | RefundStatusSyncScheduler DB 兜底扫描周期，默认 60000ms |
 | `stock.import.storage` | local / minio |
 | `stock.import.dir` | 本地文件目录 |
 | `stock.import.minio.*` | MinIO 配置 |
@@ -794,8 +797,8 @@ REFUND_STATUS_MISMATCH
 后端：
 
 ```text
-20 个测试类
-129 个用例
+22 个测试类
+139 个用例
 JUnit 5 + Mockito
 不连接真实 DM8 / Redis / RabbitMQ / 支付渠道
 ```
@@ -816,10 +819,12 @@ JUnit 5 + Mockito
 | `RefundOrderServiceImplTest` | 退款编排 |
 | `CartServiceImplTest` | 购物车 |
 | `LoginGuardServiceTest` | 登录防护 |
-| `OrderCloseConsumerTest` | Order Close 消费异常传播/成功回写 |
-| `RefundStatusSyncConsumerTest` | Refund Sync 消费异常传播/成功回写 |
+| `OrderCloseConsumerTest` | Order Close 手动 ACK：业务/CONSUMED 失败不 ACK、业务→CONSUMED→ACK 顺序、ACK 异常传播、空消息 ACK |
+| `RefundStatusSyncConsumerTest` | Refund Sync 手动 ACK：业务/CONSUMED 失败不 ACK、业务→CONSUMED→ACK 顺序、ACK 异常传播、空消息 ACK |
 | `OrderCloseRabbitConfigTest` | Order Failure DLX / Parking Lot 拓扑 |
 | `RefundStatusSyncRabbitConfigTest` | Refund Failure DLX / Parking Lot 拓扑 |
+| `TimeoutOrderCloseSchedulerTest` | DB 兜底关单：扫描超时订单，单笔渠道异常不阻塞后续订单 |
+| `RefundStatusSyncSchedulerTest` | DB 兜底退款同步：扫描处理中退款，单笔渠道异常不阻塞后续退款 |
 
 命令：
 
@@ -872,8 +877,8 @@ NOTPAY 不能被无条件更新
 ### MQ
 
 ```text
-AUTO ACK 保持
-消费者异常必须抛出
+MANUAL ACK：业务 + CONSUMED 成功后才 basicAck
+消费者异常必须抛出，不提前 basicNack
 Retry 耗尽进入 Failure Queue
 Parking Lot 不自动回灌
 DB Scheduler 继续兜底

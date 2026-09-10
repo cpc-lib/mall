@@ -18,7 +18,8 @@ public class TimeoutOrderCloseScheduler {
     private final ChannelOrderStatusDispatcher channelOrderStatusDispatcher;
 
     /**
-     * 本地订单未支付超时（分钟），与下单 expire_time、MQ 延迟关单 TTL 共用同一配置。
+     * 本地订单未支付超时（分钟），与下单 expire_time、MQ 延迟关单 TTL 共用同一业务超时配置。
+     * Scheduler 自身扫描周期由 payment.order.timeout-scan-ms 独立控制，作为 DB 最终一致性兜底。
      */
     @Value("${payment.order.expire-minutes:3}")
     private long orderExpireMinutes;

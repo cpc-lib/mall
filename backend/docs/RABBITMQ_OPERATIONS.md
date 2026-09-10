@@ -21,8 +21,10 @@ spring:
 payment:
   order:
     expire-minutes: 3 # local order unpaid timeout in minutes; also drives the delay queue TTL
+    timeout-scan-ms: 60000 # DB backstop scan interval for timed-out NOTPAY orders
   refund:
-    status-sync-delay-ms: 60000
+    status-sync-delay-ms: 60000 # MQ delay before the first refund status sync
+    status-sync-scan-ms: 60000 # DB backstop scan interval for APPROVED + PROCESSING refunds
 ```
 
 Consumer reliability (Spring AMQP listener, applies to all `@RabbitListener` consumers):
@@ -32,15 +34,19 @@ Consumer reliability (Spring AMQP listener, applies to all `@RabbitListener` con
 - `default-requeue-rejected: false`: after retries are exhausted the message is rejected (not requeued) — no infinite
   hot retry. Both release queues declare a failure DLX, so the broker dead-letters the rejected message into the matching
   `*.failure.queue` instead of silently dropping it.
-- Consumer ack: `acknowledge-mode: auto` — ack only after the listener returns successfully. Business exceptions are not
-  swallowed, so Spring Retry owns retry/reject behavior. Do not switch to manual ack unless a future consumer needs a
-  non-standard acknowledgement boundary.
+- Consumer ack: `acknowledge-mode: manual` — `OrderCloseConsumer` and `RefundStatusSyncConsumer` call
+  `Channel.basicAck(deliveryTag, false)` only after business processing and `markConsumed` both succeed. Business / outbox
+  update / ack exceptions are not swallowed, so Spring Retry still owns retry/reject behavior. Do not `basicNack` on the
+  first business failure; doing so would end the broker delivery before the configured retry policy is exhausted.
 - `*.failure.queue` is the first operational quarantine for exhausted messages. Inspect `x-death`, fix the root cause, and
   either manually replay the original message or route it to the matching `*.parking-lot.queue` for long-term isolation.
   Parking-lot queues have no consumers and no automatic route back to the release queue, preventing poison-message loops.
-- DB-driven backstop jobs reconcile business state independently of MQ — `TimeoutOrderCloseScheduler` (unpaid order close,
-  every 60s) and `RefundStatusSyncScheduler` (PROCESSING refunds, every 60s). Both are idempotent (status CAS + distributed
-  locks + bizNo unique keys), so failure queues are an observability/operations layer rather than the only recovery path.
+- DB-driven backstop jobs reconcile business state independently of MQ. `TimeoutOrderCloseScheduler` scans timed-out
+  `NOTPAY` orders on `payment.order.timeout-scan-ms` and reuses the existing channel-query/close/CAS path;
+  `RefundStatusSyncScheduler` scans `APPROVED + PROCESSING` refunds on `payment.refund.status-sync-scan-ms` and reuses
+  `queryRefundStatus`. One failed record is logged and skipped so later records in the same batch still converge. Both paths
+  remain idempotent through the existing distributed locks, CAS transitions, and bizNo/unique-key guards. Failure queues are
+  therefore an observability/operations layer rather than the only recovery path.
 - Publisher reliability: `publisher-confirm-type: correlated` + `publisher-returns: true` + `template.mandatory: true`;
   confirm/return failures are logged (with orderNo/refundNo correlation) by `RabbitReliabilityConfig` and reconciled by
   the same backstop jobs.
@@ -48,8 +54,11 @@ Consumer reliability (Spring AMQP listener, applies to all `@RabbitListener` con
   inserted
   as `PENDING` inside the business transaction, published after commit, marked `SENT` only after the broker confirm
   arrives,
-  and written back `CONSUMED` by the consumer after business processing succeeds but before the listener returns; Spring
-  performs AUTO ack only after that successful return.
+  and written back `CONSUMED` by the consumer after business processing succeeds; only then does the consumer explicitly
+  call `basicAck(deliveryTag, false)`. If business processing or the CONSUMED write-back fails, no ack is sent and the
+  exception continues into Spring Retry. If `basicAck` itself fails after `CONSUMED` was persisted, the exception is also
+  propagated; RabbitMQ may redeliver the message, so consumers must remain idempotent. This is intentional at-least-once
+  delivery semantics.
   Delivery retries use exponential backoff (3^n seconds, max 5 attempts) then `FAILED` for manual compensation;
   `LocalMessageSendJob` rescans `PENDING` every 30s. Manual compensation: fix the fault, then set `status='PENDING'`,
   `next_retry_time=CURRENT_TIMESTAMP` for `FAILED` rows — redelivery is safe (consumers are idempotent).

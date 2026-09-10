@@ -12,7 +12,7 @@
 - 后端端口：`8080`；两个前端通过 CORS 直接访问 `http://localhost:8080`，当前无 Vite 代理。
 - 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`。
 - 每个业务上下文遵循四层结构：`interfaces / application / domain / infrastructure`。
-- 当前测试基线：后端 **20 个测试类、129 个用例**；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
+- 当前测试基线：后端 **22 个测试类、139 个用例**；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
 
 文档职责：
 
@@ -132,24 +132,31 @@ CAS 条件更新
 当前消费者模式固定为：
 
 ```yaml
-spring.rabbitmq.listener.simple.acknowledge-mode: auto
+spring.rabbitmq.listener.simple.acknowledge-mode: manual
 spring.rabbitmq.listener.simple.default-requeue-rejected: false
 ```
 
-不要为了“更可靠”机械改成 `MANUAL`。现有契约是：
+当前契约是 **MANUAL ACK + Spring Retry + Failure DLQ**：
 
 ```text
 Listener 成功完成业务
 → markConsumed
-→ Listener 正常返回
-→ Spring AUTO ACK
+→ Channel.basicAck(deliveryTag, false)
 
-Listener 抛异常
+Listener / markConsumed / basicAck 抛异常
+→ 异常继续向外抛
 → Spring Retry（最多 4 次）
-→ 重试耗尽 Reject
+→ 重试耗尽 RejectAndDontRequeue
 → Release Queue DLX
 → Failure Queue
 ```
+
+实现约束：
+
+- Consumer 成功路径必须显式 `basicAck(deliveryTag, false)`，禁止提前 ACK。
+- 业务异常与 `markConsumed` 异常不得 ACK，也不要在第一次失败时手工 `basicNack`，否则会绕过现有 Spring Retry。
+- 空/无效但明确选择忽略的消息必须显式 ACK，避免 MANUAL 模式下形成长期 unacked。
+- 不得 catch 后吞异常；失败必须继续交给容器重试，重试耗尽后由现有 Failure DLQ 接管。
 
 订单关单与退款同步各自拥有独立失败拓扑：
 
@@ -166,7 +173,7 @@ Delay Queue
 
 - `Failure Queue`：保留最终消费失败消息，供排障、审计、人工重放。
 - `Parking Lot Queue`：人工长期隔离 poison message，不配置自动 Consumer，不形成自动循环。
-- `TimeoutOrderCloseScheduler` / `RefundStatusSyncScheduler`：DB 驱动的最终一致性兜底，与 Failure Queue 并行存在。
+- `TimeoutOrderCloseScheduler` / `RefundStatusSyncScheduler`：DB 驱动的最终一致性兜底，与 Failure Queue 并行存在；订单扫描周期由 `payment.order.timeout-scan-ms` 控制，退款扫描周期由 `payment.refund.status-sync-scan-ms` 独立控制。单笔失败只能记录日志并等待后续收敛，不得中断同批次其它记录。
 - `t_local_message`：Transactional Outbox，负责“业务事务落库后可靠投递”，不是消费失败队列的替代品。
 
 修改已有 RabbitMQ Queue arguments（TTL、DLX 等）时必须注意 RabbitMQ 参数不可原地修改；需要在运维文档中给出删旧队列再重声明的迁移步骤。
@@ -189,7 +196,7 @@ backend/env/sql/dm8/schema.sql
 
 ## 8. 测试规则
 
-后端测试位于 `backend/src/test/java`，当前基线：**20 个测试类、129 个用例**。
+后端测试位于 `backend/src/test/java`，当前基线：**22 个测试类、139 个用例**。
 
 测试原则：
 
@@ -197,8 +204,9 @@ backend/env/sql/dm8/schema.sql
 - 缺陷修复：先写能复现问题的测试。
 - 重构：先用特征测试锁住原行为。
 - 测试不连接真实 DM8、Redis、RabbitMQ、微信或支付宝；使用 JUnit 5 + Mockito / 纯对象测试。
-- 涉及 MQ 消费者时必须验证“异常继续向外抛出”和“失败时不写 CONSUMED”。
+- 涉及 MQ 消费者时必须验证：成功路径严格按“业务 → CONSUMED → `basicAck`”顺序执行；业务/CONSUMED 回写失败时不 ACK；明确忽略的无效消息会 ACK；`basicAck` 自身失败必须继续向外抛出。
 - 涉及 MQ 拓扑时必须验证 release queue 的 `x-dead-letter-exchange` / `x-dead-letter-routing-key` 以及 Failure/Parking Lot binding。
+- 涉及 DB 最终一致性兜底时必须验证 Scheduler 会扫描目标状态、复用既有业务链路，并且单条失败不会阻塞同批次后续记录。
 
 必须执行的回归：
 

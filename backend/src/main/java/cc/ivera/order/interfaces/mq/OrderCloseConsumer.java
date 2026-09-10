@@ -9,9 +9,14 @@ import cc.ivera.payment.application.ChannelOrderStatusDispatcher;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.domain.mq.OrderCloseMessage;
 import cc.ivera.shared.infrastructure.mq.LocalMessage;
+import com.rabbitmq.client.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.support.AmqpHeaders;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
+
+import java.io.IOException;
 
 @Component
 @Slf4j
@@ -34,15 +39,20 @@ public class OrderCloseConsumer {
     }
 
     @RabbitListener(queues = OrderCloseRabbitConfig.ORDER_CLOSE_RELEASE_QUEUE)
-    public void handleOrderClose(OrderCloseMessage message) {
+    public void handleOrderClose(OrderCloseMessage message,
+                                 Channel channel,
+                                 @Header(AmqpHeaders.DELIVERY_TAG) long deliveryTag) throws IOException {
         if (message == null || message.getOrderNo() == null) {
             log.warn("收到空的延迟关单消息，忽略处理");
+            channel.basicAck(deliveryTag, false);
             return;
         }
 
         processOrderClose(message);
-        // 消费者成功处理（监听器正常返回后 Spring 才向 broker ack）→ 回写本地消息表为已消费
+        // MANUAL ACK：业务处理与本地消息 CONSUMED 回写全部成功后才确认 broker 消息。
+        // 任一步骤异常均继续向外抛给 Spring Retry；重试耗尽后由容器 reject，进入 Failure DLQ。
         localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, message.getOrderNo());
+        channel.basicAck(deliveryTag, false);
     }
 
     private void processOrderClose(OrderCloseMessage message) {

@@ -20,7 +20,7 @@ spring:
       mandatory: true
     listener:
       simple:
-        acknowledge-mode: auto # 消费者确认：监听器成功返回后自动 ack，异常时按下方重试策略处理
+        acknowledge-mode: manual # 消费者手动确认：业务处理 + markConsumed 成功后 basicAck；异常继续抛给 Spring Retry，耗尽后 reject 进入 Failure DLQ
         retry:
           enabled: true # 消费异常指数回避重试：2s→6s→18s，共 4 次后放弃
           max-attempts: 4
@@ -59,9 +59,11 @@ payment:
     refresh-ttl-seconds: 604800
     jwt-secret: ${AUTH_JWT_SECRET:1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ}
   order:
-    expire-minutes: 3 # 本地订单未支付超时（分钟）：到时释放锁定库存并关单（MQ 延迟关单 TTL 与定时兜底扫描共用此值）
+    expire-minutes: 3 # 本地订单未支付超时（分钟）：到时释放锁定库存并关单（MQ 延迟关单 TTL 与 DB 兜底判定共用此值）
+    timeout-scan-ms: 60000 # DB 最终一致性兜底：扫描超时 NOTPAY 订单的周期
   refund:
-    status-sync-delay-ms: 60000
+    status-sync-delay-ms: 60000 # MQ 退款状态同步延迟
+    status-sync-scan-ms: 60000 # DB 最终一致性兜底：扫描 APPROVED + PROCESSING 退款的周期
 
 # Excel 导入文件存储（V6）：storage=local 落本地 dir 目录；storage=minio 走 MinIO 对象存储
 stock:
