@@ -4,8 +4,12 @@ import cc.ivera.bill.domain.enums.BillRecordType;
 import cc.ivera.bill.domain.model.BillRecord;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -17,7 +21,7 @@ import java.util.stream.Collectors;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * WxTradeBillParser 纯单测（无 Spring 依赖）：锁定微信交易账单 CSV 解析现状——
+ * WxTradeBillParser 纯单测（无 Spring 依赖）：生产入口使用真实 XLSX 工作簿；同时锁定历史 CSV 兼容入口——
  * 三种表头识别、支付/退款/撤销行、反引号清洗、元转分、退款金额绝对值、坏行跳过、缺表头报错。
  */
 class WxTradeBillParserTest {
@@ -81,6 +85,62 @@ class WxTradeBillParserTest {
     private static Date dateTime(String text) {
         return Date.from(LocalDateTime.parse(text, DateTimeFormatter.ofPattern(DatePatterns.DATETIME))
             .atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    @Test
+    void parseXlsx_allBill_readsWorkbookAndSkipsTitleRow() throws Exception {
+        Map<String, String> header = allHeader();
+        Map<String, String> pay = allHeader();
+        pay.put("交易时间", "2027-05-06 10:00:00");
+        pay.put("微信订单号", "WX-XLSX-PAY");
+        pay.put("商户订单号", "ORD-XLSX-PAY");
+        pay.put("交易类型", "NATIVE");
+        pay.put("交易状态", "SUCCESS");
+        pay.put("订单金额", "12.34");
+        pay.put("应结订单金额", "12.34");
+
+        Map<String, String> refund = allHeader();
+        refund.put("交易时间", "2027-05-06 11:00:00");
+        refund.put("微信订单号", "WX-XLSX-PAY");
+        refund.put("商户订单号", "ORD-XLSX-PAY");
+        refund.put("交易类型", "REFUND");
+        refund.put("交易状态", "REFUND");
+        refund.put("微信退款单号", "WX-XLSX-REFUND");
+        refund.put("商户退款单号", "RFD-XLSX-1");
+        refund.put("退款金额", "2.34");
+        refund.put("申请退款金额", "2.34");
+
+        byte[] xlsx;
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("微信交易账单");
+            sheet.createRow(0).createCell(0).setCellValue("微信支付交易账单明细");
+            writeXlsxRow(sheet.createRow(1), header.keySet().toArray(new String[0]));
+            // 模拟微信原始 UTF-8 BOM 被旧版下载转换逻辑固化进 XLSX 首列表头单元格。
+            sheet.getRow(1).getCell(0).setCellValue("\uFEFF交易时间");
+            writeXlsxRow(sheet.createRow(2), pay.values().toArray(new String[0]));
+            writeXlsxRow(sheet.createRow(3), refund.values().toArray(new String[0]));
+            workbook.write(output);
+            xlsx = output.toByteArray();
+        }
+
+        ParsedBill result = parser.parseXlsx(xlsx, CHANNEL, BILL_DATE);
+
+        assertEquals("ALL", result.getBillKind());
+        assertEquals(1, result.getPayRecords().size());
+        assertEquals(1, result.getRefundRecords().size());
+        assertEquals("WX-XLSX-PAY", result.getPayRecords().get(0).getChannelSerialNo());
+        assertEquals(1234, result.getPayRecords().get(0).getTotalAmount());
+        assertEquals("WX-XLSX-REFUND", result.getRefundRecords().get(0).getChannelSerialNo());
+        assertEquals("RFD-XLSX-1", result.getRefundRecords().get(0).getBizNo());
+        assertEquals(234, result.getRefundRecords().get(0).getRefundAmount());
+        assertTrue(result.getRefundRecords().get(0).getRawLine().contains("RFD-XLSX-1"));
+    }
+
+    private static void writeXlsxRow(Row row, String[] values) {
+        for (int i = 0; i < values.length; i++) {
+            row.createCell(i).setCellValue(values[i] == null ? "" : values[i]);
+        }
     }
 
     @Test

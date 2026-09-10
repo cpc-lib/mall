@@ -44,6 +44,10 @@ public class BillReconcileDiscrepancyPO extends BaseEntity {
      */
     private String channelSerialNo;
 
+    private String localBizNo;
+    private String localLedgerNo;
+    private String localSerialNo;
+
     /**
      * 渠道侧金额(分)
      */

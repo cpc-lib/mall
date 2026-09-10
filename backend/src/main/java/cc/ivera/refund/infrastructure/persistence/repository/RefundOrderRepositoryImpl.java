@@ -1,5 +1,6 @@
 package cc.ivera.refund.infrastructure.persistence.repository;
 
+import cc.ivera.refund.domain.enums.RefundOrderStatus;
 import cc.ivera.refund.domain.model.RefundOrder;
 import cc.ivera.refund.domain.repository.RefundOrderRepository;
 import cc.ivera.refund.infrastructure.persistence.converter.RefundOrderPOConverter;
@@ -8,6 +9,9 @@ import cc.ivera.refund.infrastructure.persistence.po.RefundOrderPO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -62,6 +66,28 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     public List<RefundOrder> listAllCreateTimeDesc() {
         return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
                 .orderByDesc(RefundOrderPO::getCreateTime))
+            .stream().map(RefundOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<RefundOrder> listByRefundNos(Collection<String> refundNos) {
+        if (refundNos == null || refundNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
+                .in(RefundOrderPO::getRefundNo, refundNos)
+                .orderByAsc(RefundOrderPO::getId))
+            .stream().map(RefundOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<RefundOrder> listSuccessBySuccessTimeRange(Date startInclusive, Date endExclusive) {
+        return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
+                .eq(RefundOrderPO::getStatus, RefundOrderStatus.SUCCESS.getType())
+                .ge(RefundOrderPO::getSuccessTime, startInclusive)
+                .lt(RefundOrderPO::getSuccessTime, endExclusive)
+                .orderByAsc(RefundOrderPO::getSuccessTime)
+                .orderByAsc(RefundOrderPO::getId))
             .stream().map(RefundOrderPOConverter::toDomain).collect(Collectors.toList());
     }
 }

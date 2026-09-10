@@ -3,6 +3,7 @@ import { Form, Input, message, Modal } from 'antd'
 import { Link } from 'react-router-dom'
 import authApi from '@/api/auth'
 import { clearAuth, getRefreshToken } from '@/utils/authStore'
+import UiIcon from '@/components/UiIcon.jsx'
 
 export default function Account(){
   const [pwdOpen, setPwdOpen] = useState(false)
@@ -27,12 +28,12 @@ export default function Account(){
     <div className="container">
       <h2 className="tb-h2">我的</h2>
       <div className="tb-cardbox m-quick">
-        <Link className="m-quick-item" to="/orders">📦 我的订单<span className="arrow">›</span></Link>
-        <Link className="m-quick-item" to="/refund-applications">💸 我的退款申请<span className="arrow">›</span></Link>
-        <Link className="m-quick-item" to="/cart">🛒 购物车<span className="arrow">›</span></Link>
-        <Link className="m-quick-item" to="/addresses">📍 收货地址<span className="arrow">›</span></Link>
-        <button type="button" className="m-quick-item" onClick={openPwd}>🔑 修改密码<span className="arrow">›</span></button>
-        <button type="button" className="m-quick-item" onClick={confirmLogout}>🚪 退出登录<span className="arrow">›</span></button>
+        <Link className="m-quick-item" to="/orders"><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="box" size={20} /></span>我的订单</span><UiIcon name="chevron" size={17} className="arrow" /></Link>
+        <Link className="m-quick-item" to="/refund-applications"><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="refund" size={20} /></span>我的退款申请</span><UiIcon name="chevron" size={17} className="arrow" /></Link>
+        <Link className="m-quick-item" to="/cart"><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="cart" size={20} /></span>购物车</span><UiIcon name="chevron" size={17} className="arrow" /></Link>
+        <Link className="m-quick-item" to="/addresses"><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="pin" size={20} /></span>收货地址</span><UiIcon name="chevron" size={17} className="arrow" /></Link>
+        <button type="button" className="m-quick-item" onClick={openPwd}><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="key" size={20} /></span>修改密码</span><UiIcon name="chevron" size={17} className="arrow" /></button>
+        <button type="button" className="m-quick-item m-quick-danger" onClick={confirmLogout}><span className="m-quick-main"><span className="m-quick-icon"><UiIcon name="logout" size={20} /></span>退出登录</span><UiIcon name="chevron" size={17} className="arrow" /></button>
       </div>
     </div>
     <Modal

@@ -1,4 +1,5 @@
 import { Button, Card, DatePicker, Form, message, Typography } from 'antd'
+import * as XLSX from 'xlsx'
 
 import billApi from '@/api/bill'
 
@@ -25,10 +26,19 @@ export default function Download() {
 
     billApi.downloadBillWxPay(billDate, type).then((response) => {
       const content = response?.data?.result || ''
-      triggerDownload(
-        `data:application/vnd.ms-excel;charset=utf-8,${encodeURIComponent(content)}`,
-        `${billDate}-${type}`
-      )
+      if (!content) {
+        message.error('下载失败：微信返回的账单内容为空')
+        return
+      }
+      try {
+        // 微信账单文本通常带 UTF-8 BOM；先剥离，避免 BOM 被固化进 XLSX 首列表头单元格。
+        // 再由 SheetJS 把文本账单真正转换为 OOXML XLSX，而不是只改文件扩展名。
+        const normalizedContent = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content
+        const workbook = XLSX.read(normalizedContent, { type: 'string', raw: true })
+        XLSX.writeFile(workbook, `${billDate}-${type}.xlsx`, { bookType: 'xlsx' })
+      } catch (error) {
+        message.error(`生成 XLSX 账单失败：${error?.message || '未知错误'}`)
+      }
     })
   }
 

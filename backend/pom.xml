@@ -122,6 +122,19 @@
       <artifactId>minio</artifactId>
       <version>8.5.7</version>
     </dependency>
+
+    <!-- Apache POI：解析微信支付下载的 .xlsx 交易账单 -->
+    <dependency>
+      <groupId>org.apache.poi</groupId>
+      <artifactId>poi-ooxml</artifactId>
+      <version>5.2.5</version>
+    </dependency>
+    <!-- MinIO 8.5.7 会传递引入 commons-compress 1.24.0；POI 5.2.5 运行 XLSX 写/读需要新版 API，显式钉版本避免 NoSuchMethodError。 -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-compress</artifactId>
+      <version>1.26.1</version>
+    </dependency>
     <!-- 显式钉版本：规避 Spring Boot 2.3 BOM 将 okhttp/kotlin-stdlib 降级到 MinIO 不兼容版本 -->
     <dependency>
       <groupId>com.squareup.okhttp3</groupId>

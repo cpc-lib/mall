@@ -7,6 +7,8 @@ import cc.ivera.bill.domain.model.BillRecord;
 import cc.ivera.bill.interfaces.dto.ResolveDiscrepancyRequest;
 import cc.ivera.bill.interfaces.vo.BillDiscrepancyVO;
 import cc.ivera.bill.interfaces.vo.BillImportVO;
+import cc.ivera.bill.interfaces.vo.BillReconcileDrilldownVO;
+import cc.ivera.bill.interfaces.vo.BillReconcileSummaryVO;
 import cc.ivera.bill.interfaces.vo.BillRecordVO;
 import cc.ivera.shared.web.R;
 import org.springframework.web.bind.annotation.*;
@@ -16,11 +18,11 @@ import javax.validation.Valid;
 import java.util.List;
 
 /**
- * 微信交易账单上传式对账接口（管理员）。
+ * 微信交易账单账账核对接口（管理员）。
  * 基路径 /api/reconciliation 由 AuthInterceptor 做登录 + ROLE_ADMIN 鉴权。
  *
- * <p>流程：上传微信交易账单文件（ALL/SUCCESS/REFUND 三种格式均可）→ 流水入库 →
- * 自动对支付记录与退款记录对账 → 差异单查询与人工标记处理。全链路幂等。
+ * <p>流程：上传微信交易账单文件（ALL/SUCCESS/REFUND）→ 渠道流水入库 →
+ * 与平台 t_payment_order/t_refund_order 双向逐笔核对 → 汇总平衡 → 差异单查询与人工处理。
  */
 @RestController
 @RequestMapping("/api/reconciliation")
@@ -72,6 +74,14 @@ public class ReconciliationController {
     }
 
     /**
+     * 账账核对汇总：渠道账 vs 平台账的支付/退款笔数、金额、净额和平账状态。
+     */
+    @GetMapping("/imports/{importNo}/summary")
+    public R<BillReconcileSummaryVO> summary(@PathVariable String importNo) {
+        return R.ok(BillReconcileSummaryVO.from(billReconcileService.getSummary(importNo)));
+    }
+
+    /**
      * 批次下账单流水，recordType 可选 PAY/REFUND 过滤。
      */
     @GetMapping("/imports/{importNo}/records")
@@ -94,6 +104,14 @@ public class ReconciliationController {
         List<BillReconcileDiscrepancy> discrepancies =
             billReconcileService.listDiscrepancies(importNo, bizType, discrepancyType, status);
         return R.ok(BillDiscrepancyVO.from(discrepancies));
+    }
+
+    /**
+     * 单条差异数据下钻：渠道原始账 + 平台账本候选记录 + 逐字段核验结果。
+     */
+    @GetMapping("/discrepancies/{id}/drilldown")
+    public R<BillReconcileDrilldownVO> drilldown(@PathVariable Long id) {
+        return R.ok(BillReconcileDrilldownVO.from(billReconcileService.getDrilldown(id)));
     }
 
     /**

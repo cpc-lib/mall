@@ -119,7 +119,7 @@ cc.ivera.<context>/
 | `refund` | 退款申请、退款单/明细、RefundPolicy、防超退、渠道退款与退款状态同步 |
 | `user` | 用户、认证、登录保护、密码重置、收货地址、行政区划 |
 | `cart` | Redis 购物车 |
-| `bill` | 微信账单 CSV 解析、导入、支付/退款对账、差异处理 |
+| `bill` | 微信交易账单 XLSX 解析、导入、支付/退款对账、差异处理 |
 
 ### 3.2 依赖方向
 
@@ -266,7 +266,8 @@ flowchart LR
     A[available] -->|下单预占| B[locked]
     B -->|确认收货| C[sold]
     B -->|超时关单/取消| A
-    B -->|仅退款 未收货| D[lost]
+    B -->|已发货退款 管理员判定丢失| D[lost]
+    B -->|已发货退款 管理员确认全部回收| A
     C -->|仅退款 已收货| D
     C -->|退货签收后| A
 ```
@@ -412,14 +413,15 @@ LATE_PAYMENT
 | 场景 | 库存动作 |
 |---|---|
 | 未发货取消 | `locked → available` |
-| 退货退款 | 退货签收/质检后 `sold → available` |
-| 仅退款，未收货 | `locked → lost` |
-| 仅退款，已收货 | `sold → lost` |
+| 已发货未收货 `REFUND_ONLY`，管理员判定 `LOST` | `locked → lost` |
+| 已发货未收货 `REFUND_ONLY`，管理员确认 `RECOVERED` | `locked → available` |
+| 已收货 `REFUND_ONLY` | `sold → lost` |
+| `RETURN_AND_REFUND` | 退货签收/质检后 `sold → available` |
 | 差价退款 | 不动库存 |
 | 重复支付冲正 | 不动库存 |
 | 晚到支付冲正 | 不动库存 |
 
-原则：**退款成功不等于库存回补。** 是否回补由货物是否实际回仓决定。
+原则：**退款成功不等于库存回补。** 是否回补由货物是否实际回仓决定。对于 `SHIPPED + REFUND_ONLY`，管理员受理前必须通过 `goodsDisposition=LOST/RECOVERED` 明确商品去向；后端先完成对应库存结转，再进入渠道退款。`t_refund_order.goods_disposition` 持久化该人工判定，供管理端展示与审计。
 
 ## 10. RabbitMQ 设计
 
@@ -621,57 +623,126 @@ StockImportFileStorage
 
 `t_stock_import.storage_type` 记录每个历史文件实际使用的存储后端，切换全局配置后仍可按记录读取旧文件。
 
-## 14. 账单对账
+## 14. 账账核对
 
-### 14.1 数据模型
-
-```text
-t_bill_import
-    └── t_bill_record
-    └── t_bill_reconcile_discrepancy
-```
-
-### 14.2 账单类型
+### 14.1 双账本模型
 
 ```text
-ALL
-SUCCESS
-REFUND
+渠道交易账
+  t_bill_import
+      └── t_bill_record
+              ↕
+        BillReconcileServiceImpl
+        正向渠道→平台 + 反向平台→渠道
+              ↕
+平台交易账
+  ├── t_payment_order
+  └── t_refund_order
+
+差异审计
+  └── t_bill_reconcile_discrepancy
 ```
 
-`WxTradeBillParser` 按表头字段识别账单格式，处理 BOM、双引号、反引号前缀、金额元转分等情况。
+`t_payment_info` / `t_refund_info` 仍承担渠道通知与渠道退款同步记录职责，但账账核对的平台权威账本分别是 `PaymentOrder` 与 `RefundOrder`。这样可以完整保留“一个订单 1:N 支付尝试”的逐笔语义，避免按 `order_no` 聚合后掩盖重复支付。
 
-### 14.3 差异类型
+### 14.2 匹配键与日切口径
 
-支付：
+支付逐笔匹配优先级：
+
+```text
+channel Bill 微信订单号
+    ↕
+PaymentOrder.channel_order_no
+
+order_no 仅用于精确流水缺失时辅助定位，不作为聚合键
+```
+
+退款使用：
+
+```text
+渠道商户退款单号 ↔ RefundOrder.refund_no
+```
+
+统一以 `Asia/Shanghai` 切账：支付按 `paid_time`，退款按 `success_time`，时间范围为 `[当天00:00, 次日00:00)`。`WxTradeBillParser` 同样固定使用该时区解析渠道账单时间。
+
+### 14.3 账单类型与差异
+
+支持 `ALL / SUCCESS / REFUND`。`ALL` 中 `REFUND/REVOKED` 行属于已发生的渠道退款/冲减流水，不要求状态字段一定为 `SUCCESS`。
+
+支付差异：
 
 ```text
 PAY_CHANNEL_ONLY
 PAY_LOCAL_ONLY
 PAY_AMOUNT_MISMATCH
 PAY_STATUS_MISMATCH
+PAY_SERIAL_MISMATCH
+PAY_BIZ_NO_MISMATCH
+PAY_CHANNEL_DUPLICATE
+PAY_LOCAL_DUPLICATE
 ```
 
-退款：
+退款差异：
 
 ```text
 REFUND_CHANNEL_ONLY
 REFUND_LOCAL_ONLY
 REFUND_AMOUNT_MISMATCH
 REFUND_STATUS_MISMATCH
+REFUND_CHANNEL_DUPLICATE
 ```
 
-### 14.4 对账幂等
+差异单同时记录渠道侧 `biz_no/channel_serial_no` 与平台侧 `local_biz_no/local_ledger_no/local_serial_no`，使人工核账能直接定位平台支付单/退款单和渠道流水。
+
+### 14.4 汇总平衡
+
+除逐笔核对外，`GET /api/reconciliation/imports/{importNo}/summary` 计算：
+
+```text
+渠道净交易额 = 渠道支付金额 - 渠道退款/冲减金额
+平台净交易额 = PaymentOrder.SUCCESS.paidAmount - RefundOrder.SUCCESS.refundAmount
+净差额       = 渠道净交易额 - 平台净交易额
+```
+
+只有支付笔数/金额、退款笔数/金额、净额全部一致且不存在 `OPEN` 差异时才 `balanced=true`，防止差错金额互相抵消形成伪平账。当前口径为交易账，不包含渠道手续费；手续费应进入资金/结算账核对。
+
+### 14.5 幂等与性能
 
 ```text
 文件 SHA-256
 → 账单日期/种类互斥
 → Redisson 分布式锁
+→ 差异落库前去重
 → DB 唯一约束
 → 批次状态
 ```
 
-对账是上传后同步执行，不经过 RabbitMQ。
+平台日切查询使用组合索引：
+
+```text
+idx_payment_order_channel_status_paid_time(channel, status, paid_time)
+idx_refund_order_status_success_time(status, success_time)
+```
+
+退款来源支付渠道通过 `payment_no` 集合批量查询，避免逐退款 N+1。对账在上传后同步执行，不经过 RabbitMQ。
+
+### 14.6 核验下钻
+
+差异列表支持单条数据下钻：
+
+```text
+差异单 t_bill_reconcile_discrepancy
+        ↓
+GET /api/reconciliation/discrepancies/{id}/drilldown
+        ↓
+渠道账原始行 t_bill_record.raw_line
+        +
+平台账本候选记录 PaymentOrder / RefundOrder
+        +
+业务单号 / 渠道流水号 / 金额 / 状态逐字段核验
+```
+
+下钻按差异单已有 `biz_no/channel_serial_no/local_biz_no/local_ledger_no/local_serial_no` 定位双方记录。支付侧保留同订单多个 PaymentOrder 候选，不能为了展示方便按 `order_no` 折叠；退款侧通过 `refund_no` 定位，并补充来源 `payment_no` 与支付渠道。普通账单流水 VO 不返回 `raw_line`，避免批量列表携带大文本；只有下钻专用 VO 返回 XLSX 原始行快照用于审计。
 
 ## 15. 用户与认证
 
@@ -739,7 +810,7 @@ REFUND_STATUS_MISMATCH
 
 ### 17.1 user-ui
 
-开发端口：`3000`。
+开发端口：`3000`。界面仅面向手机端适配：应用画布最大宽度 480px，手机维持双列商品卡片、单列地址/支付/个人中心与底部导航；宽屏浏览器中仅居中展示手机界面，不扩展桌面/平板布局。Header、搜索、商品卡、列表卡、表单、登录页和底部导航共享统一设计 token。UI 重构只调整展示层，不改变 API、路由、支付、订单、退款或购物车业务逻辑。
 
 | 路由 | 页面 |
 |---|---|
@@ -797,8 +868,8 @@ REFUND_STATUS_MISMATCH
 后端：
 
 ```text
-22 个测试类
-139 个用例
+23 个测试类
+151 个用例
 JUnit 5 + Mockito
 不连接真实 DM8 / Redis / RabbitMQ / 支付渠道
 ```
@@ -814,9 +885,10 @@ JUnit 5 + Mockito
 | `MoneyTest` | 金额值对象 |
 | `RefundPolicyTest` | 防超退策略 |
 | `*POConvertersTest` | PO / Domain 全字段转换 |
-| `WxTradeBillParserTest` | 微信 CSV |
+| `WxTradeBillParserTest` | 微信 XLSX：真实工作簿解析、三种账单、退款/撤销、固定 Asia/Shanghai 时间解析；CSV 入口仅保留历史兼容特征测试 |
+| `BillReconcileServiceImplTest` | 账账核对：一单多支付逐笔匹配、渠道流水不一致、汇总平衡、ALL 退款口径 |
 | `PaymentSuccessServiceImplTest` | 支付成功编排 |
-| `RefundOrderServiceImplTest` | 退款编排 |
+| `RefundOrderServiceImplTest` | 退款编排；覆盖已发货仅退款的管理员商品去向必选、LOST/RECOVERED 库存分流与 `goodsDispositionRequired` 管理端契约 |
 | `CartServiceImplTest` | 购物车 |
 | `LoginGuardServiceTest` | 登录防护 |
 | `OrderCloseConsumerTest` | Order Close 手动 ACK：业务/CONSUMED 失败不 ACK、业务→CONSUMED→ACK 顺序、ACK 异常传播、空消息 ACK |

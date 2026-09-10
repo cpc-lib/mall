@@ -52,6 +52,10 @@ public class BillDiscrepancyVO {
      */
     private String channelSerialNo;
 
+    private String localBizNo;
+    private String localLedgerNo;
+    private String localSerialNo;
+
     /**
      * 渠道侧金额(分)
      */
@@ -98,6 +102,9 @@ public class BillDiscrepancyVO {
         vo.setDiscrepancyTypeText(BillDiscrepancyType.descriptionOf(entity.getDiscrepancyType()));
         vo.setBizNo(entity.getBizNo());
         vo.setChannelSerialNo(entity.getChannelSerialNo());
+        vo.setLocalBizNo(entity.getLocalBizNo());
+        vo.setLocalLedgerNo(entity.getLocalLedgerNo());
+        vo.setLocalSerialNo(entity.getLocalSerialNo());
         vo.setChannelAmount(entity.getChannelAmount());
         vo.setLocalAmount(entity.getLocalAmount());
         vo.setChannelStatus(entity.getChannelStatus());

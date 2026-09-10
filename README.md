@@ -7,7 +7,7 @@
 项目由 3 个工程组成：
 
 - `backend/`：Spring Boot 2.3.7 + Java 8 后端。
-- `user-ui/`：React 18 用户商城，开发端口 `3000`。
+- `user-ui/`：React 18 用户商城，开发端口 `3000`；仅面向手机端适配，宽屏浏览器中保持最大 480px 的手机画布，不提供桌面版布局。
 - `admin-ui/`：React 18 管理后台，开发端口 `3002`。
 
 后端按 8 个限界上下文组织：
@@ -39,7 +39,7 @@ interfaces → application → domain ← infrastructure
 - 支付宝支付、通知、查单、关单、退款、账单下载地址。
 - 发货/物流状态查看、送达后确认收货。
 - 已付款未发货取消订单。
-- 分项退款、仅退款、退货退款、退款申请编辑/撤销。
+- 分项退款、仅退款、退货退款、退款申请编辑/撤销；已发货未收货退款由管理员确认商品丢失或已全部回收后再发起渠道退款。
 - 支付成功页和退款申请列表。
 
 ### 2.2 管理后台
@@ -52,11 +52,11 @@ interfaces → application → domain ← infrastructure
 - 库存流水分页与审计。
 - Excel 库存导入、编辑、确认入库。
 - Excel 文件支持本地磁盘或 MinIO 存储。
-- 退款受理、拒绝、退货签收、渠道重试、状态同步、差价退款。
+- 退款受理、拒绝、已发货商品去向判定（丢失/全部回收）、退货签收、渠道重试、状态同步、差价退款。
 - 用户列表、启用/禁用、用户详情。
 - 密码重置申请受理/拒绝、管理员直接重置密码。
 - 支付渠道和支付应用配置维护、缓存刷新。
-- 微信账单 CSV 上传、同步对账、差异查看、重跑、人工标记处理。
+- 微信交易账单 XLSX 上传、同步对账、差异查看、重跑、人工标记处理。
 
 ## 3. 交易系统核心设计
 
@@ -84,7 +84,9 @@ available + locked + sold + lost = 入库总量
 支付成功：   预占状态 LOCKED → COMMITTED，库存数量不变
 关单/取消：  locked → available
 确认收货：   locked → sold
-仅退款：     locked/sold → lost
+已发货退款： 管理员判定丢失 → locked → lost
+             管理员确认全部回收 → locked → available
+已收货仅退款：sold → lost
 退货退款：   退货签收后 sold → available
 ```
 
@@ -141,8 +143,9 @@ CAS 条件 UPDATE
 库存处理严格区分资金与货权：
 
 - 未发货取消：可回补锁定库存。
-- 退货退款：退货签收/质检后回补。
-- 仅退款不退货：转入 `lost_stock`，不进入可售库存。
+- 已发货未收货 `REFUND_ONLY`：管理员受理时必须确认商品最终去向；`LOST` 执行 `locked → lost`，`RECOVERED` 执行 `locked → available`，判定完成后才发起渠道退款。
+- 已收货 `REFUND_ONLY`：商品不退回，执行 `sold → lost`。
+- `RETURN_AND_REFUND`：退货签收/质检后执行 `sold → available`，再发起渠道退款。
 - 差价退款与系统资金冲正：不动库存。
 
 ## 4. RabbitMQ 与最终一致性
@@ -233,9 +236,21 @@ payment.refund.status-sync.release.queue
 
 否则可能出现 `PRECONDITION_FAILED`。
 
-## 5. 账单对账
+## 5. 账账核对
 
-管理员上传微信交易账单 CSV 后，系统同步解析并对本地支付/退款记录进行核对，不走 MQ。
+管理员上传微信支付下载的交易账单 XLSX（`.xlsx`）后，系统同步执行“渠道交易账 vs 平台交易账”的双向账账核对，不走 MQ。前端和后端都只接受 `.xlsx`，后端使用 Apache POI 读取真实 Excel 工作簿，不把 CSV 改后缀伪装成 XLSX：
+
+```text
+渠道账：t_bill_record（微信交易账单）
+              ↕
+       双向逐笔 + 汇总平衡
+              ↕
+平台账：t_payment_order + t_refund_order
+```
+
+支付账以 `PaymentOrder` 为权威账本，保留“订单 1:N 支付尝试”语义；优先按 `channel_order_no ↔ 微信订单号` 逐笔匹配，`order_no` 仅作辅助定位，禁止按订单号聚合后核对。退款账以 `RefundOrder.refund_no` 为主匹配键。
+
+日切口径统一为 `Asia/Shanghai`：支付按 `paid_time` 归账，退款按 `success_time` 归账，避免创建时间、申请时间或服务器默认时区造成跨日假差异。
 
 支持账单类型：
 
@@ -245,20 +260,38 @@ payment.refund.status-sync.release.queue
 | `SUCCESS` | 支付成功 | 支付 |
 | `REFUND` | 退款 | 退款 |
 
-差异类型共 8 类：
+差异覆盖单边账、金额/状态、串单和重复流水：
 
 ```text
 PAY_CHANNEL_ONLY
 PAY_LOCAL_ONLY
 PAY_AMOUNT_MISMATCH
 PAY_STATUS_MISMATCH
+PAY_SERIAL_MISMATCH
+PAY_BIZ_NO_MISMATCH
+PAY_CHANNEL_DUPLICATE
+PAY_LOCAL_DUPLICATE
+
 REFUND_CHANNEL_ONLY
 REFUND_LOCAL_ONLY
 REFUND_AMOUNT_MISMATCH
 REFUND_STATUS_MISMATCH
+REFUND_CHANNEL_DUPLICATE
 ```
 
-幂等防线包括文件 SHA-256、账单日/种类互斥、Redisson 锁、数据库唯一约束、批次状态校验。
+批次汇总同时核对支付笔数/金额、退款笔数/金额与净交易额：
+
+```text
+渠道净交易额 = 渠道支付金额 - 渠道退款/冲减金额
+平台净交易额 = PaymentOrder.SUCCESS.paidAmount - RefundOrder.SUCCESS.refundAmount
+净差额       = 渠道净交易额 - 平台净交易额
+```
+
+只有“支付笔数/金额一致 + 退款笔数/金额一致 + 净额一致 + 无 OPEN 差异”才判定 `balanced=true`，避免多笔错误金额互相抵消后被误判平账。汇总接口：`GET /api/reconciliation/imports/{importNo}/summary`。
+
+差异列表支持“核验下钻”：`GET /api/reconciliation/discrepancies/{id}/drilldown` 同时返回渠道账 XLSX 原始行快照、平台 `PaymentOrder/RefundOrder` 候选账本记录，以及业务单号、渠道流水号、金额、状态四个维度的逐项核验结果。普通账单流水接口不返回 `raw_line`，原始行仅在下钻接口中按需读取，避免大账单列表响应膨胀。
+
+当前为**交易账账核对**，不把渠道手续费混入净交易额；手续费应在后续资金/结算账单核对中单独处理。幂等防线包括文件 SHA-256、账单日/种类互斥、Redisson 锁、数据库唯一约束、批次状态校验。
 
 ## 6. 技术栈
 
@@ -295,7 +328,7 @@ mall/
 │   ├── src/main/resources/
 │   │   ├── application.yml
 │   │   └── mapper/
-│   ├── src/test/java/       # 22 个测试类、139 个后端用例
+│   ├── src/test/java/       # 23 个测试类、151 个后端用例
 │   ├── docs/
 │   │   ├── DAMENG_DM8_OPERATIONS.md
 │   │   └── RABBITMQ_OPERATIONS.md
@@ -377,6 +410,31 @@ backend/env/sql/dm8/schema.sql
 ```
 
 开发脚本中包含初始化管理员种子账号，生产部署前必须替换默认凭据。
+
+本版本包含退款商品去向与账账核对字段/索引升级。**存量数据库已有业务数据时不要重新执行完整 `schema.sql`（会清表）**。执行前先通过 `USER_TAB_COLUMNS` / `USER_INDEXES` 确认对象不存在，然后一次性补齐：
+
+```sql
+ALTER TABLE t_refund_order ADD goods_disposition VARCHAR(20);
+COMMENT ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
+
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_biz_no VARCHAR(50);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_ledger_no VARCHAR(64);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_serial_no VARCHAR(64);
+
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_biz_no IS '平台侧业务单号：支付为订单号，退款为退款单号';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_ledger_no IS '平台账本单号：支付为payment_no，退款为refund_no';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_serial_no IS '平台记录的渠道流水号：支付为channel_order_no；退款当前可为空';
+
+CREATE INDEX idx_payment_order_channel_status_paid_time
+ON t_payment_order(channel, status, paid_time);
+
+CREATE INDEX idx_refund_order_status_success_time
+ON t_refund_order(status, success_time);
+```
+
+这两个组合索引服务于按账单日扫描平台支付/退款成功账，避免数据量增大后对 `paid_time` / `success_time` 做大范围扫描。已经存在的字段或索引不要重复执行对应 DDL。
+
+全新环境直接执行最新 `schema.sql` 即可。
 
 ### 10.2 配置后端
 
@@ -480,7 +538,7 @@ http://localhost:3002
 
 ### 后端
 
-当前基线：**22 个测试类、139 个用例**。
+当前基线：**23 个测试类、151 个用例**。
 
 ```powershell
 cd backend
@@ -493,7 +551,7 @@ mvn test
 - `Money` 值对象。
 - `RefundPolicy` 退款额度。
 - PO ↔ Domain Converter。
-- 微信账单 CSV Parser。
+- 微信交易账单 XLSX Parser（Apache POI；保留 CSV 解析入口仅用于历史兼容特征测试）。
 - 支付成功、退款、购物车应用服务。
 - 登录失败保护。
 - Order Close / Refund Sync Consumer 失败传播契约。

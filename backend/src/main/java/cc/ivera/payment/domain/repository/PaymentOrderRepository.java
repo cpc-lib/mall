@@ -2,6 +2,8 @@ package cc.ivera.payment.domain.repository;
 
 import cc.ivera.payment.domain.model.PaymentOrder;
 
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -35,6 +37,26 @@ public interface PaymentOrderRepository {
      * 订单全部支付单（管理端支付尝试记录，按 id 升序）。
      */
     List<PaymentOrder> listByOrderNoAsc(String orderNo);
+
+    /**
+     * 对账批量查询：按渠道 + 订单号集合加载支付尝试，保留 1:N 支付单语义，禁止按 orderNo 折叠。
+     */
+    List<PaymentOrder> listByChannelAndOrderNos(String channel, Collection<String> orderNos);
+
+    /**
+     * 对账主键查询：按渠道 + 渠道交易号集合加载支付单，渠道流水号优先于订单号匹配。
+     */
+    List<PaymentOrder> listByChannelAndChannelOrderNos(String channel, Collection<String> channelOrderNos);
+
+    /**
+     * 账账核对日切：按支付成功时间查询渠道成功支付单。
+     */
+    List<PaymentOrder> listSuccessByChannelAndPaidTimeRange(String channel, Date startInclusive, Date endExclusive);
+
+    /**
+     * 批量按支付单号查询，用于退款账确定来源支付渠道。
+     */
+    List<PaymentOrder> listByPaymentNos(Collection<String> paymentNos);
 
     /**
      * 关闭订单下全部活跃支付单（CREATED/PAYING → CLOSED）。

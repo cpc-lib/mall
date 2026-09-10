@@ -11,6 +11,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -68,6 +70,52 @@ public class PaymentOrderRepositoryImpl implements PaymentOrderRepository {
         return paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrderPO>()
                 .eq(PaymentOrderPO::getOrderNo, orderNo)
                 .orderByAsc(PaymentOrderPO::getId))
+            .stream().map(PaymentOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<PaymentOrder> listByChannelAndOrderNos(String channel, Collection<String> orderNos) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrderPO>()
+                .eq(PaymentOrderPO::getChannel, channel)
+                .in(PaymentOrderPO::getOrderNo, orderNos)
+                .orderByAsc(PaymentOrderPO::getId))
+            .stream().map(PaymentOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<PaymentOrder> listByChannelAndChannelOrderNos(String channel, Collection<String> channelOrderNos) {
+        if (channelOrderNos == null || channelOrderNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrderPO>()
+                .eq(PaymentOrderPO::getChannel, channel)
+                .in(PaymentOrderPO::getChannelOrderNo, channelOrderNos)
+                .orderByAsc(PaymentOrderPO::getId))
+            .stream().map(PaymentOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<PaymentOrder> listSuccessByChannelAndPaidTimeRange(String channel, Date startInclusive, Date endExclusive) {
+        return paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrderPO>()
+                .eq(PaymentOrderPO::getChannel, channel)
+                .eq(PaymentOrderPO::getStatus, PaymentOrderStatus.SUCCESS.getType())
+                .ge(PaymentOrderPO::getPaidTime, startInclusive)
+                .lt(PaymentOrderPO::getPaidTime, endExclusive)
+                .orderByAsc(PaymentOrderPO::getPaidTime)
+                .orderByAsc(PaymentOrderPO::getId))
+            .stream().map(PaymentOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<PaymentOrder> listByPaymentNos(Collection<String> paymentNos) {
+        if (paymentNos == null || paymentNos.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrderPO>()
+                .in(PaymentOrderPO::getPaymentNo, paymentNos))
             .stream().map(PaymentOrderPOConverter::toDomain).collect(Collectors.toList());
     }
 

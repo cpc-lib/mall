@@ -24,6 +24,7 @@ public class RefundOrderPO extends BaseEntity {
     private String legacyApplyStatus;//V1 旧申请状态值（PENDING/ACCEPTED/...），仅供审计/回滚对照
     private String applyType;//申请来源：USER/ADMIN/SYSTEM（历史值 SYSTEM_OVERSOLD 保留审计）
     private String adminRemark;
+    private String goodsDisposition;//已发货退款商品去向：LOST-丢失/无法回收，RECOVERED-已全部回收
     private Date acceptedTime;
     private Date successTime;//退款成功时间
 }

@@ -23,6 +23,9 @@ public final class BillReconcileDiscrepancyPOConverter {
         po.setDiscrepancyType(domain.getDiscrepancyType());
         po.setBizNo(domain.getBizNo());
         po.setChannelSerialNo(domain.getChannelSerialNo());
+        po.setLocalBizNo(domain.getLocalBizNo());
+        po.setLocalLedgerNo(domain.getLocalLedgerNo());
+        po.setLocalSerialNo(domain.getLocalSerialNo());
         po.setChannelAmount(domain.getChannelAmount());
         po.setLocalAmount(domain.getLocalAmount());
         po.setChannelStatus(domain.getChannelStatus());
@@ -48,6 +51,9 @@ public final class BillReconcileDiscrepancyPOConverter {
         domain.setDiscrepancyType(po.getDiscrepancyType());
         domain.setBizNo(po.getBizNo());
         domain.setChannelSerialNo(po.getChannelSerialNo());
+        domain.setLocalBizNo(po.getLocalBizNo());
+        domain.setLocalLedgerNo(po.getLocalLedgerNo());
+        domain.setLocalSerialNo(po.getLocalSerialNo());
         domain.setChannelAmount(po.getChannelAmount());
         domain.setLocalAmount(po.getLocalAmount());
         domain.setChannelStatus(po.getChannelStatus());

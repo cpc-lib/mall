@@ -28,6 +28,7 @@ public final class RefundOrderPOConverter {
         po.setLegacyApplyStatus(domain.getLegacyApplyStatus());
         po.setApplyType(domain.getApplyType());
         po.setAdminRemark(domain.getAdminRemark());
+        po.setGoodsDisposition(domain.getGoodsDisposition());
         po.setAcceptedTime(domain.getAcceptedTime());
         po.setSuccessTime(domain.getSuccessTime());
         po.setCreateTime(domain.getCreateTime());
@@ -52,6 +53,7 @@ public final class RefundOrderPOConverter {
         domain.setLegacyApplyStatus(po.getLegacyApplyStatus());
         domain.setApplyType(po.getApplyType());
         domain.setAdminRemark(po.getAdminRemark());
+        domain.setGoodsDisposition(po.getGoodsDisposition());
         domain.setAcceptedTime(po.getAcceptedTime());
         domain.setSuccessTime(po.getSuccessTime());
         domain.setCreateTime(po.getCreateTime());

@@ -99,4 +99,38 @@ UNICODE_FLAG: "1"
 后端启动时若支付配置表不可用，会以空的 DB 配置缓存继续并打印简短告警；商品、订单、支付流水、退款和配置管理流程仍依赖这些运行时表，必须先对应用实际连接的
 DM8 schema 执行完整初始化 SQL。
 
-如果库中已有业务数据，不要直接运行完整初始化脚本清库重建；应先备份或拆分出只补缺失对象的迁移脚本。
+如果库中已有业务数据，不要直接运行完整初始化脚本清库重建；应先备份或只执行必要的兼容 DDL。
+
+当前版本包含已发货退款商品去向审计与账账核对升级。存量库升级前先检查字段和索引：
+
+```sql
+SELECT COLUMN_NAME
+FROM USER_TAB_COLUMNS
+WHERE TABLE_NAME IN ('T_REFUND_ORDER', 'T_BILL_RECONCILE_DISCREPANCY')
+  AND COLUMN_NAME IN ('GOODS_DISPOSITION', 'LOCAL_BIZ_NO', 'LOCAL_LEDGER_NO', 'LOCAL_SERIAL_NO');
+
+SELECT INDEX_NAME
+FROM USER_INDEXES
+WHERE INDEX_NAME IN ('IDX_PAYMENT_ORDER_CHANNEL_STATUS_PAID_TIME', 'IDX_REFUND_ORDER_STATUS_SUCCESS_TIME');
+```
+
+仅对缺失对象执行一次：
+
+```sql
+ALTER TABLE t_refund_order ADD goods_disposition VARCHAR(20);
+COMMENT ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
+
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_biz_no VARCHAR(50);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_ledger_no VARCHAR(64);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_serial_no VARCHAR(64);
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_biz_no IS '平台侧业务单号：支付为订单号，退款为退款单号';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_ledger_no IS '平台账本单号：支付为payment_no，退款为refund_no';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_serial_no IS '平台记录的渠道流水号：支付为channel_order_no；退款当前可为空';
+
+CREATE INDEX idx_payment_order_channel_status_paid_time
+ON t_payment_order(channel, status, paid_time);
+CREATE INDEX idx_refund_order_status_success_time
+ON t_refund_order(status, success_time);
+```
+
+三个 `local_*` 字段用于差异单同时保留渠道侧与平台侧凭证；两个组合索引用于按 `Asia/Shanghai` 账单日扫描支付成功时间/退款成功时间。已经存在的对象不要重复执行对应 DDL。全新数据库直接执行最新 `backend/env/sql/dm8/schema.sql`。

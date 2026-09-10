@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 
 /**
  * 账单对账差异类型。
- * 支付核对（PAY）与退款核对（REFUND）各四类：渠道有本地无、本地有渠道无、金额不一致、状态不一致。
+ * 账账核对差异类型：覆盖单边账、金额/状态不一致、渠道流水串单以及账单重复流水。
  */
 @AllArgsConstructor
 @Getter
@@ -37,6 +37,26 @@ public enum BillDiscrepancyType {
     PAY_STATUS_MISMATCH("PAY_STATUS_MISMATCH", BillRecordType.PAY, "支付状态不一致"),
 
     /**
+     * 支付：同一订单能定位到平台支付单，但渠道交易号与平台记录不一致
+     */
+    PAY_SERIAL_MISMATCH("PAY_SERIAL_MISMATCH", BillRecordType.PAY, "支付渠道流水号不一致"),
+
+    /**
+     * 支付：相同渠道流水号对应的商户订单号与平台支付单订单号不一致
+     */
+    PAY_BIZ_NO_MISMATCH("PAY_BIZ_NO_MISMATCH", BillRecordType.PAY, "支付业务单号不一致"),
+
+    /**
+     * 支付：渠道账单中同一微信订单号重复出现
+     */
+    PAY_CHANNEL_DUPLICATE("PAY_CHANNEL_DUPLICATE", BillRecordType.PAY, "渠道支付流水重复"),
+
+    /**
+     * 支付：平台账中同一渠道交易号出现多笔成功支付单
+     */
+    PAY_LOCAL_DUPLICATE("PAY_LOCAL_DUPLICATE", BillRecordType.PAY, "平台支付流水重复"),
+
+    /**
      * 退款：账单有退款记录，本地退款单不存在
      */
     REFUND_CHANNEL_ONLY("REFUND_CHANNEL_ONLY", BillRecordType.REFUND, "渠道有退款，本地无记录"),
@@ -54,7 +74,12 @@ public enum BillDiscrepancyType {
     /**
      * 退款：账单退款成功，本地退款单非成功状态
      */
-    REFUND_STATUS_MISMATCH("REFUND_STATUS_MISMATCH", BillRecordType.REFUND, "退款状态不一致");
+    REFUND_STATUS_MISMATCH("REFUND_STATUS_MISMATCH", BillRecordType.REFUND, "退款状态不一致"),
+
+    /**
+     * 退款：渠道账单中同一商户退款单号重复出现
+     */
+    REFUND_CHANNEL_DUPLICATE("REFUND_CHANNEL_DUPLICATE", BillRecordType.REFUND, "渠道退款流水重复");
 
     private static final Map<String, String> DESCRIPTION_MAP = Collections.unmodifiableMap(
         Arrays.stream(values()).collect(Collectors.toMap(BillDiscrepancyType::getType, BillDiscrepancyType::getDescription))

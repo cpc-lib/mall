@@ -5,7 +5,7 @@ import lombok.Getter;
 
 /**
  * 退款类型（落 t_refund_order.refund_type，存储英文标识）。
- * 是否补库存：CANCEL_BEFORE_SHIP / RETURN_AND_REFUND 补，其余不补。
+ * 库存处置：CANCEL_BEFORE_SHIP 自动回补；RETURN_AND_REFUND 签收质检后回补；SHIPPED + REFUND_ONLY 由管理员判定 LOST/RECOVERED。
  * 是否占用售后额度：DUPLICATE_PAYMENT / LATE_PAYMENT 系统自动冲正，不占额度、不写退款明细。
  */
 @AllArgsConstructor
@@ -23,7 +23,7 @@ public enum RefundType {
     RETURN_AND_REFUND("RETURN_AND_REFUND", "退货退款"),
 
     /**
-     * 仅退款（履约 SHIPPED/RECEIVED，不补库存）
+     * 仅退款（履约 SHIPPED/RECEIVED；SHIPPED 由管理员判定丢失或全部回收，RECEIVED 按货损处理）
      */
     REFUND_ONLY("REFUND_ONLY", "仅退款"),
 

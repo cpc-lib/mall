@@ -21,6 +21,8 @@ import {
   Upload
 } from 'antd'
 import {
+  getDiscrepancyDrilldown,
+  getReconcileSummary,
   listDiscrepancies,
   listImports,
   listRecords,
@@ -41,10 +43,15 @@ const DISCREPANCY_TYPE_OPTIONS = [
   { value: 'PAY_LOCAL_ONLY', label: '支付-本地有渠道无' },
   { value: 'PAY_AMOUNT_MISMATCH', label: '支付-金额不一致' },
   { value: 'PAY_STATUS_MISMATCH', label: '支付-状态不一致' },
+  { value: 'PAY_SERIAL_MISMATCH', label: '支付-渠道流水号不一致' },
+  { value: 'PAY_BIZ_NO_MISMATCH', label: '支付-业务单号不一致' },
+  { value: 'PAY_CHANNEL_DUPLICATE', label: '支付-渠道流水重复' },
+  { value: 'PAY_LOCAL_DUPLICATE', label: '支付-平台流水重复' },
   { value: 'REFUND_CHANNEL_ONLY', label: '退款-渠道有本地无' },
   { value: 'REFUND_LOCAL_ONLY', label: '退款-本地有渠道无' },
   { value: 'REFUND_AMOUNT_MISMATCH', label: '退款-金额不一致' },
-  { value: 'REFUND_STATUS_MISMATCH', label: '退款-状态不一致' }
+  { value: 'REFUND_STATUS_MISMATCH', label: '退款-状态不一致' },
+  { value: 'REFUND_CHANNEL_DUPLICATE', label: '退款-渠道流水重复' }
 ]
 
 const fen = (v) => (v === null || v === undefined ? '-' : `¥${(v / 100).toFixed(2)}`)
@@ -58,6 +65,10 @@ export default function Reconciliation() {
   const [fileList, setFileList] = useState([])
   const [uploading, setUploading] = useState(false)
 
+  const [summaryOpen, setSummaryOpen] = useState(false)
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summary, setSummary] = useState(null)
+
   const [recordModalOpen, setRecordModalOpen] = useState(false)
   const [currentImport, setCurrentImport] = useState(null)
   const [recordList, setRecordList] = useState([])
@@ -69,6 +80,10 @@ export default function Reconciliation() {
   const [discLoading, setDiscLoading] = useState(false)
   const [discStatus, setDiscStatus] = useState('')
   const [discType, setDiscType] = useState('')
+
+  const [drillOpen, setDrillOpen] = useState(false)
+  const [drillLoading, setDrillLoading] = useState(false)
+  const [drillData, setDrillData] = useState(null)
 
   const [resolveOpen, setResolveOpen] = useState(false)
   const [currentDisc, setCurrentDisc] = useState(null)
@@ -100,7 +115,7 @@ export default function Reconciliation() {
       return
     }
     if (!fileList || fileList.length === 0) {
-      message.warning('请选择微信交易账单 CSV 文件')
+      message.warning('请选择微信交易账单 XLSX 文件')
       return
     }
     const formData = new FormData()
@@ -124,6 +139,15 @@ export default function Reconciliation() {
       .finally(() => {
         setUploading(false)
       })
+  }
+
+  const openSummary = (row) => {
+    setCurrentImport(row)
+    setSummaryOpen(true)
+    setSummaryLoading(true)
+    getReconcileSummary(row.importNo)
+      .then((res) => setSummary(res?.data || null))
+      .finally(() => setSummaryLoading(false))
   }
 
   const openRecords = (row) => {
@@ -200,6 +224,16 @@ export default function Reconciliation() {
     })
   }
 
+  const openDrilldown = (row) => {
+    setCurrentDisc(row)
+    setDrillData(null)
+    setDrillOpen(true)
+    setDrillLoading(true)
+    getDiscrepancyDrilldown(row.id)
+      .then((res) => setDrillData(res?.data || null))
+      .finally(() => setDrillLoading(false))
+  }
+
   const openResolve = (row) => {
     setCurrentDisc(row)
     setResolveRemark('')
@@ -230,6 +264,36 @@ export default function Reconciliation() {
     failed: importList.filter((i) => i.status === 'FAILED').length,
     discrepancies: importList.reduce((s, i) => s + (i.discrepancyCount || 0), 0)
   }
+
+  const summaryRows = summary ? [
+    {
+      key: 'PAY', subject: '支付成功',
+      channelCount: summary.channelPayCount, localCount: summary.localPayCount,
+      channelAmount: summary.channelPayAmount, localAmount: summary.localPayAmount
+    },
+    {
+      key: 'REFUND', subject: '退款成功',
+      channelCount: summary.channelRefundCount, localCount: summary.localRefundCount,
+      channelAmount: summary.channelRefundAmount, localAmount: summary.localRefundAmount
+    },
+    {
+      key: 'NET', subject: '净额（支付-退款）',
+      channelCount: '-', localCount: '-',
+      channelAmount: summary.channelNetAmount, localAmount: summary.localNetAmount
+    }
+  ] : []
+
+  const summaryColumns = [
+    { title: '核对科目', dataIndex: 'subject', width: 180 },
+    { title: '渠道笔数', dataIndex: 'channelCount', width: 110, align: 'right' },
+    { title: '平台笔数', dataIndex: 'localCount', width: 110, align: 'right' },
+    { title: '渠道金额', dataIndex: 'channelAmount', width: 140, align: 'right', render: fen },
+    { title: '平台金额', dataIndex: 'localAmount', width: 140, align: 'right', render: fen },
+    {
+      title: '金额差（渠道-平台）', width: 170, align: 'right',
+      render: (_, row) => fen(Number(row.channelAmount || 0) - Number(row.localAmount || 0))
+    }
+  ]
 
   const importColumns = [
     { title: '批次号', dataIndex: 'importNo', width: 180 },
@@ -277,11 +341,14 @@ export default function Reconciliation() {
     { title: '导入时间', dataIndex: 'createTime', width: 170 },
     {
       title: '操作',
-      width: 220,
+      width: 300,
       align: 'center',
       fixed: 'right',
       render: (_, row) => (
         <Space size="small" wrap>
+          <Button type="link" size="small" onClick={() => openSummary(row)}>
+            账账汇总
+          </Button>
           <Button type="link" size="small" onClick={() => openRecords(row)}>
             账单流水
           </Button>
@@ -322,7 +389,9 @@ export default function Reconciliation() {
     {
       title: '交易/退款时间',
       width: 170,
-      render: (_, row) => row.recordType === 'REFUND' ? row.refundSuccessTime || row.refundApplyTime || '-' : row.tradeTime || '-'
+      render: (_, row) => row.recordType === 'REFUND'
+        ? row.refundSuccessTime || row.refundApplyTime || row.tradeTime || '-'
+        : row.tradeTime || '-'
     }
   ]
 
@@ -339,8 +408,11 @@ export default function Reconciliation() {
       width: 90,
       render: (t, row) => <Tag color={RECORD_TYPE_COLOR[t] || 'default'}>{row.bizTypeText || t}</Tag>
     },
-    { title: '业务单号', dataIndex: 'bizNo', width: 200 },
-    { title: '渠道流水号', dataIndex: 'channelSerialNo', width: 200 },
+    { title: '渠道业务单号', dataIndex: 'bizNo', width: 190 },
+    { title: '渠道流水号', dataIndex: 'channelSerialNo', width: 190 },
+    { title: '平台业务单号', dataIndex: 'localBizNo', width: 190, render: (v) => v || '-' },
+    { title: '平台账本单号', dataIndex: 'localLedgerNo', width: 190, render: (v) => v || '-' },
+    { title: '平台渠道流水', dataIndex: 'localSerialNo', width: 190, render: (v) => v || '-' },
     { title: '渠道金额', dataIndex: 'channelAmount', width: 110, render: fen },
     { title: '本地金额', dataIndex: 'localAmount', width: 110, render: fen },
     { title: '渠道状态', dataIndex: 'channelStatus', width: 110, render: (v) => v || '-' },
@@ -356,31 +428,62 @@ export default function Reconciliation() {
     { title: '处理时间', dataIndex: 'resolvedTime', width: 170, render: (v) => v || '-' },
     {
       title: '操作',
-      width: 90,
+      width: 160,
       align: 'center',
       fixed: 'right',
-      render: (_, row) =>
-        row.status === 'OPEN' ? (
-          <Button type="link" size="small" onClick={() => openResolve(row)}>
-            标记处理
+      render: (_, row) => (
+        <Space size="small">
+          <Button type="link" size="small" onClick={() => openDrilldown(row)}>
+            核验下钻
           </Button>
-        ) : (
-          '-'
-        )
+          {row.status === 'OPEN' ? (
+            <Button type="link" size="small" onClick={() => openResolve(row)}>
+              标记处理
+            </Button>
+          ) : null}
+        </Space>
+      )
     }
+  ]
+
+  const verificationColumns = [
+    { title: '核验字段', dataIndex: 'field', width: 130 },
+    { title: '渠道账', dataIndex: 'channelValue', render: (v) => v || '-' },
+    { title: '平台账', dataIndex: 'localValue', render: (v) => v || '-' },
+    {
+      title: '核验结果', dataIndex: 'matched', width: 120, align: 'center',
+      render: (matched) => matched === true
+        ? <Tag color="green">一致</Tag>
+        : matched === false
+          ? <Tag color="red">不一致</Tag>
+          : <Tag>无法直接核验</Tag>
+    }
+  ]
+
+  const localLedgerColumns = [
+    { title: '账本类型', dataIndex: 'ledgerType', width: 90 },
+    { title: '平台账本单号', dataIndex: 'ledgerNo', width: 190 },
+    { title: '业务单号', dataIndex: 'bizNo', width: 190 },
+    { title: '关联订单号', dataIndex: 'orderNo', width: 190 },
+    { title: '支付渠道', dataIndex: 'channel', width: 100, render: (v) => v || '-' },
+    { title: '平台渠道流水', dataIndex: 'channelSerialNo', width: 190, render: (v) => v || '-' },
+    { title: '金额', dataIndex: 'amount', width: 110, render: fen },
+    { title: '状态', dataIndex: 'status', width: 110 },
+    { title: '成功时间', dataIndex: 'occurredTime', width: 170, render: (v) => v || '-' },
+    { title: '来源支付单', dataIndex: 'sourcePaymentNo', width: 190, render: (v) => v || '-' }
   ]
 
   return (
     <div>
-      <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>对账管理</Typography.Title>
+      <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>账账核对</Typography.Title>
 
         <Card style={{ marginBottom: 16 }}>
           <Alert
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="上传微信交易账单（CSV）后自动完成支付记录与退款记录对账"
-            description="支持微信支付商户平台下载的三种交易账单：ALL（全部账单，含支付与退款）、SUCCESS（支付成功账单）、REFUND（退款账单），系统按表头自动识别，无需固定文件名。上传 ALL 一次完成双向对账；也可同一账单日分别上传 SUCCESS 与 REFUND，各自对支付、退款方向对账。同一文件重复上传自动返回原批次（幂等）；同一账单日同种类账单不可重复上传，ALL 与 SUCCESS/REFUND 互斥。"
+            message="渠道账 vs 平台交易账：逐笔核对 + 双向扫描 + 总账平衡"
+            description="渠道账来自微信交易账单；平台账以 t_payment_order 和 t_refund_order 为权威。支付优先按微信订单号与平台 channelOrderNo 逐笔匹配，订单号只作辅助，避免 1:N 支付尝试被折叠；退款按商户退款单号核对。日切按支付成功时间/退款成功时间统计，并同时核对支付总额、退款总额和净额。"
           />
           <Space wrap size="large">
             <Form layout="inline">
@@ -394,14 +497,20 @@ export default function Reconciliation() {
               </Form.Item>
               <Form.Item label="账单文件" required>
                 <Upload
-                  accept=".csv"
+                  accept=".xlsx"
                   maxCount={1}
                   fileList={fileList}
-                  beforeUpload={() => false}
+                  beforeUpload={(file) => {
+                    if (!file.name?.toLowerCase().endsWith('.xlsx')) {
+                      message.error('仅支持微信交易账单 XLSX 文件（.xlsx）')
+                      return Upload.LIST_IGNORE
+                    }
+                    return false
+                  }}
                   onRemove={() => setFileList([])}
                   onChange={({ fileList: list }) => setFileList(list.slice(-1))}
                 >
-                  <Button>选择 CSV 文件</Button>
+                  <Button>选择 XLSX 文件</Button>
                 </Upload>
               </Form.Item>
               <Form.Item>
@@ -474,6 +583,35 @@ export default function Reconciliation() {
         </Card>
 
       <Drawer
+        title={`账账核对汇总${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
+        open={summaryOpen}
+        width={900}
+        onClose={() => setSummaryOpen(false)}
+        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setSummaryOpen(false)}>关闭</Button></div>}
+      >
+        <Card loading={summaryLoading} bordered={false}>
+          {summary && <>
+            <Alert
+              type={summary.balanced ? 'success' : 'warning'}
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={summary.balanced ? '账账平衡' : '账账不平衡，请处理差异'}
+              description={`净差额（渠道-平台）：${fen(summary.netDifference)}；待处理差异：${summary.openDiscrepancyCount || 0} 笔。账单种类 ${summary.billKind || '-'}，渠道 ${summary.channelCode || '-' }。`}
+            />
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+              <Col span={8}><Card size="small"><Statistic title="渠道净额" value={Number(summary.channelNetAmount || 0) / 100} precision={2} prefix="¥" /></Card></Col>
+              <Col span={8}><Card size="small"><Statistic title="平台净额" value={Number(summary.localNetAmount || 0) / 100} precision={2} prefix="¥" /></Card></Col>
+              <Col span={8}><Card size="small"><Statistic title="待处理差异" value={summary.openDiscrepancyCount || 0} suffix="笔" /></Card></Col>
+            </Row>
+            <Table rowKey="key" dataSource={summaryRows} columns={summaryColumns} pagination={false} bordered size="middle" />
+            <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
+              平账条件：支付笔数/金额一致、退款成功笔数/金额一致、净额一致，并且不存在 OPEN 差异单。当前净额口径暂不包含渠道手续费；手续费属于后续资金账单核对范围。
+            </Typography.Paragraph>
+          </>}
+        </Card>
+      </Drawer>
+
+      <Drawer
         title={`账单流水${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
         open={recordModalOpen}
         width={1100}
@@ -507,7 +645,7 @@ export default function Reconciliation() {
       <Drawer
         title={`差异列表${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
         open={discModalOpen}
-        width={1200}
+        width={1450}
         onClose={() => setDiscModalOpen(false)}
         footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setDiscModalOpen(false)}>关闭</Button></div>}
       >
@@ -537,10 +675,75 @@ export default function Reconciliation() {
           columns={discColumns}
           bordered
           loading={discLoading}
-          scroll={{ x: 1500 }}
+          scroll={{ x: 1950 }}
           size="small"
           pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
         />
+      </Drawer>
+
+      <Drawer
+        title={`核验下钻${currentDisc ? ` - ${currentDisc.discrepancyTypeText || currentDisc.discrepancyType}` : ''}`}
+        open={drillOpen}
+        width={1200}
+        onClose={() => setDrillOpen(false)}
+        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setDrillOpen(false)}>关闭</Button></div>}
+      >
+        <Card loading={drillLoading} bordered={false}>
+          {drillData && <>
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="渠道账与平台账本双边核验"
+              description={`差异类型：${drillData.discrepancy?.discrepancyTypeText || '-'}；渠道业务单号：${drillData.discrepancy?.bizNo || '-'}；平台账本单号：${drillData.discrepancy?.localLedgerNo || '-'}`}
+            />
+
+            <Typography.Title level={5}>逐字段核验</Typography.Title>
+            <Table
+              rowKey="field"
+              dataSource={drillData.verificationItems || []}
+              columns={verificationColumns}
+              pagination={false}
+              bordered
+              size="small"
+              style={{ marginBottom: 24 }}
+            />
+
+            <Typography.Title level={5}>渠道账原始记录</Typography.Title>
+            {(drillData.channelRecords || []).length > 0 ? <>
+              <Table
+                rowKey="id"
+                dataSource={drillData.channelRecords || []}
+                columns={recordColumns}
+                pagination={false}
+                bordered
+                size="small"
+                scroll={{ x: 1100 }}
+                style={{ marginBottom: 12 }}
+              />
+              {(drillData.channelRecords || []).map((record) => record.rawLine ? (
+                <Card key={`raw-${record.id}`} size="small" title={`原始账单行 #${record.id}`} style={{ marginBottom: 12 }}>
+                  <Typography.Paragraph copyable={{ text: record.rawLine }} style={{ marginBottom: 0 }}>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{record.rawLine}</pre>
+                  </Typography.Paragraph>
+                </Card>
+              ) : null)}
+            </> : <Alert type="warning" showIcon message="渠道侧没有找到对应账单记录" style={{ marginBottom: 24 }} />}
+
+            <Typography.Title level={5}>平台账本候选记录</Typography.Title>
+            {(drillData.localLedgers || []).length > 0 ? (
+              <Table
+                rowKey="ledgerNo"
+                dataSource={drillData.localLedgers || []}
+                columns={localLedgerColumns}
+                pagination={false}
+                bordered
+                size="small"
+                scroll={{ x: 1500 }}
+              />
+            ) : <Alert type="warning" showIcon message="平台侧没有找到对应交易账本记录" />}
+          </>}
+        </Card>
       </Drawer>
 
       <Modal

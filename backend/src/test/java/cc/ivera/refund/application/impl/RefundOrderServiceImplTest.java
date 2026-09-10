@@ -11,7 +11,9 @@ import cc.ivera.product.application.InventoryService;
 import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.application.RefundInfoService;
 import cc.ivera.refund.domain.model.RefundInfo;
+import cc.ivera.refund.domain.model.RefundItem;
 import cc.ivera.refund.domain.model.RefundOrder;
+import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.refund.domain.repository.RefundItemRepository;
 import cc.ivera.refund.domain.repository.RefundOrderRepository;
@@ -25,6 +27,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Collections;
 import java.util.function.Supplier;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -151,5 +155,81 @@ class RefundOrderServiceImplTest {
         // 现状行为：真实渠道支付单走微信退款接口
         verify(wxPayRefundFacade).executeRefund(any(RefundInfo.class));
         verify(refundInfoService, never()).updateRefundToSuccess(anyString(), any(), anyString());
+    }
+
+    private RefundOrder stubShippedRefundOnlyFlow() {
+        OrderInfo order = paidWaitShipOrder();
+        order.setFulfillmentStatus("SHIPPED");
+        when(orderRepository.findByOrderNo("ORD1")).thenReturn(order);
+
+        RefundOrder refundOrder = new RefundOrder();
+        refundOrder.setRefundNo("RFD1");
+        refundOrder.setOrderNo("ORD1");
+        refundOrder.setUserId(1L);
+        refundOrder.setRefundType("REFUND_ONLY");
+        refundOrder.setRefundAmount(100);
+        refundOrder.setStatus("APPLYING");
+        refundOrder.setLegacyApplyStatus("PENDING");
+        when(refundOrderRepository.findByRefundNo("RFD1")).thenReturn(refundOrder);
+
+        RefundItem refundItem = new RefundItem();
+        refundItem.setId(1L);
+        refundItem.setRefundNo("RFD1");
+        refundItem.setOrderItemId(10L);
+        refundItem.setProductId(20L);
+        refundItem.setRefundQty(1);
+        refundItem.setRefundAmount(100);
+        when(refundItemRepository.listByRefundNoAsc("RFD1")).thenReturn(Collections.singletonList(refundItem));
+
+        PaymentOrder paymentOrder = successPayment("WXPAY");
+        when(paymentOrderRepository.findSuccessPaymentOrderForRefund("ORD1")).thenReturn(paymentOrder);
+        when(paymentOrderRepository.freezeChannelRefund("PMO1", 100)).thenReturn(1);
+        when(paymentOrderRepository.findByPaymentNo("PMO1")).thenReturn(paymentOrder);
+        when(refundInfoRepository.findByRefundNo("RFD1")).thenReturn(null);
+        return refundOrder;
+    }
+
+    @Test
+    void listAll_marksShippedRefundOnlyAsGoodsDispositionRequired() {
+        RefundOrder refundOrder = stubShippedRefundOnlyFlow();
+        when(refundOrderRepository.listAllCreateTimeDesc()).thenReturn(Collections.singletonList(refundOrder));
+
+        assertTrue(service.listAll().get(0).isGoodsDispositionRequired());
+    }
+
+    @Test
+    void acceptShippedRefundOnly_requiresAdminGoodsDisposition() {
+        stubShippedRefundOnlyFlow();
+
+        assertThrows(BizException.class, () -> service.accept("RFD1", "管理员受理", null));
+
+        verify(inventoryService, never()).restockForRefund(anyString(), anyList(), anyBoolean());
+        verify(inventoryService, never()).writeOffLostForRefund(anyString(), anyList(), anyBoolean());
+        verify(paymentOrderRepository, never()).freezeChannelRefund(anyString(), anyInt());
+        verify(wxPayRefundFacade, never()).executeRefund(any());
+    }
+
+    @Test
+    void acceptShippedRefundOnly_lost_movesLockedToLostThenRefunds() {
+        RefundOrder refundOrder = stubShippedRefundOnlyFlow();
+
+        service.accept("RFD1", "物流确认丢失", "LOST");
+
+        verify(inventoryService).writeOffLostForRefund(eq("RFD1"), anyList(), eq(false));
+        verify(inventoryService, never()).restockForRefund(anyString(), anyList(), anyBoolean());
+        verify(wxPayRefundFacade).executeRefund(any(RefundInfo.class));
+        org.junit.jupiter.api.Assertions.assertEquals("LOST", refundOrder.getGoodsDisposition());
+    }
+
+    @Test
+    void acceptShippedRefundOnly_recovered_returnsLockedToAvailableThenRefunds() {
+        RefundOrder refundOrder = stubShippedRefundOnlyFlow();
+
+        service.accept("RFD1", "商品已退回仓库", "RECOVERED");
+
+        verify(inventoryService).restockForRefund(eq("RFD1"), anyList(), eq(false));
+        verify(inventoryService, never()).writeOffLostForRefund(anyString(), anyList(), anyBoolean());
+        verify(wxPayRefundFacade).executeRefund(any(RefundInfo.class));
+        org.junit.jupiter.api.Assertions.assertEquals("RECOVERED", refundOrder.getGoodsDisposition());
     }
 }

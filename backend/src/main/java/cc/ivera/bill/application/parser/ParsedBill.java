@@ -7,7 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 微信交易账单 CSV 解析结果。
+ * 微信交易账单解析结果（生产来源为 XLSX）。
  * payRecords/refundRecords 为解析出的有效流水（importId 由入库时回填）；
  * totalLines 为扫描到的物理行数；badLines 为形似数据行但无法解析、被跳过的坏行数。
  * billKind 为按表头识别出的微信账单种类：ALL/SUCCESS/REFUND。

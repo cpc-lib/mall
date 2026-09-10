@@ -3,6 +3,7 @@ import { Button, Form, Input, Modal, message } from 'antd'
 import { useLocation, useNavigate } from 'react-router-dom'
 import authApi from '@/api/auth'
 import { saveAuth } from '@/utils/authStore'
+import UiIcon from '@/components/UiIcon.jsx'
 
 export default function Login() {
   const [mode, setMode] = useState('login')
@@ -39,12 +40,12 @@ export default function Login() {
 
   const usernameField = (
     <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
-      <Input size="large" autoComplete="username" placeholder="请输入用户名" prefix={<span className="tb-auth-ico">👤</span>} />
+      <Input size="large" autoComplete="username" placeholder="请输入用户名" prefix={<span className="tb-auth-ico"><UiIcon name="user" size={17} /></span>} />
     </Form.Item>
   )
   const passwordField = (
     <Form.Item name="password" label="密码" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}>
-      <Input.Password size="large" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="请输入密码" prefix={<span className="tb-auth-ico">🔒</span>} />
+      <Input.Password size="large" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} placeholder="请输入密码" prefix={<span className="tb-auth-ico"><UiIcon name="lock" size={17} /></span>} />
     </Form.Item>
   )
 
@@ -53,7 +54,7 @@ export default function Login() {
       <div className="tb-auth-deco tb-auth-deco-a" />
       <div className="tb-auth-deco tb-auth-deco-b" />
       <div className="tb-auth-brand">
-        <div className="tb-auth-logo">🛍️</div>
+        <div className="tb-auth-logo"><UiIcon name="bag" size={30} /></div>
         <div className="tb-auth-name">Mall</div>
       </div>
       <p className="tb-auth-tagline">安全 · 便捷 · 极速的购物体验</p>

@@ -634,6 +634,7 @@ CREATE TABLE t_refund_order
     legacy_apply_status VARCHAR(20),
     apply_type          VARCHAR(20) DEFAULT 'USER'        NOT NULL,
     admin_remark        VARCHAR(255),
+    goods_disposition   VARCHAR(20),
     accepted_time       TIMESTAMP,
     success_time        TIMESTAMP,
     create_time         TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
@@ -644,6 +645,7 @@ CREATE TABLE t_refund_order
 CREATE INDEX idx_refund_order_order_no ON t_refund_order (order_no);
 CREATE INDEX idx_refund_order_user_id ON t_refund_order (user_id);
 CREATE INDEX idx_refund_order_status ON t_refund_order (status);
+CREATE INDEX idx_refund_order_status_success_time ON t_refund_order (status, success_time);
 
 COMMENT
 ON TABLE t_refund_order IS '退款单：资金退款主线，由 V1 t_refund_apply 演进；异常支付冲正（重复/晚到）也落本表但不占售后额度';
@@ -671,6 +673,8 @@ COMMENT
 ON COLUMN t_refund_order.apply_type IS '申请来源：USER-用户申请，ADMIN-管理员，SYSTEM-系统自动';
 COMMENT
 ON COLUMN t_refund_order.admin_remark IS '管理员备注';
+COMMENT
+ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
 COMMENT
 ON COLUMN t_refund_order.accepted_time IS '受理时间';
 COMMENT
@@ -755,6 +759,7 @@ CREATE UNIQUE INDEX uk_payment_channel_order ON t_payment_order (
     );
 CREATE INDEX idx_payment_order_order_no ON t_payment_order (order_no);
 CREATE INDEX idx_payment_order_status ON t_payment_order (order_no, status);
+CREATE INDEX idx_payment_order_channel_status_paid_time ON t_payment_order (channel, status, paid_time);
 
 COMMENT
 ON TABLE t_payment_order IS '支付单：一次支付渠道尝试；库存只属于业务订单，不属于支付单；渠道资金防线（累计退款不超过实付）落在本表';
@@ -1159,6 +1164,9 @@ CREATE TABLE t_bill_reconcile_discrepancy
     discrepancy_type  VARCHAR(40)                NOT NULL,
     biz_no            VARCHAR(50),
     channel_serial_no VARCHAR(50),
+    local_biz_no      VARCHAR(50),
+    local_ledger_no   VARCHAR(64),
+    local_serial_no   VARCHAR(64),
     channel_amount    INT,
     local_amount      INT,
     channel_status    VARCHAR(50),
@@ -1174,7 +1182,7 @@ CREATE TABLE t_bill_reconcile_discrepancy
 );
 
 COMMENT
-ON TABLE t_bill_reconcile_discrepancy IS '账单对账差异单表：账单支付/退款记录与本地流水核对出的差异，同批次同类型同业务单号唯一（幂等）';
+ON TABLE t_bill_reconcile_discrepancy IS '账账核对差异单：渠道交易账与平台PaymentOrder/RefundOrder账本逐笔核对产生的差异，同批次同类型同业务单号唯一（幂等）';
 COMMENT
 ON COLUMN t_bill_reconcile_discrepancy.id IS '差异单ID';
 COMMENT
@@ -1184,11 +1192,17 @@ ON COLUMN t_bill_reconcile_discrepancy.bill_date IS '账单日期，格式yyyy-M
 COMMENT
 ON COLUMN t_bill_reconcile_discrepancy.biz_type IS '业务类型：PAY-支付核对，REFUND-退款核对';
 COMMENT
-ON COLUMN t_bill_reconcile_discrepancy.discrepancy_type IS '差异类型：PAY/REFUND × CHANNEL_ONLY/LOCAL_ONLY/AMOUNT_MISMATCH/STATUS_MISMATCH';
+ON COLUMN t_bill_reconcile_discrepancy.discrepancy_type IS '账账差异：单边账、金额/状态不一致、渠道流水/业务单号不一致、重复流水';
 COMMENT
 ON COLUMN t_bill_reconcile_discrepancy.biz_no IS '业务单号：商户订单号或商户退款单号';
 COMMENT
 ON COLUMN t_bill_reconcile_discrepancy.channel_serial_no IS '渠道流水号：微信订单号/退款单号';
+COMMENT
+ON COLUMN t_bill_reconcile_discrepancy.local_biz_no IS '平台侧业务单号：支付为订单号，退款为退款单号';
+COMMENT
+ON COLUMN t_bill_reconcile_discrepancy.local_ledger_no IS '平台账本单号：支付为payment_no，退款为refund_no';
+COMMENT
+ON COLUMN t_bill_reconcile_discrepancy.local_serial_no IS '平台记录的渠道流水号：支付为channel_order_no；退款当前可为空';
 COMMENT
 ON COLUMN t_bill_reconcile_discrepancy.channel_amount IS '渠道侧金额(分)';
 COMMENT
@@ -8216,5 +8230,19 @@ CREATE TABLE t_shipping_address
 );
 CREATE INDEX idx_ssa_user ON t_shipping_address (user_id);
 
+ALTER TABLE t_refund_order ADD goods_disposition VARCHAR(20);
+COMMENT ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
+
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_biz_no VARCHAR(50);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_ledger_no VARCHAR(64);
+ALTER TABLE t_bill_reconcile_discrepancy ADD local_serial_no VARCHAR(64);
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_biz_no IS '平台侧业务单号：支付为订单号，退款为退款单号';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_ledger_no IS '平台账本单号：支付为payment_no，退款为refund_no';
+COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_serial_no IS '平台记录的渠道流水号：支付为channel_order_no；退款当前可为空';
+
+CREATE INDEX idx_payment_order_channel_status_paid_time
+    ON t_payment_order(channel, status, paid_time);
+CREATE INDEX idx_refund_order_status_success_time
+    ON t_refund_order(status, success_time);
 -- 初始化完成后显式提交数据
 COMMIT;

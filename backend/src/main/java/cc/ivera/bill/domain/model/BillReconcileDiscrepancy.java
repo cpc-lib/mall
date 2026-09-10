@@ -43,6 +43,15 @@ public class BillReconcileDiscrepancy {
      */
     private String channelSerialNo;
 
+    /** 平台侧业务单号：支付为 orderNo，退款为 refundNo。 */
+    private String localBizNo;
+
+    /** 平台账本单号：支付为 paymentNo，退款为 refundNo。 */
+    private String localLedgerNo;
+
+    /** 平台记录的渠道流水号：支付为 channelOrderNo；退款当前可为空。 */
+    private String localSerialNo;
+
     /**
      * 渠道侧金额(分)
      */

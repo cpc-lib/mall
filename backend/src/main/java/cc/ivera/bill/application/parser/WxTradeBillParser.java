@@ -4,8 +4,17 @@ import cc.ivera.bill.domain.enums.BillRecordType;
 import cc.ivera.bill.domain.model.BillRecord;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.FormulaEvaluator;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.util.StringUtils;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -14,7 +23,7 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 
 /**
- * 微信交易账单 CSV 解析器（无 Spring 依赖，可独立单测）。
+ * 微信交易账单解析器。生产上传使用微信下载的 XLSX；保留 CSV 文本解析入口用于历史兼容与特征测试。
  *
  * <p>依据微信支付 v3《交易账单详细说明》实现：
  * <ul>
@@ -32,7 +41,8 @@ public final class WxTradeBillParser {
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern(DatePatterns.DATETIME);
 
-    private static final ZoneId ZONE = ZoneId.systemDefault();
+    /** 微信交易账单按中国标准时间切日，避免部署主机时区影响账账核对归属日。 */
+    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     // ==================== 账单表头列名 ====================
     private static final String COL_TRADE_TIME = "交易时间";
@@ -53,6 +63,60 @@ public final class WxTradeBillParser {
 
     private static final String STATUS_REFUND = "REFUND";
     private static final String STATUS_REVOKED = "REVOKED";
+
+    /**
+     * 解析微信下载的 XLSX 交易账单。
+     *
+     * <p>真实账单可能在表头前带标题/说明行，因此逐 Sheet、逐行查找包含“交易时间 + 微信订单号”的表头；
+     * 找到后仅解析该 Sheet。单元格按显示文本读取，日期单元格统一格式化为 yyyy-MM-dd HH:mm:ss，
+     * 从而复用与 CSV 相同的按表头名称解析规则。
+     */
+    public ParsedBill parseXlsx(byte[] content, String channelCode, String billDate) {
+        ParsedBill result = new ParsedBill();
+        if (content == null || content.length == 0) {
+            return result;
+        }
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
+            DataFormatter formatter = new DataFormatter(Locale.CHINA);
+            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
+
+            for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
+                Sheet sheet = workbook.getSheetAt(sheetIndex);
+                Map<String, Integer> headerIndex = null;
+
+                for (Row row : sheet) {
+                    result.setTotalLines(result.getTotalLines() + 1);
+                    List<String> fields = normalizeWorkbookRow(rowValues(row, formatter, evaluator));
+                    if (isBlankRow(fields)) {
+                        continue;
+                    }
+
+                    if (headerIndex == null) {
+                        Map<String, Integer> header = mapHeader(fields);
+                        if (header.containsKey(COL_TRADE_TIME) && header.containsKey(COL_WX_ORDER_NO)) {
+                            headerIndex = header;
+                            result.setBillKind(detectBillKind(header));
+                        }
+                        continue;
+                    }
+
+                    parseDataRow(result, fields, headerIndex, channelCode, billDate,
+                        String.join("\t", fields));
+                }
+
+                if (headerIndex != null) {
+                    return result;
+                }
+            }
+        } catch (BizException e) {
+            throw e;
+        } catch (IOException | RuntimeException e) {
+            throw new BizException("账单文件格式不正确：无法读取微信交易账单 XLSX", e);
+        }
+
+        throw new BizException("账单文件格式不正确：未找到微信交易账单表头");
+    }
 
     /**
      * 解析微信交易账单 CSV 文本。
@@ -90,36 +154,41 @@ public final class WxTradeBillParser {
                 throw new BizException("账单文件格式不正确：缺少微信交易账单表头（交易时间/微信订单号）");
             }
 
-            // 首字段不是交易时间的行：表头、汇总表头（总交易单数,...）、汇总数据行、旧版 % 汇总行，跳过
-            Date tradeTime = parseTime(clean(firstField(fields)));
-            if (tradeTime == null) {
-                continue;
-            }
-
-            String tradeStatus = value(fields, headerIndex, COL_TRADE_STATUS);
-            boolean refundRow = STATUS_REFUND.equalsIgnoreCase(tradeStatus)
-                || STATUS_REVOKED.equalsIgnoreCase(tradeStatus);
-
-            BillRecord record = new BillRecord();
-            record.setChannelCode(channelCode);
-            record.setBillDate(billDate);
-            record.setTradeTime(tradeTime);
-            record.setRawLine(rawLine);
-
-            boolean filled = refundRow
-                ? fillRefundRecord(record, fields, headerIndex, tradeStatus)
-                : fillPayRecord(record, fields, headerIndex);
-            if (!filled) {
-                result.setBadLines(result.getBadLines() + 1);
-                continue;
-            }
-            (refundRow ? result.getRefundRecords() : result.getPayRecords()).add(record);
+            parseDataRow(result, fields, headerIndex, channelCode, billDate, rawLine);
         }
 
         if (headerIndex == null) {
             throw new BizException("账单文件格式不正确：未找到微信交易账单表头");
         }
         return result;
+    }
+
+    private void parseDataRow(ParsedBill result, List<String> fields, Map<String, Integer> headerIndex,
+                              String channelCode, String billDate, String rawLine) {
+        // 汇总行/说明行在“交易时间”列无法解析为时间，直接跳过。
+        Date tradeTime = parseTime(value(fields, headerIndex, COL_TRADE_TIME));
+        if (tradeTime == null) {
+            return;
+        }
+
+        String tradeStatus = value(fields, headerIndex, COL_TRADE_STATUS);
+        boolean refundRow = STATUS_REFUND.equalsIgnoreCase(tradeStatus)
+            || STATUS_REVOKED.equalsIgnoreCase(tradeStatus);
+
+        BillRecord record = new BillRecord();
+        record.setChannelCode(channelCode);
+        record.setBillDate(billDate);
+        record.setTradeTime(tradeTime);
+        record.setRawLine(rawLine);
+
+        boolean filled = refundRow
+            ? fillRefundRecord(record, fields, headerIndex, tradeStatus)
+            : fillPayRecord(record, fields, headerIndex);
+        if (!filled) {
+            result.setBadLines(result.getBadLines() + 1);
+            return;
+        }
+        (refundRow ? result.getRefundRecords() : result.getPayRecords()).add(record);
     }
 
     private boolean fillPayRecord(BillRecord record, List<String> fields, Map<String, Integer> headerIndex) {
@@ -185,6 +254,59 @@ public final class WxTradeBillParser {
         return header;
     }
 
+    private List<String> rowValues(Row row, DataFormatter formatter, FormulaEvaluator evaluator) {
+        int lastCell = row == null ? -1 : row.getLastCellNum();
+        if (lastCell <= 0) {
+            return Collections.emptyList();
+        }
+        List<String> values = new ArrayList<>(lastCell);
+        for (int i = 0; i < lastCell; i++) {
+            values.add(cellText(row.getCell(i), formatter, evaluator));
+        }
+        return values;
+    }
+
+    private List<String> normalizeWorkbookRow(List<String> fields) {
+        if (fields == null || fields.size() != 1 || !StringUtils.hasText(fields.get(0))) {
+            return fields;
+        }
+        String only = fields.get(0);
+        // 兼容旧版下载页把整条 CSV/TSV 文本写进 XLSX 单个单元格的文件。
+        if (only.indexOf(',') >= 0) {
+            return splitCsv(only);
+        }
+        if (only.indexOf('\t') >= 0) {
+            return Arrays.asList(only.split("\\t", -1));
+        }
+        return fields;
+    }
+
+    private String cellText(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
+        if (cell == null) {
+            return "";
+        }
+        try {
+            if (DateUtil.isCellDateFormatted(cell)) {
+                return cell.getLocalDateTimeCellValue().format(TIME_FORMATTER);
+            }
+            return formatter.formatCellValue(cell, evaluator);
+        } catch (RuntimeException e) {
+            return formatter.formatCellValue(cell);
+        }
+    }
+
+    private boolean isBlankRow(List<String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return true;
+        }
+        for (String field : fields) {
+            if (StringUtils.hasText(field)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /**
      * 依据表头列识别账单种类：含「退款申请时间」列为 REFUND 账单；含「微信退款单号」列为 ALL；否则 SUCCESS。
      */
@@ -209,10 +331,6 @@ public final class WxTradeBillParser {
         return clean(fields.get(index));
     }
 
-    private String firstField(List<String> fields) {
-        return fields.isEmpty() ? "" : fields.get(0);
-    }
-
     /**
      * 字段清洗：去空白、去除微信账单字段前的单个反引号前缀、去除包裹双引号。
      */
@@ -221,6 +339,9 @@ public final class WxTradeBillParser {
             return "";
         }
         String value = raw.trim();
+        if (value.startsWith("\uFEFF")) {
+            value = value.substring(1).trim();
+        }
         if (value.startsWith("`")) {
             value = value.substring(1).trim();
         }

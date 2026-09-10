@@ -98,7 +98,9 @@ export default function OrdersV2() {
     if (refundType === 'REFUND_ONLY') {
       const r = await refundApi.create({ orderNo: target.order.orderNo, refundType, reason: reason.trim(), items: [] })
       const amountY = `¥${((r.data?.apply?.refundAmount || 0) / 100).toFixed(2)}`
-      message.success(`仅退款申请已提交，整单全额 ${amountY}，商品不退回（计入货损）`)
+      message.success(target.order.fulfillmentStatus === 'SHIPPED'
+        ? `退款申请已提交，整单全额 ${amountY}，等待管理员确认商品丢失或已全部回收`
+        : `仅退款申请已提交，整单全额 ${amountY}，商品不退回（计入货损）`)
       setTarget(null); await load(); return
     }
     const items = (target?.items || []).filter(i => Number(qty[i.id] || 0) > 0).map(i => ({ orderItemId: i.id, quantity: Number(qty[i.id]) }))
@@ -162,7 +164,9 @@ export default function OrdersV2() {
         </Radio.Group>
       </div>}
       {isRefundOnly
-        ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="整单全额退款，商品无需退回，计入商家货损（丢失库存）。" />
+        ? <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={target?.order.fulfillmentStatus === 'SHIPPED'
+          ? '商品已发货。提交后由管理员结合物流/仓库结果确认商品丢失或已全部回收，再发起退款。'
+          : '整单全额退款，商品无需退回，计入商家货损（丢失库存）。'} />
         : target?.items.map(i => {
           const max = availableRefundQuantity(i)
           return <div key={i.id} className="m-modal-line"><b>{i.productTitle}</b><InputNumber min={0} max={max} value={qty[i.id] || 0} disabled={max <= 0} onChange={v => setQty({ ...qty, [i.id]: Math.min(max, Number(v || 0)) })} /><span className="m-modal-hint">可退 {max} 件，快照价 ¥{((i.unitPrice || 0) / 100).toFixed(2)}</span></div>

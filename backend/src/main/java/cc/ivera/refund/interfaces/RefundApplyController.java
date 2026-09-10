@@ -1,6 +1,7 @@
 package cc.ivera.refund.interfaces;
 
 import cc.ivera.refund.application.RefundOrderService;
+import cc.ivera.refund.interfaces.dto.RefundAcceptRequest;
 import cc.ivera.refund.interfaces.dto.RefundApplyRequest;
 import cc.ivera.refund.interfaces.dto.RefundApplyUpdateRequest;
 import cc.ivera.refund.interfaces.dto.RefundRejectRequest;
@@ -54,8 +55,10 @@ public class RefundApplyController {
     }
 
     @PostMapping("/{refundNo}/accept")
-    public R<?> accept(@PathVariable String refundNo, @RequestBody(required = false) RefundRejectRequest r) {
-        service.accept(refundNo, r == null ? null : r.getRemark());
+    public R<?> accept(@PathVariable String refundNo, @RequestBody(required = false) RefundAcceptRequest r) {
+        service.accept(refundNo,
+            r == null ? null : r.getRemark(),
+            r == null ? null : r.getGoodsDisposition());
         return R.ok().setMessage("已受理");
     }
 

@@ -34,7 +34,6 @@ export default function RefundApplications() {
   return <div className="tb-page">
     <div className="container">
       <h2 className="tb-h2">我的退款申请</h2>
-      <p className="tb-page-tip">仅待审核（APPLYING）可编辑/撤销；受理后冻结额度并走审核/渠道退款链路。金额以服务端核算为准。</p>
       {list.length === 0
         ? <div className="tb-cardbox"><Empty description="暂无退款申请" /></div>
         : list.map(r => (
@@ -52,6 +51,7 @@ export default function RefundApplications() {
           <div className="m-list-items">
             {r.items.map(i => <div key={i.id}>item#{i.orderItemId} <span className="m-list-item-sub">× {i.refundQty} @ ¥{((i.unitPrice || 0) / 100).toFixed(2)}</span></div>)}
             <div>原因：{r.apply.reason}</div>
+            {r.apply.goodsDisposition && <div>商品处理：{r.apply.goodsDisposition === 'RECOVERED' ? '已全部回收' : '丢失/无法回收'}</div>}
             {r.apply.status === 'FAILED' && <div className="m-list-fail">失败原因：{r.failReason || '渠道退款失败，请联系管理员重试'}</div>}
           </div>
           <div className="m-list-actions">

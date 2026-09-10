@@ -2,6 +2,8 @@ package cc.ivera.refund.domain.repository;
 
 import cc.ivera.refund.domain.model.RefundOrder;
 
+import java.util.Collection;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -39,4 +41,14 @@ public interface RefundOrderRepository {
      * 全量退款单按创建时间倒序。
      */
     List<RefundOrder> listAllCreateTimeDesc();
+
+    /**
+     * 账账核对批量查询：按退款单号集合加载平台退款账。
+     */
+    List<RefundOrder> listByRefundNos(Collection<String> refundNos);
+
+    /**
+     * 账账核对日切：按退款成功时间加载平台成功退款账。
+     */
+    List<RefundOrder> listSuccessBySuccessTimeRange(Date startInclusive, Date endExclusive);
 }

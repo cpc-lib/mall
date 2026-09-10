@@ -27,7 +27,7 @@ class BillPOConvertersTest {
         domain.setBillType("TRADE");
         domain.setBillKind("ALL");
         domain.setBillDate("2027-05-06");
-        domain.setFileName("wxbill.csv");
+        domain.setFileName("wxbill.xlsx");
         domain.setFileHash("hash-abc");
         domain.setTotalRecordCount(10);
         domain.setPayRecordCount(7);
@@ -128,6 +128,9 @@ class BillPOConvertersTest {
         domain.setDiscrepancyType("PAY_CHANNEL_ONLY");
         domain.setBizNo("MCH456");
         domain.setChannelSerialNo("WX123");
+        domain.setLocalBizNo("ORD1");
+        domain.setLocalLedgerNo("PM1");
+        domain.setLocalSerialNo("WX-LOCAL-1");
         domain.setChannelAmount(100);
         domain.setLocalAmount(90);
         domain.setChannelStatus("SUCCESS");
@@ -149,6 +152,9 @@ class BillPOConvertersTest {
         assertEquals(domain.getDiscrepancyType(), back.getDiscrepancyType());
         assertEquals(domain.getBizNo(), back.getBizNo());
         assertEquals(domain.getChannelSerialNo(), back.getChannelSerialNo());
+        assertEquals(domain.getLocalBizNo(), back.getLocalBizNo());
+        assertEquals(domain.getLocalLedgerNo(), back.getLocalLedgerNo());
+        assertEquals(domain.getLocalSerialNo(), back.getLocalSerialNo());
         assertEquals(domain.getChannelAmount(), back.getChannelAmount());
         assertEquals(domain.getLocalAmount(), back.getLocalAmount());
         assertEquals(domain.getChannelStatus(), back.getChannelStatus());

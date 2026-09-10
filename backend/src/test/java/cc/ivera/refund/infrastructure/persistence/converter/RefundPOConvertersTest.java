@@ -33,6 +33,7 @@ class RefundPOConvertersTest {
         domain.setLegacyApplyStatus("PENDING");
         domain.setApplyType("USER");
         domain.setAdminRemark("自动受理");
+        domain.setGoodsDisposition("RECOVERED");
         domain.setAcceptedTime(new Date(1_000L));
         domain.setSuccessTime(new Date(2_000L));
         domain.setCreateTime(new Date(3_000L));
@@ -52,6 +53,7 @@ class RefundPOConvertersTest {
         assertEquals(domain.getLegacyApplyStatus(), back.getLegacyApplyStatus());
         assertEquals(domain.getApplyType(), back.getApplyType());
         assertEquals(domain.getAdminRemark(), back.getAdminRemark());
+        assertEquals(domain.getGoodsDisposition(), back.getGoodsDisposition());
         assertEquals(domain.getAcceptedTime(), back.getAcceptedTime());
         assertEquals(domain.getSuccessTime(), back.getSuccessTime());
         assertEquals(domain.getCreateTime(), back.getCreateTime());

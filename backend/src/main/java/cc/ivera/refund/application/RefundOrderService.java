@@ -35,9 +35,11 @@ public interface RefundOrderService {
 
     /**
      * 管理员受理：APPLYING→APPROVED；
-     * CANCEL_BEFORE_SHIP→立即补库存+发起渠道退款；RETURN_AND_REFUND→等待确认签收；其余直接发起渠道退款。
+     * CANCEL_BEFORE_SHIP→立即补库存+发起渠道退款；RETURN_AND_REFUND→等待确认签收；
+     * SHIPPED + REFUND_ONLY 必须指定 goodsDisposition（LOST/RECOVERED）后才可发起渠道退款；
+     * RECEIVED + REFUND_ONLY 沿用货损核销后退款。
      */
-    void accept(String refundNo, String remark);
+    void accept(String refundNo, String remark, String goodsDisposition);
 
     /**
      * 管理员退货签收质检（RETURN_AND_REFUND 专用）：补库存 + 发起渠道退款。

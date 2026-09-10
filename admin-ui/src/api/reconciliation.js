@@ -1,7 +1,7 @@
 import request from '@/utils/request'
 
 /**
- * 上传微信交易账单文件并自动对账（multipart/form-data）。
+ * 上传微信交易账单 XLSX 文件并自动对账（multipart/form-data）。
  * 同文件重复上传幂等返回原批次；同一账单日期重复上传会被后端拒绝。
  * @param {FormData} formData 包含 file / billDate / billType(可选，默认 tradebill)
  */
@@ -36,6 +36,16 @@ export function getImport(importNo) {
 }
 
 /**
+ * 账账核对汇总：渠道账 vs 平台账的笔数、金额、净额与平账状态
+ */
+export function getReconcileSummary(importNo) {
+  return request({
+    url: `/api/reconciliation/imports/${importNo}/summary`,
+    method: 'get'
+  })
+}
+
+/**
  * 批次账单流水，recordType 可选 PAY/REFUND
  */
 export function listRecords(importNo, params) {
@@ -54,6 +64,16 @@ export function listDiscrepancies(importNo, params) {
     url: `/api/reconciliation/imports/${importNo}/discrepancies`,
     method: 'get',
     params
+  })
+}
+
+/**
+ * 单条差异数据下钻：渠道原始账、平台账本候选记录与字段核验结果
+ */
+export function getDiscrepancyDrilldown(id) {
+  return request({
+    url: `/api/reconciliation/discrepancies/${id}/drilldown`,
+    method: 'get'
   })
 }
 

@@ -16,6 +16,7 @@ import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.application.RefundInfoService;
 import cc.ivera.refund.application.RefundOrderService;
 import cc.ivera.refund.domain.enums.RefundApprovalStatus;
+import cc.ivera.refund.domain.enums.RefundGoodsDisposition;
 import cc.ivera.refund.domain.enums.RefundOrderStatus;
 import cc.ivera.refund.domain.enums.RefundStatus;
 import cc.ivera.refund.domain.enums.RefundType;
@@ -47,7 +48,7 @@ import java.util.stream.Collectors;
  * - 三层冻结防线：申请创建冻结 Order+OrderItem（原子 UPDATE，任一不足整体失败）；渠道发起时冻结 PaymentOrder；
  * - 金额服务端计算（RefundPolicy 尾差规则），不信任前端金额；
  * - 退款类型与履约状态硬校验（决策 14）：CANCEL_BEFORE_SHIP 仅 WAIT_SHIP；RETURN_AND_REFUND 仅 RECEIVED；REFUND_ONLY 需 SHIPPED/RECEIVED；
- * - 库存回补：CANCEL_BEFORE_SHIP 受理即补；RETURN_AND_REFUND 签收质检后补；其余不补；
+ * - 库存处置：CANCEL_BEFORE_SHIP 受理即补；RETURN_AND_REFUND 签收质检后补；SHIPPED+REFUND_ONLY 由管理员判定 LOST/RECOVERED；
  * - 结转幂等：渠道成功 → 冻结转已退（DB 原子 SQL 守卫天然幂等）。
  */
 @Service
@@ -155,8 +156,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
-    public void accept(String refundNo, String remark) {
-        executeWithLockAndChannelRefund("refund:accept:" + refundNo, () -> prepareAccept(refundNo, remark));
+    public void accept(String refundNo, String remark, String goodsDisposition) {
+        executeWithLockAndChannelRefund("refund:accept:" + refundNo,
+            () -> prepareAccept(refundNo, remark, goodsDisposition));
     }
 
     @Override
@@ -420,16 +422,20 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
     }
 
-    private RefundInfo prepareAccept(String refundNo, String remark) {
+    private RefundInfo prepareAccept(String refundNo, String remark, String goodsDisposition) {
         RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         ensureApplying(refundOrder);
+
+        String type = refundOrder.getRefundType();
+        String resolvedDisposition = resolveGoodsDispositionForAccept(refundOrder, goodsDisposition);
+
         refundOrder.setStatus(RefundOrderStatus.APPROVED.getType());
         refundOrder.setLegacyApplyStatus(LEGACY_ACCEPTED);
         refundOrder.setAdminRemark(remark);
+        refundOrder.setGoodsDisposition(resolvedDisposition);
         refundOrder.setAcceptedTime(new Date());
         refundOrderRepository.update(refundOrder);
 
-        String type = refundOrder.getRefundType();
         if (RefundType.CANCEL_BEFORE_SHIP.getType().equals(type)) {
             return handleCancelBeforeShip(refundNo, refundOrder);
         }
@@ -450,12 +456,20 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     private void handleRefundOnly(String refundNo, RefundOrder refundOrder) {
         OrderInfo order = orderRepository.findByOrderNo(refundOrder.getOrderNo());
         if (order == null) {
-            return;
+            throw new BizException("订单不存在，无法处理退款库存去向");
         }
         boolean received = FulfillmentStatus.RECEIVED.getType().equals(order.getFulfillmentStatus());
         boolean shipped = FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus());
-        if (shipped || received) {
-            inventoryService.writeOffLostForRefund(refundNo, toStockLines(itemsOf(refundNo)), received);
+        if (shipped) {
+            if (RefundGoodsDisposition.RECOVERED.getType().equals(refundOrder.getGoodsDisposition())) {
+                inventoryService.restockForRefund(refundNo, toStockLines(itemsOf(refundNo)), false);
+                return;
+            }
+            inventoryService.writeOffLostForRefund(refundNo, toStockLines(itemsOf(refundNo)), false);
+            return;
+        }
+        if (received) {
+            inventoryService.writeOffLostForRefund(refundNo, toStockLines(itemsOf(refundNo)), true);
         }
     }
 
@@ -471,6 +485,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             throw new BizException("仅退货退款类型需要确认签收");
         }
         inventoryService.restockForRefund(refundNo, toStockLines(itemsOf(refundNo)), true);
+        refundOrder.setGoodsDisposition(RefundGoodsDisposition.RECOVERED.getType());
         if (remark != null && !remark.trim().isEmpty()) {
             refundOrder.setAdminRemark(remark.trim());
         }
@@ -666,6 +681,36 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     /**
+     * 管理员受理时解析已发货商品去向。
+     * SHIPPED + REFUND_ONLY 必须人工选择 LOST/RECOVERED；RECEIVED + REFUND_ONLY 固定为 LOST；
+     * 其他退款类型不使用该字段。
+     */
+    private String resolveGoodsDispositionForAccept(RefundOrder refundOrder, String requested) {
+        if (!RefundType.REFUND_ONLY.getType().equals(refundOrder.getRefundType())) {
+            return null;
+        }
+        OrderInfo order = orderRepository.findByOrderNo(refundOrder.getOrderNo());
+        if (order == null) {
+            throw new BizException("订单不存在，无法确认商品去向");
+        }
+        if (FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus())) {
+            if (!StringUtils.hasText(requested)) {
+                throw new BizException("商品已发货，管理员受理前必须确认商品去向：LOST 或 RECOVERED");
+            }
+            String normalized = requested.trim().toUpperCase(Locale.ROOT);
+            if (!RefundGoodsDisposition.LOST.getType().equals(normalized)
+                && !RefundGoodsDisposition.RECOVERED.getType().equals(normalized)) {
+                throw new BizException("不支持的商品去向：" + requested + "，仅支持 LOST/RECOVERED");
+            }
+            return normalized;
+        }
+        if (FulfillmentStatus.RECEIVED.getType().equals(order.getFulfillmentStatus())) {
+            return RefundGoodsDisposition.LOST.getType();
+        }
+        return null;
+    }
+
+    /**
      * 已解析退款类型 vs 履约状态硬校验（决策 14）。
      */
     private void checkFulfillment(String refundType, String fulfillmentStatus) {
@@ -745,6 +790,14 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         RefundApplyVO vo = new RefundApplyVO();
         vo.setApply(refundOrder);
         vo.setItems(itemsOf(refundOrder.getRefundNo()));
+        OrderInfo order = orderRepository.findByOrderNo(refundOrder.getOrderNo());
+        if (order != null) {
+            vo.setFulfillmentStatus(order.getFulfillmentStatus());
+            vo.setGoodsDispositionRequired(
+                RefundOrderStatus.APPLYING.getType().equals(refundOrder.getStatus())
+                    && RefundType.REFUND_ONLY.getType().equals(refundOrder.getRefundType())
+                    && FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus()));
+        }
         if (RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus())) {
             RefundInfo info = refundInfoRepository.findByRefundNo(refundOrder.getRefundNo());
             if (info != null) {

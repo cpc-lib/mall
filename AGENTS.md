@@ -12,7 +12,7 @@
 - 后端端口：`8080`；两个前端通过 CORS 直接访问 `http://localhost:8080`，当前无 Vite 代理。
 - 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`。
 - 每个业务上下文遵循四层结构：`interfaces / application / domain / infrastructure`。
-- 当前测试基线：后端 **22 个测试类、139 个用例**；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
+- 当前测试基线：后端 **23 个测试类、151 个用例**；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
 
 文档职责：
 
@@ -92,8 +92,9 @@ WHERE available_stock >= qty
 - 支付成功：预占 `LOCKED → COMMITTED`，**库存数量不变，仍在 locked 桶**。
 - 超时关单/取消：`locked → available`，预占 `LOCKED → RELEASED`。
 - 确认收货：`locked → sold`。
-- 仅退款不退货：未收货 `locked → lost`，已收货 `sold → lost`。
-- 退货退款：必须在退货签收/质检后才可回补库存。
+- 已发货未收货 `REFUND_ONLY`：管理员受理前必须确认商品去向；`LOST` 执行 `locked → lost`，`RECOVERED` 执行 `locked → available`，不得在未判定时直接发起渠道退款。
+- 已收货 `REFUND_ONLY`：`sold → lost`。
+- `RETURN_AND_REFUND`：必须在退货签收/质检后才可 `sold → available`。
 - 差价退款、重复支付、晚到支付冲正：不回补库存。
 
 ### 5.3 支付成交唯一性
@@ -111,7 +112,18 @@ WHERE available_stock >= qty
 - 用户端前置计算仅用于体验，不得取代后端最终核算。
 - 最后一件商品允许按服务端规则处理金额尾差。
 
-### 5.5 状态推进与并发
+### 5.5 账账核对不变量
+
+- 渠道交易账以 `t_bill_record` 为渠道账本；平台支付账以 `t_payment_order`、平台退款账以 `t_refund_order` 为权威账本。
+- 支付核对必须保留订单 `1:N PaymentOrder` 逐笔语义，优先按 `channel_order_no` 对渠道微信订单号，禁止按 `order_no` 聚合后核对。
+- 平台支付日切必须使用 `PaymentOrder.paid_time`，退款日切必须使用 `RefundOrder.success_time`，统一按 `Asia/Shanghai` 的 `[00:00, 次日00:00)` 归账。
+- 对账必须双向扫描：既检查“渠道有平台无”，也检查“平台有渠道无”；金额相等不能替代逐笔匹配。
+- `balanced=true` 必须同时满足支付笔数/金额一致、退款笔数/金额一致、净额一致且不存在 `OPEN` 差异，禁止仅凭净额为 0 判平账。
+- 交易账净额不包含渠道手续费；手续费只能进入独立的资金/结算账核对口径，禁止混账。
+- 差异审计必须同时保留渠道侧标识和平台侧 `local_biz_no/local_ledger_no/local_serial_no`，便于人工追溯。
+- 日切查询必须保留 `idx_payment_order_channel_status_paid_time`、`idx_refund_order_status_success_time` 等索引，禁止无评估删除。
+
+### 5.6 状态推进与并发
 
 订单、支付、退款、库存等关键推进采用：
 
@@ -196,7 +208,7 @@ backend/env/sql/dm8/schema.sql
 
 ## 8. 测试规则
 
-后端测试位于 `backend/src/test/java`，当前基线：**22 个测试类、139 个用例**。
+后端测试位于 `backend/src/test/java`，当前基线：**23 个测试类、151 个用例**。
 
 测试原则：
 
@@ -207,6 +219,7 @@ backend/env/sql/dm8/schema.sql
 - 涉及 MQ 消费者时必须验证：成功路径严格按“业务 → CONSUMED → `basicAck`”顺序执行；业务/CONSUMED 回写失败时不 ACK；明确忽略的无效消息会 ACK；`basicAck` 自身失败必须继续向外抛出。
 - 涉及 MQ 拓扑时必须验证 release queue 的 `x-dead-letter-exchange` / `x-dead-letter-routing-key` 以及 Failure/Parking Lot binding。
 - 涉及 DB 最终一致性兜底时必须验证 Scheduler 会扫描目标状态、复用既有业务链路，并且单条失败不会阻塞同批次后续记录。
+- 涉及账账核对时必须验证：订单 1:N 支付不会被折叠、渠道流水错配会产出差异、渠道/平台双向单边账可识别、汇总平衡条件不会被金额抵消绕过。
 
 必须执行的回归：
 
