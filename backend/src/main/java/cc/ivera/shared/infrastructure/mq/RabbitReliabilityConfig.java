@@ -10,9 +10,9 @@ import javax.annotation.PostConstruct;
  * 消息投递可靠性配置（三要素 + 兜底）：
  * - 发送者确认：publisher-confirm-type=correlated，回调确认消息到达交换机，失败打错误日志；
  * - 发送者退回：publisher-returns + template.mandatory=true，消息不可路由到队列时打错误日志；
- * - 消费者确认：listener acknowledge-mode=auto，监听器成功后 ack，异常按重试策略处理；
+ * - 消费者确认：listener acknowledge-mode=auto，监听器成功后 ack，异常按重试策略处理；重试耗尽后 release queue 通过 DLX 进入独立 failure queue；
  * - 持久化：交换机/队列声明 durable=true，Spring AMQP 消息默认 PERSISTENT；
- * - 兜底：确认失败/退回仅告警留痕，业务状态由 DB 驱动的兜底定时任务对账收敛
+ * - 兜底：MQ failure queue / parking-lot queue 用于故障审计与人工隔离，业务状态仍由 DB 驱动的兜底定时任务对账收敛
  * （TimeoutOrderCloseScheduler / RefundStatusSyncScheduler，链路均为幂等 CAS）。
  */
 @Configuration

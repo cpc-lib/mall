@@ -1,218 +1,567 @@
 # 电商商城平台
 
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-2.3.7-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Java](https://img.shields.io/badge/Java-1.8-orange.svg)](https://www.oracle.com/java/technologies/javase-jdk8-downloads.html)
-[![DM8](https://img.shields.io/badge/DM8-达梦数据库-blue.svg)]()
+> 一个围绕真实交易链路设计的前后端分离商城项目，覆盖商品、购物车、订单、库存、微信/支付宝支付、履约、退款、账单对账、用户与后台管理，并以 DDD、CAS、分布式锁、Transactional Outbox、RabbitMQ Failure DLQ / Parking Lot 等机制保证并发与最终一致性。
 
-## 项目简介
+## 1. 项目概览
 
-基于 Spring Boot 的电商商城平台：集成**微信支付 V2/V3** 与**支付宝**通道，覆盖「浏览商品 → 购物车 → 下单 → 支付 →
-发货/物流 → 确认收货 → 退款/退货 → 账单对账」完整交易闭环，并实现企业级并发控制、幂等保障、库存四桶预占与货损核销、分项退款与上传式账单对账。
+项目由 3 个工程组成：
 
-后端按 DDD 限界上下文组织为 8 个包（`shared` / `product` / `order` / `payment` / `refund` / `user` / `cart` / `bill`），每个上下文内部统一
-`interfaces / application / domain / infrastructure` 四层，架构导览见 [CODE_INTRO.md](CODE_INTRO.md)。
+- `backend/`：Spring Boot 2.3.7 + Java 8 后端。
+- `user-ui/`：React 18 用户商城，开发端口 `3000`。
+- `admin-ui/`：React 18 管理后台，开发端口 `3002`。
 
-前端拆分为两个独立工程，与后端 REST 契约对齐：
+后端按 8 个限界上下文组织：
 
-- **user-ui** — 用户商城（React 18，移动 App 风格界面，含收货地址、购物车、订单、退款申请、用户中心）
-- **admin-ui** — 管理后台（React 18，左侧导航 + 列表 + 抽屉详情，含订单/发货/库存/退款/对账/支付配置管理）
-
-## 核心特性
-
-**交易链路**
-
-- **微信支付 V3**：扫码支付（Native 二维码轮询）、退款、订单查询、账单下载；**微信支付 V2**：扫码支付与通知
-- **支付宝**：扫码支付（表单跳转）、退款、订单查询、账单下载
-- **多商品订单**：主子表结构，明细快照价；支付配置（渠道/应用）存数据库动态加载，订单绑定支付应用
-- **Redis 购物车**：实时读取商品最新价格与库存；管理员角色禁止访问购物车/下单接口
-- **收货地址**：三级行政区划级联 + 详细地址，结算时选择收货地址
-- **库存四桶模型**：`available / locked / sold / lost` 四桶恒等于入库总量。下单 `LOCKED` 预占（可用转锁定，CAS 防超卖，不足则整单回滚）→
-  支付成功 `COMMITTED`（仅推进状态，库存保持锁定）→ 确认收货结转已售（locked→sold）；关单/取消 `RELEASED` 归还可用；全部本地事务同步执行
-- **订单履约**：待发货 → 模拟发货（运单号）→ 定时模拟物流推进（已发货 → 运输中 → 已送达）→ **送达后用户方可确认收货**
-  （订单列表透出物流状态并展示「运输中/已送达」标签）；已付款未发货取消自动生成退款申请
-- **分项退款**：6 种退款类型（未发货取消/退货退款/仅退款/差价退款/重复支付/晚到支付自动冲正），待审核可编辑/撤销，受理后冻结额度动态防超退，最后一件吃尾差；
-  **仅退款支持一键整单全额退**（免手填数量，服务端按整单剩余可退自动生成明细）
-- **货损核销**：仅退款不退货时货物不回仓——已发货未收货 `locked→lost`、已收货 `sold→lost`，以 `biz_no`（退款单号+明细）幂等核销并写库存流水
-- **主动查单**：用户端与管理端均可主动向渠道查询订单支付状态并同步
-
-**管理后台**
-
-- **订单管理**：多状态线筛选、详情抽屉、强制关单（幂等）、标记已付（线下收款生成 OFFLINE 渠道成功支付记录）、渠道查单、支付单渠道尝试记录
-- **订单发货**：待发货列表、模拟发货
-- **商品库存**：新增商品、库存调整（单个/批量）、上架/下架、库存流水（四桶 delta）服务端分页查询，货损列高亮
-- **批量库存维护**：Excel（.xlsx）导入 → 生成导入记录 → 全屏 Luckysheet 编辑器核对/编辑 → 确认入库（CAS 防重复执行）；失败行记录原因
-- **Excel 文件存储**：`stock.import.storage=local|minio` 可切换，本地磁盘或 MinIO 对象存储；记录级路由，历史文件按原后端读取
-- **退款受理**：受理/拒绝/退货签收/渠道重试/状态查询/差价退款；线下收款单退款不调渠道，本地直接结转成功
-- **用户管理**：分页搜索、禁用启用、用户详情、登录锁定（3 次失败锁 10 分钟，仅锁定输错密码的用户名，不按网络/IP 锁定）；管理员顶栏弹窗式修改密码（改密后全部
-  Token 失效强制重登录）
-- **密码重置**：用户提交找回申请 → 管理员受理生成随机密码（仅展示一次）或直接按用户重置
-- **账单对账**：上传微信交易账单 CSV（ALL/SUCCESS/REFUND），自动解析入库并对账，8 类差异识别，人工标记处理，全链路幂等
-- **下载账单**：跳转微信/支付宝官方账单下载接口
-
-**工程保障**
-
-- **并发控制**：通知幂等检查（Redis notifyId，仅回调路径）→ Redisson 分布式锁（同维度操作事务外加锁串行化）→ CAS 条件更新（状态/数量条件
-  UPDATE）；代码中不使用 `select ... for update`，并发权威由 Redis 锁 + CAS 兜底
-- **双 Token 认证**：Access 30 分钟 + Refresh 7 天，401 单飞（single-flight）无感刷新
-- **本地消息表（Outbox）**：关单/退款同步消息先落库再投递，broker 确认后标记，失败指数退避重试，耗尽转人工补偿；DB 定时任务兜底对账
-- **MQ 容错**：消费异常指数退避重试（2s→6s→18s 共 4 次），耗尽拒绝不回队，由幂等的 DB 兜底任务接管
-- **达梦 DM8**：官方镜像一键启动，`schema.sql` 一体化全量建表 + 种子数据（可重复执行，等同清库重建）
-
-## 技术栈
-
-| 分类     | 技术                                                            | 版本            |
-|--------|---------------------------------------------------------------|---------------|
-| 后端框架   | Spring Boot                                                   | 2.3.7.RELEASE |
-| 语言     | Java                                                          | 1.8           |
-| ORM    | MyBatis-Plus                                                  | 3.3.1         |
-| 数据库    | 达梦 DM8（DmJdbcDriver18）                                        | 8.1.2.192     |
-| 缓存/锁   | Redis + Redisson                                              | 5.0+ / 3.16.8 |
-| 消息队列   | RabbitMQ（Spring AMQP）                                         | 3.7+          |
-| 对象存储   | MinIO（io.minio，可选）                                            | 8.5.7         |
-| 支付 SDK | WechatPay APIv3 0.3.0 / wxpay-sdk 0.0.3 / Alipay SDK 4.22.57  | —             |
-| API 文档 | Swagger                                                       | 2.7.0         |
-| 商城前端   | React 18 + Vite 5 + Ant Design 5 + qrcode.react               | —             |
-| 管理前端   | React 18 + Vite 5 + Ant Design 5 + SheetJS(xlsx) + Luckysheet | —             |
-
-## 项目结构
-
+```text
+shared / product / order / payment / refund / user / cart / bill
 ```
+
+每个业务上下文采用统一四层：
+
+```text
+interfaces → application → domain ← infrastructure
+```
+
+完整架构和代码导览见 [CODE_INTRO.md](CODE_INTRO.md)。开发规范见 [AGENTS.md](AGENTS.md)。
+
+## 2. 业务能力
+
+### 2.1 用户商城
+
+- 用户注册、登录、退出、Access/Refresh 双 Token 刷新。
+- 登录失败保护：同一用户名连续输错密码达到阈值后短时锁定。
+- 商品列表、商品库存展示。
+- Redis 购物车。
+- 收货地址 CRUD、默认地址、三级行政区划级联。
+- 多商品结算、订单快照价、订单查询。
+- 微信支付 V3 Native 扫码支付、JSAPI 能力、回调、主动查单、退款、账单相关接口。
+- 微信支付 V2 Native 兼容链路。
+- 支付宝支付、通知、查单、关单、退款、账单下载地址。
+- 发货/物流状态查看、送达后确认收货。
+- 已付款未发货取消订单。
+- 分项退款、仅退款、退货退款、退款申请编辑/撤销。
+- 支付成功页和退款申请列表。
+
+### 2.2 管理后台
+
+- 订单列表、订单详情、状态筛选。
+- 待发货订单、模拟发货。
+- 强制关单、渠道查单、标记线下已付款。
+- 支付尝试记录查看。
+- 商品 CRUD、上下架、单个/批量库存调整。
+- 库存流水分页与审计。
+- Excel 库存导入、编辑、确认入库。
+- Excel 文件支持本地磁盘或 MinIO 存储。
+- 退款受理、拒绝、退货签收、渠道重试、状态同步、差价退款。
+- 用户列表、启用/禁用、用户详情。
+- 密码重置申请受理/拒绝、管理员直接重置密码。
+- 支付渠道和支付应用配置维护、缓存刷新。
+- 微信账单 CSV 上传、同步对账、差异查看、重跑、人工标记处理。
+
+## 3. 交易系统核心设计
+
+### 3.1 库存四桶模型
+
+`t_product` 使用四桶库存：
+
+```text
+available_stock  可用
+locked_stock     锁定
+sold_stock       已售
+lost_stock       货损
+```
+
+核心恒等式：
+
+```text
+available + locked + sold + lost = 入库总量
+```
+
+典型流转：
+
+```text
+下单：       available → locked
+支付成功：   预占状态 LOCKED → COMMITTED，库存数量不变
+关单/取消：  locked → available
+确认收货：   locked → sold
+仅退款：     locked/sold → lost
+退货退款：   退货签收后 sold → available
+```
+
+防超卖由 `ProductMapper.reserveStock` 条件 UPDATE 作为根闸门：库存不足时整个下单事务回滚，不生成有效订单。
+
+所有库存变化都写 `t_inventory_transaction`，并使用 `biz_no` + 数据库唯一约束保证幂等。
+
+### 3.2 本地订单与支付单
+
+业务订单与渠道支付尝试为 `1:N`：
+
+```text
+t_order_info
+    └── 1:N t_payment_order
+```
+
+规则：
+
+- 同渠道已有活跃支付单时优先复用。
+- 跨渠道可以创建不同支付尝试。
+- 一个业务订单最终只允许一笔有效成交。
+- 首笔成交后关闭其它活跃支付尝试。
+- 重复支付、关单后晚到支付走自动冲正退款，不回补库存。
+
+### 3.3 并发与幂等
+
+关键交易路径采用：
+
+```text
+通知去重（部分渠道回调）
+        ↓
+Redisson 分布式锁
+        ↓
+CAS 条件 UPDATE
+        ↓
+数据库唯一约束 / biz_no
+```
+
+项目不使用 `select ... for update` 作为关键并发控制方案。订单、支付、退款等状态推进以分布式锁 + CAS 为主。
+
+### 3.4 退款
+
+退款覆盖：
+
+- 未发货取消。
+- 退货退款。
+- 仅退款。
+- 差价退款。
+- 重复支付自动冲正。
+- 晚到支付自动冲正。
+
+退款额度由服务端 `RefundPolicy` 最终核算，受理阶段冻结可退金额/数量，避免并发超退。
+
+库存处理严格区分资金与货权：
+
+- 未发货取消：可回补锁定库存。
+- 退货退款：退货签收/质检后回补。
+- 仅退款不退货：转入 `lost_stock`，不进入可售库存。
+- 差价退款与系统资金冲正：不动库存。
+
+## 4. RabbitMQ 与最终一致性
+
+项目当前使用 `AUTO ACK`，不是手写 `MANUAL ACK`：
+
+```yaml
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        acknowledge-mode: auto
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 2000
+          multiplier: 3.0
+          max-interval: 20000
+```
+
+消费语义：
+
+```text
+业务成功
+→ markConsumed
+→ Listener 正常返回
+→ Spring AUTO ACK
+
+业务异常
+→ 异常向外抛出
+→ Spring Retry
+→ 重试耗尽 Reject
+→ Release Queue DLX
+→ Failure Queue
+```
+
+订单超时关单和退款状态同步均采用独立失败拓扑：
+
+```text
+Event Exchange
+    ↓
+Delay Queue
+    ↓ TTL
+Dead Letter Exchange
+    ↓
+Release Queue
+    ↓
+Consumer
+    ├─ success → AUTO ACK
+    └─ retry exhausted
+          ↓
+     Failure Exchange
+          ↓
+     Failure Queue
+          ↓
+     人工排障 / 重放
+          ↓
+     Parking Lot Queue（可选人工隔离）
+```
+
+Parking Lot Queue 不配置自动消费者，不自动回灌，避免 poison message 形成失败循环。
+
+此外还有两层保障：
+
+- `t_local_message` Transactional Outbox：业务事务内先落 `PENDING`，事务提交后发消息，broker confirm 后置 `SENT`，消费完成后置 `CONSUMED`。
+- DB 兜底调度：`TimeoutOrderCloseScheduler`、`RefundStatusSyncScheduler` 独立扫描数据库状态，保证即使 MQ 故障仍能最终收敛。
+
+详细拓扑、迁移、Failure Queue 处理与回滚见 [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md)。
+
+### 4.1 RabbitMQ 升级注意
+
+如果旧环境已存在以下 Release Queue：
+
+```text
+payment.order.close.release.queue
+payment.refund.status-sync.release.queue
+```
+
+当前版本给它们新增了 `x-dead-letter-exchange` 和 `x-dead-letter-routing-key`。RabbitMQ Queue arguments 无法原地修改，首次升级必须按运维文档执行：
+
+1. 停止对应消费者/应用。
+2. 确认 Release Queue 内无需要保留的未处理消息，必要时先备份/转存。
+3. 删除旧 Release Queue。
+4. 启动应用，让 Spring AMQP 按新参数重新声明。
+5. 检查 Failure Exchange / Failure Queue / Parking Lot Queue binding。
+
+否则可能出现 `PRECONDITION_FAILED`。
+
+## 5. 账单对账
+
+管理员上传微信交易账单 CSV 后，系统同步解析并对本地支付/退款记录进行核对，不走 MQ。
+
+支持账单类型：
+
+| 类型 | 内容 | 对账范围 |
+|---|---|---|
+| `ALL` | 支付 + 退款 + 撤销 | 支付与退款 |
+| `SUCCESS` | 支付成功 | 支付 |
+| `REFUND` | 退款 | 退款 |
+
+差异类型共 8 类：
+
+```text
+PAY_CHANNEL_ONLY
+PAY_LOCAL_ONLY
+PAY_AMOUNT_MISMATCH
+PAY_STATUS_MISMATCH
+REFUND_CHANNEL_ONLY
+REFUND_LOCAL_ONLY
+REFUND_AMOUNT_MISMATCH
+REFUND_STATUS_MISMATCH
+```
+
+幂等防线包括文件 SHA-256、账单日/种类互斥、Redisson 锁、数据库唯一约束、批次状态校验。
+
+## 6. 技术栈
+
+| 分类 | 技术 | 版本/说明 |
+|---|---|---|
+| Java | Java | 8 |
+| 后端 | Spring Boot | 2.3.7.RELEASE |
+| ORM | MyBatis-Plus | 3.3.1 |
+| 数据库 | 达梦 DM8 / DmJdbcDriver18 | 8.1.2.192 |
+| Redis | Spring Data Redis + Redisson | Redisson 3.16.8 |
+| MQ | RabbitMQ + Spring AMQP | Spring Boot Starter AMQP |
+| 对象存储 | MinIO | 8.5.7，可选 |
+| 微信 V3 | wechatpay-apache-httpclient | 0.3.0 |
+| 微信 V2 | wxpay-sdk | 0.0.3 |
+| 支付宝 | alipay-sdk-java | 4.22.57.ALL |
+| API 文档 | Springfox Swagger | 2.7.0 |
+| 用户前端 | React + Vite + Ant Design | React 18 / Vite 5 / antd 5 |
+| 管理前端 | React + Vite + Ant Design + xlsx + Luckysheet | React 18 |
+
+## 7. 项目结构
+
+```text
 mall/
-├── backend/                       # 后端 Spring Boot 应用（cc.ivera，DDD 8 限界上下文 × 四层）
+├── backend/
 │   ├── src/main/java/cc/ivera/
-│   │   ├── Application.java       # 启动类（@EnableRabbit / @EnableScheduling）
-│   │   ├── shared/                # 共享内核：Money/异常/锁模板/本地消息、security、web、配置
-│   │   ├── product/               # 商品与库存：商品 CRUD、库存四桶、预占、Excel 导入
-│   │   ├── order/                 # 订单与履约：下单、关单、发货、物流模拟、确认收货
-│   │   ├── payment/               # 支付：微信 V2/V3、支付宝、支付单/支付记录、渠道配置
-│   │   ├── refund/                # 退款：退款单/明细、额度策略、渠道退款、状态同步
-│   │   ├── user/                  # 用户/认证/收货地址/行政区划/密码重置
-│   │   ├── cart/                  # 购物车（Redis 仓储）
-│   │   └── bill/                  # 微信账单上传对账（CSV 解析、8 类差异）
-│   │   # 每个上下文内部分 interfaces / application / domain / infrastructure 四层；
-│   │   # PO、Mapper、Converter、RepositoryImpl 位于 infrastructure.persistence
+│   │   ├── shared/          # 共享内核、认证、锁、Outbox、公共 Web 能力
+│   │   ├── product/         # 商品、库存、库存流水、Excel 导入
+│   │   ├── order/           # 订单、结算、发货、物流、关单
+│   │   ├── payment/         # 微信/支付宝、支付单、支付记录、支付配置
+│   │   ├── refund/          # 退款单、退款明细、退款策略、渠道退款同步
+│   │   ├── user/            # 用户、认证、地址、行政区划、密码重置
+│   │   ├── cart/            # Redis 购物车
+│   │   └── bill/            # 微信账单上传与对账
 │   ├── src/main/resources/
-│   │   ├── mapper/                # MyBatis XML（18 个，平铺，namespace 指向各上下文 persistence.mapper）
-│   │   └── application.yml        # 连接参数与业务配置
-│   ├── src/test/                  # 单元/特征测试（16 个测试类、121 个用例，纯 JUnit5 + Mockito）
-│   ├── docs/                      # DM8 与 RabbitMQ 运维手册
+│   │   ├── application.yml
+│   │   └── mapper/
+│   ├── src/test/java/       # 20 个测试类、129 个后端用例
+│   ├── docs/
+│   │   ├── DAMENG_DM8_OPERATIONS.md
+│   │   └── RABBITMQ_OPERATIONS.md
 │   └── env/
-│       ├── docker-compose.dm8.yml # DM8 容器（端口 5236，含健康检查与 dm8-data 卷）
-│       └── sql/dm8/schema.sql     # 一体化全量建表 + 种子数据（唯一 SQL 脚本，可重复执行）
-├── user-ui/                       # 用户商城（React，移动 App 风格，dev 端口 3000）
-├── admin-ui/                      # 管理后台（React，dev 端口 3002）
-├── AGENTS.md                      # 项目规则（问题分类/分支命名/领域不变量/测试要求/DoD）
-├── CODE_INTRO.md                  # 代码导览（架构/上下文/实体/路由/服务/MQ/前端）
+│       ├── docker-compose.dm8.yml
+│       └── sql/dm8/schema.sql
+├── user-ui/
+│   ├── src/
+│   └── tests/refresh-single-flight.test.mjs
+├── admin-ui/
+│   └── src/
+├── AGENTS.md
+├── CODE_INTRO.md
 └── README.md
 ```
 
-## 快速启动
+## 8. 数据库
 
-### 环境要求
+统一建表脚本：
 
-- JDK 1.8+、Maven 3.6+
-- Docker（用于达梦 DM8）；Redis 5.0+、RabbitMQ 3.7+（自备或修改连接指向已有实例）
-- Node.js 18+
+```text
+backend/env/sql/dm8/schema.sql
+```
 
-### 1. 启动达梦 DM8（Docker）
+当前脚本创建 22 张业务表：
+
+```text
+t_payment_channel
+t_payment_app
+t_order_info
+t_payment_info
+t_product
+t_refund_info
+t_user
+t_password_reset_request
+t_order_item
+t_refund_order
+t_refund_item
+t_payment_order
+t_inventory_reservation
+t_inventory_transaction
+t_stock_import
+t_order_shipment
+t_bill_import
+t_bill_record
+t_bill_reconcile_discrepancy
+t_local_message
+t_region
+t_shipping_address
+```
+
+脚本是当前数据库结构的唯一权威版本，重复执行前会处理既有对象，效果接近清库重建。生产环境执行前务必备份数据并评估 DROP 行为。
+
+## 9. 环境要求
+
+建议：
+
+- JDK 8。
+- Maven 3.6+。
+- Node.js 18+。
+- Docker / Docker Compose（DM8 容器）。
+- Redis 5.0+。
+- RabbitMQ 3.7+。
+- MinIO：仅当 `stock.import.storage=minio` 时需要。
+
+## 10. 快速启动
+
+### 10.1 启动 DM8
 
 ```powershell
-cd backend/env
+cd backend\env
 docker compose -f docker-compose.dm8.yml up -d
 ```
 
-容器 healthy 后初始化数据库。用 DM 管理工具连接 `localhost:5236`（默认 `SYSDBA / Cpc2026#@Dm`，schema `SYSDBA`），执行
-`backend/env/sql/dm8/schema.sql`（一体化全量脚本，可重复执行，等同清库重建）：
+容器健康后，用达梦客户端连接数据库并执行：
 
-- 核心业务表（20 张）+ 种子数据（管理员账号、支付渠道/应用、示例商品）
-- 三级行政区划表 `t_region` 与全国数据
-- 收货地址表 `t_shipping_address`
+```text
+backend/env/sql/dm8/schema.sql
+```
 
-> 脚本头部带遗留表 DROP 守卫（旧对账三表、`t_stock_operation_log`、旧退款申请表等），重复执行会先清后建。
-> 数据卷 `dm8-data` 保存数据库数据，**不要执行 `docker compose down -v`**，否则数据丢失需重新建表。
+开发脚本中包含初始化管理员种子账号，生产部署前必须替换默认凭据。
 
-### 2. 配置并启动后端
+### 10.2 配置后端
 
-`backend/src/main/resources/application.yml` 中的默认连接指向部署环境 `192.168.1.200`（DM8 / Redis / RabbitMQ /
-MinIO），本地运行请按实际情况修改：
+主要配置文件：
 
-- **DM8** 支持环境变量覆盖：`DM_HOST`、`DM_PORT`、`DM_SCHEMA`、`DM_USERNAME`、`DM_PASSWORD`
-- **Redis / RabbitMQ**：直接修改 `spring.redis.*`、`spring.rabbitmq.*`
-- **JWT 密钥**：生产必须用环境变量 `AUTH_JWT_SECRET` 覆盖默认值
-- **Excel 存储**：`stock.import.storage` 设为 `local`（配合 `stock.import.dir`）或 `minio`（`STOCK_IMPORT_MINIO_*` 环境变量覆盖）
-- **支付商户参数**（微信私钥、支付宝密钥等）不在配置文件中，初始化后可在管理后台「支付配置」中维护（存于 `t_payment_channel`）
+```text
+backend/src/main/resources/application.yml
+```
+
+重点配置：
+
+| 配置 | 说明 |
+|---|---|
+| `spring.datasource.*` | DM8 连接；支持 `DM_HOST/DM_PORT/DM_SCHEMA/DM_USERNAME/DM_PASSWORD` |
+| `spring.redis.*` | Redis |
+| `spring.rabbitmq.*` | RabbitMQ、publisher confirm/returns、listener retry/AUTO ACK |
+| `payment.auth.*` | Access/Refresh TTL、JWT Secret |
+| `payment.order.expire-minutes` | 未支付订单超时与延迟关单 TTL |
+| `payment.refund.status-sync-delay-ms` | 退款状态同步延迟与兜底周期 |
+| `stock.import.storage` | `local` / `minio` |
+| `stock.import.dir` | 本地 Excel 存储目录 |
+| `stock.import.minio.*` | MinIO endpoint/凭据/bucket |
+
+生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。
+
+### 10.3 启动后端
 
 ```powershell
 cd backend
 mvn spring-boot:run
 ```
 
-后端须在 DM8 容器健康检查通过后再启动。
+访问：
 
-### 3. 启动前端
+```text
+API:     http://localhost:8080
+Swagger: http://localhost:8080/swagger-ui.html
+```
+
+### 10.4 启动用户商城
 
 ```powershell
-# 用户商城 → http://localhost:3000
 cd user-ui
 npm install
 npm run dev
+```
 
-# 管理后台 → http://localhost:3002
+访问：
+
+```text
+http://localhost:3000
+```
+
+主要路由：
+
+```text
+/
+/login
+/cart
+/orders
+/refund-applications
+/account
+/addresses
+/success
+```
+
+### 10.5 启动管理后台
+
+```powershell
 cd admin-ui
 npm install
 npm run dev
 ```
 
-前端通过 CORS 直连后端 `http://localhost:8080`（见各工程 `src/utils/request.js` 的 baseURL）。
+访问：
 
-### 4. 访问地址
-
-| 服务         | 地址                                    |
-|------------|---------------------------------------|
-| 后端 API     | http://localhost:8080                 |
-| Swagger 文档 | http://localhost:8080/swagger-ui.html |
-| 用户商城       | http://localhost:3000                 |
-| 管理后台       | http://localhost:3002                 |
-
-### 开发账号
-
-- 管理员：`admin / Admin@123456`（仅可登录管理后台与用户管理接口，禁止购物车/下单）
-- 普通用户：注册入口在商城登录页
-- **生产部署必须替换默认凭据、数据库口令与 `AUTH_JWT_SECRET`**
-
-## 对账功能
-
-管理员从微信支付商户平台下载交易账单 CSV → 在「对账管理」页面上传 → 系统同步解析入库并与本地支付/退款记录核对 →
-差异单人工标记处理。全链路幂等，不走 MQ。
-
-| 账单种类    | 内容        | 对账范围    | 互斥规则                   |
-|---------|-----------|---------|------------------------|
-| ALL     | 支付+退款+撤销行 | 支付+退款双向 | 与 SUCCESS/REFUND 互斥    |
-| SUCCESS | 仅支付成功行    | 仅支付方向   | 与 ALL 互斥，可与 REFUND 并存  |
-| REFUND  | 仅退款行      | 仅退款方向   | 与 ALL 互斥，可与 SUCCESS 并存 |
-
-**8 类差异**：PAY/REFUND × CHANNEL_ONLY（账单有本地无）/ LOCAL_ONLY（本地有账单无）/ AMOUNT_MISMATCH / STATUS_MISMATCH
-**5 层幂等**：文件 SHA-256 → 账单日+种类互斥 → Redisson 分布式锁 → 数据库唯一约束 → RECONCILED 幂等
-
-完整数据模型与流程设计见 [CODE_INTRO.md](CODE_INTRO.md)「对账架构」章节。
-
-## 测试
-
-```powershell
-# 后端单元/特征测试（16 个测试类、121 个用例；纯 JUnit5 + Mockito，不连真实 DM8/Redis/RabbitMQ/支付渠道）
-cd backend
-mvn test
-
-# 前端逻辑单测（Node 内置 test runner，仅 user-ui：Token 单飞刷新）
-cd user-ui
-npm run test:logic
-
-# 前端构建
-cd user-ui   ; npm run build
-cd admin-ui  ; npm run build
+```text
+http://localhost:3002
 ```
 
-## 运维文档
+主要路由：
 
-- [backend/docs/DAMENG_DM8_OPERATIONS.md](backend/docs/DAMENG_DM8_OPERATIONS.md) — DM8 启动/初始化/清库重建
-- [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md) — 队列拓扑、可靠性与冒烟测试清单
+```text
+/admin/orders
+/admin/shipping
+/admin/products
+/admin/refunds
+/admin/users
+/admin/reset-requests
+/admin/reset-password
+/admin/stock-maintenance
+/admin/stock-edit/:id
+/admin/download
+/admin/payment-config
+/admin/reconciliation
+```
+
+## 11. 测试与构建
+
+### 后端
+
+当前基线：**20 个测试类、129 个用例**。
+
+```powershell
+cd backend
+mvn test
+```
+
+测试覆盖：
+
+- 领域聚合状态机与守卫。
+- `Money` 值对象。
+- `RefundPolicy` 退款额度。
+- PO ↔ Domain Converter。
+- 微信账单 CSV Parser。
+- 支付成功、退款、购物车应用服务。
+- 登录失败保护。
+- Order Close / Refund Sync Consumer 失败传播契约。
+- Release Queue Failure DLX / Failure Queue / Parking Lot Queue 拓扑。
+
+### 用户前端
+
+```powershell
+cd user-ui
+npm run test:logic
+npm run build
+```
+
+`test:logic` 当前验证并发 401 下 Refresh Token single-flight。
+
+### 管理后台
+
+```powershell
+cd admin-ui
+npm run build
+```
+
+当前 `admin-ui` 暂无独立自动化逻辑测试。
+
+## 12. 重要接口分组
+
+后端当前有 24 个 Controller，主要前缀如下：
+
+| 前缀 | 功能 |
+|---|---|
+| `/api/auth` | 登录、注册、刷新、退出、密码 |
+| `/api/product` | 商城商品 |
+| `/api/cart` | 购物车 |
+| `/api/checkout` | 结算、下单、支付入口 |
+| `/api/order` / `/api/order-info` | 订单、履约、查询 |
+| `/api/refund-applies` / `/api/refund-info` | 退款申请/退款查询 |
+| `/api/wx-pay` | 微信支付 V3 |
+| `/api/wx-pay-v2` | 微信支付 V2 |
+| `/api/ali-pay` | 支付宝 |
+| `/api/payment-app` | 支付应用 |
+| `/api/payment-channel` | 支付渠道配置 |
+| `/api/payment-config` | 支付配置缓存 |
+| `/api/regions` | 行政区划 |
+| `/api/user/address` | 用户地址 |
+| `/api/admin/order` | 管理端订单/发货 |
+| `/api/admin/products` | 管理端商品库存 |
+| `/api/admin/stock` | 库存流水/Excel 导入 |
+| `/api/admin/refund` | 管理端退款 |
+| `/api/admin/users` | 用户管理 |
+| `/api/admin/password-reset-requests` | 密码重置申请 |
+| `/api/reconciliation` | 对账 |
+
+详细路由和代码位置见 [CODE_INTRO.md](CODE_INTRO.md)。
+
+## 13. 文档索引
+
+- [AGENTS.md](AGENTS.md)：编码规范、领域不变量、测试与 DoD。
+- [CODE_INTRO.md](CODE_INTRO.md)：系统架构、领域模型、数据表、交易链路、MQ、接口与前端导览。
+- [backend/docs/DAMENG_DM8_OPERATIONS.md](backend/docs/DAMENG_DM8_OPERATIONS.md)：DM8 部署和初始化。
+- [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md)：RabbitMQ 拓扑、Failure Queue、Parking Lot、迁移和回滚。
+
+## 14. 当前设计原则
+
+这个项目将资金、库存、订单状态和消息可靠性分开治理：
+
+```text
+资金正确性：渠道查询 + 支付/退款状态机 + 冲正
+库存正确性：四桶模型 + 条件 UPDATE + biz_no
+并发正确性：Redisson 锁 + CAS + 唯一约束
+消息可靠性：Outbox + publisher confirm + AUTO ACK + Retry + Failure DLQ
+最终一致性：DB Scheduler 独立兜底
+```
+
+修改核心交易代码前，请先阅读 [AGENTS.md](AGENTS.md) 和 [CODE_INTRO.md](CODE_INTRO.md)。

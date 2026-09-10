@@ -1,720 +1,905 @@
 # CODE_INTRO — 电商商城平台代码导览
 
-> 本文是后端与两端前端的架构/代码导览。快速启动与环境要求见 [README.md](README.md)。
+> 面向开发者的架构说明。启动方式、环境要求和常用命令见 [README.md](README.md)；修改规则见 [AGENTS.md](AGENTS.md)。
 
-## 1. 项目概述
+## 1. 系统定位
 
-电商商城平台是基于 Spring Boot 的电商商城系统，集成**微信支付 V2/V3** 与**支付宝**
-通道，覆盖购物车、下单、支付、发货物流、确认收货、分项退款、账单对账完整闭环，并实现三层并发控制、库存预占、登录防护与批量库存维护等企业级能力。
+本项目是一个强调交易正确性的电商商城系统，完整覆盖：
 
-- **技术栈**：Spring Boot 2.3.7 + Java 1.8 + MyBatis-Plus 3.3.1
-- **数据库**：达梦 DM8（DmJdbcDriver18 8.1.2.192）
-- **中间件**：Redis（缓存 + Redisson 3.16.8 分布式锁）、RabbitMQ（延迟消息 + 本地消息表）
-- **对象存储**：本地磁盘 或 MinIO（库存 Excel 导入文件，可配置切换）
-- **前端**：2 个独立 React 工程（user-ui 用户商城 / admin-ui 管理后台）
-- **API 文档**：Swagger 2.7.0（`/swagger-ui.html`）
-
-## 2. 项目结构
-
+```text
+商品
+→ 购物车
+→ 结算下单
+→ 库存预占
+→ 微信/支付宝支付
+→ 发货与物流
+→ 确认收货
+→ 退款/退货
+→ 账单对账
 ```
+
+后端：
+
+```text
+Spring Boot 2.3.7.RELEASE
+Java 8
+MyBatis-Plus 3.3.1
+达梦 DM8
+Redis + Redisson
+RabbitMQ
+MinIO（可选）
+```
+
+前端：
+
+```text
+user-ui   React 18 + Vite 5 + Ant Design 5
+admin-ui  React 18 + Vite 5 + Ant Design 5 + SheetJS + Luckysheet
+```
+
+核心设计目标不是“所有操作强行放进一个大事务”，而是按一致性边界拆分：
+
+- 数据库内关键状态：本地事务 + CAS。
+- 并发串行化：Redisson 分布式锁。
+- 库存：四桶模型 + 条件 UPDATE + 流水 + `biz_no`。
+- 跨事务消息：Transactional Outbox + publisher confirm。
+- MQ 消费：AUTO ACK + Spring Retry + Failure DLQ。
+- MQ 故障后的业务收敛：DB Scheduler。
+- 支付异常：渠道查询 + 重复/晚到支付冲正。
+
+## 2. 仓库结构
+
+```text
 mall/
-├── backend/                          # 后端 Spring Boot 应用（cc.ivera:backend）
+├── backend/
 │   ├── src/main/java/cc/ivera/
-│   │   ├── Application.java          # 启动类（@MapperScan basePackages = cc.ivera）
-│   │   ├── shared/                   # 共享内核（见下方上下文边界表）
-│   │   ├── product/                  # 限界上下文：商品与库存
-│   │   ├── order/                    # 限界上下文：订单与履约
-│   │   ├── payment/                  # 限界上下文：支付（微信 V2/V3 + 支付宝）
-│   │   ├── refund/                   # 限界上下文：退款
-│   │   ├── user/                     # 限界上下文：用户/收货地址/行政区划
-│   │   ├── cart/                     # 限界上下文：购物车（Redis 持久化）
-│   │   └── bill/                     # 限界上下文：微信账单上传对账
+│   │   ├── shared/
+│   │   ├── product/
+│   │   ├── order/
+│   │   ├── payment/
+│   │   ├── refund/
+│   │   ├── user/
+│   │   ├── cart/
+│   │   └── bill/
 │   ├── src/main/resources/
-│   │   ├── mapper/                   # MyBatis XML（18 个，平铺；namespace 指向各上下文 infrastructure.persistence.mapper）
-│   │   └── application.yml           # 应用配置
-│   ├── docs/                         # DM8 / RabbitMQ 运维手册
+│   │   ├── application.yml
+│   │   └── mapper/
+│   ├── src/test/java/
+│   ├── docs/
 │   └── env/
-│       ├── docker-compose.dm8.yml    # DM8 容器编排（5236 端口 + 健康检查 + dm8-data 卷）
-│       └── sql/dm8/schema.sql        # 一体化全量建表 + 种子数据（唯一 SQL 脚本，可重复执行，含遗留表 DROP 守卫）
-├── user-ui/                          # 用户商城：React 18 + Vite + antd 5（dev :3000，移动 App 风格）
-├── admin-ui/                         # 管理后台：React 18 + Vite + antd 5 + Luckysheet（dev :3002）
-├── AGENTS.md                         # 项目规则（问题分类/分支命名/领域不变量/测试要求/DoD）
+│       ├── docker-compose.dm8.yml
+│       └── sql/dm8/schema.sql
+├── user-ui/
+├── admin-ui/
+├── AGENTS.md
+├── CODE_INTRO.md
 └── README.md
 ```
 
-### 2.1 DDD 限界上下文与四层结构
+## 3. DDD 包结构
 
-后端按 DDD 限界上下文划分包，每个上下文内部统一四层；对外 REST API 与业务行为保持不变。
+后端按 8 个限界上下文拆分，每个上下文统一使用：
 
-```
+```text
 cc.ivera.<context>/
-├── interfaces/       # 适配层：REST Controller、请求 DTO、响应 VO、MQ 消费者、定时任务
-├── application/      # 应用层：应用服务接口 + impl（用例编排、事务边界、跨上下文协作）、解析器等无状态组件
-├── domain/           # 领域层：纯 POJO 领域模型（lombok @Data）、领域枚举、领域策略（如 RefundPolicy）、
-│                     #         仓储端口接口（domain.repository）、跨上下文能力端口（domain.gateway）
-│                     #         —— 不依赖 Spring / MyBatis-Plus / infrastructure
-└── infrastructure/   # 基础设施层：持久化统一在 infrastructure.persistence 子包——
-                      #               po（@TableName + 继承 BaseEntity，MP 注解保留）、mapper（@Mapper 接口）、
-                      #               converter（手写全字段 PO ↔ 领域模型转换，null 安全）、repository（RepositoryImpl）；
-                      #               另有 gateway 端口实现、MQ 拓扑配置、外部服务适配（Redisson/HTTP/存储/物流模拟）。
-                      #               购物车仓储为例外：CartRepositoryImpl 位于 infrastructure.redis（Redis 持久化，无 PO）
+├── interfaces/
+│   ├── Controller
+│   ├── DTO / VO
+│   ├── mq/Consumer
+│   └── job/Scheduler
+├── application/
+│   ├── 应用服务接口
+│   └── impl/
+├── domain/
+│   ├── model
+│   ├── enums
+│   ├── policy
+│   ├── repository
+│   └── gateway
+└── infrastructure/
+    ├── persistence/
+    │   ├── po
+    │   ├── mapper
+    │   ├── converter
+    │   └── repository
+    ├── mq / config
+    ├── redis
+    ├── gateway
+    └── 外部渠道/存储适配
 ```
 
-**上下文边界**
+### 3.1 上下文职责
 
-| 上下文 | 领域模型（聚合根/实体） | 关键端口与被依赖点 |
-|---|---|---|
-| `product` | Product、StockImport、InventoryReservation、InventoryTransaction | 实现 `order.domain.gateway.OrderStockQueryGateway`（订单查库存）；StockFileStorage 存储端口 |
-| `order` | OrderInfo、OrderItem、OrderShipment | 定义 LogisticsGateway、OrderStockQueryGateway 端口；关单 Outbox 消息 |
-| `payment` | PaymentOrder、PaymentInfo、PaymentChannel、PaymentApp | PaymentConfigGateway 端口；微信/支付宝渠道实现；PaymentInfoRepository 提供对账只读方法 |
-| `refund` | RefundOrder、RefundItem、RefundInfo | RefundPolicy 额度核算；RefundInfoRepository 提供对账只读方法；退款状态同步 Outbox |
-| `user` | UserAccount、ShippingAddress、Region、PasswordResetRequest | 认证与地址数据 |
-| `cart` | CartItem | Redis 仓储实现（infrastructure.redis） |
-| `bill` | BillImport、BillRecord、BillReconcileDiscrepancy | 账单 CSV 解析（application.parser，无 Spring 依赖可独立单测） |
-| `shared` | Money、BizException/ErrorCode、分布式锁模板、本地消息模型 | BaseEntity、MP/Redisson/Swagger/WebMvc 配置、Redisson 锁实现、Outbox 落库与重投、security（认证拦截/Token/登录防护）、web（R/全局异常处理） |
+| 上下文 | 主要职责 |
+|---|---|
+| `shared` | 公共响应/异常、认证基础设施、分布式锁、Outbox、RabbitMQ 公共可靠性配置 |
+| `product` | 商品、库存四桶、库存预占、库存流水、Excel 库存导入、文件存储 |
+| `order` | 结算、订单、订单明细、关单、发货、物流、确认收货 |
+| `payment` | 支付单、支付记录、微信 V2/V3、支付宝、支付渠道/应用配置 |
+| `refund` | 退款申请、退款单/明细、RefundPolicy、防超退、渠道退款与退款状态同步 |
+| `user` | 用户、认证、登录保护、密码重置、收货地址、行政区划 |
+| `cart` | Redis 购物车 |
+| `bill` | 微信账单 CSV 解析、导入、支付/退款对账、差异处理 |
 
-**协作规则**
+### 3.2 依赖方向
 
-- **跨上下文只依赖对方 domain 层**（领域模型、`domain.repository` 仓储端口、`domain.gateway` 能力端口）或 application 服务接口；**禁止跨上下文引用 infrastructure**（PO / Mapper / RepositoryImpl）。
-- 跨上下文读数据走对方仓储端口：如 bill 对账经 `PaymentInfoRepository` / `RefundInfoRepository` 的只读方法加载本地支付/退款记录；跨上下文能力调用走 gateway 端口（如 order 定义端口、product/payment 侧实现）。
-- **PO 与领域模型分离**：PO 仅存于 infrastructure（`XxxPO` 后缀，@TableName + BaseEntity）；领域模型类名保持业务原名、为纯 POJO；双向转换经手写全字段 Converter。
-- **SQL CAS 闸门留在 Mapper/XML**：如 `ProductMapper.reserveStock` 条件 UPDATE（`WHERE available_stock >= qty`）等防超卖/状态推进 SQL 不下沉到 Repository 包装层。
-- 特征测试位于 `backend/src/test`，按上下文同样的包结构组织（Converter 往返、领域模型状态机、纯解析器、Mockito 应用服务），不连真实 DB/Redis/MQ/支付渠道。
+约束：
 
-## 3. 核心架构
+```text
+interfaces → application → domain
+                    ↑
+infrastructure ─────┘
+```
 
-### 3.1 三层并发控制
+跨上下文协作只允许：
 
-| 层级  | 机制                             | 说明               |
-|-----|--------------------------------|------------------|
-| 第一层 | 通知幂等检查（Redis + notifyId）       | 防止重复处理支付/退款通知    |
-| 第二层 | Redisson 分布式锁（看门狗自动续期）         | 防止并发操作同一订单/账单日   |
-| 第三层 | CAS 条件更新（version/条件 UPDATE） | 最终一致性保障，冲突返回友好提示 |
+- 引用对方 application 服务接口；或
+- 引用对方 domain model / repository / gateway 端口。
 
-> 代码中**不使用 `select ... for update`**：autocommit 下行锁立即释放空转、远程渠道调用期间空持锁，且 DM8 读已提交隔离级下
-> 无匹配行时不产生间隙锁、锁不住并发插入；并发权威由 Redis 锁 + CAS 兜底（见 `MyBatisPlusConfig` 类注释）。
+禁止：
 
-### 3.2 认证与授权（shared.security）
+```text
+order → product.infrastructure.mapper
+bill  → payment.infrastructure.po
+refund → order.infrastructure.repository.impl
+```
 
-- **双 Token**：Access 30 分钟 + Refresh 7 天；401 时前端 single-flight 单飞刷新，避免并发重复刷新
-- **AuthInterceptor**：由 `WebMvcAuthConfig` 注册，统一拦截 `/api/**` 校验 Token 并注入 `AuthContext`
-  （ThreadLocal，请求完成后清理）；OPTIONS 预检直接放行
-- **公开路径**：`/api/auth/login|register|refresh|password-reset-request`、含 `/notify` 的回调、GET `/api/product`、GET
-  `/api/payment-app/list|channels|list-by-channel/*`、`/api/regions`
-- **角色规则**：
-    - `ROLE_ADMIN` 必需：`/api/auth/admin/**`、`/api/admin/**`、含 `/admin/` 的路径、退款 accept/reject、
-      `/api/payment-app|payment-channel|payment-config|reconciliation|refund-info`
-    - `ROLE_ADMIN` 禁入：`/api/cart`、`/api/checkout`（返回 403「管理员账号不支持购物车与下单操作」）
-- **登录锁定 LoginGuardService**：连续 3 次密码错误，按用户名维度计数并锁定 10 分钟（Redis key：`auth:login_fail:` /
-  `auth:login_lock:`）；滑动窗口计数，锁定期间不触达数据库；Redis 异常时 fail-open 不阻断登录。仅锁定输错密码的用户名，
-  不按来源 IP 锁定，避免同一网络（NAT/办公网）下某个用户输错密码误伤其他用户
-- **密码重置**：`t_password_reset_request` 记录用户找回申请；管理员受理生成随机密码（仅展示一次）或直接按 userId 重置，重置后旧
-  Token 全局失效并清除锁定
+PO 属于数据库适配层，不是跨领域数据契约。
 
-### 3.3 交易模型 V2
+## 4. 核心数据模型
 
-订单状态拆分为四条正交状态线（前端 `statusLabels.js` 统一文案）：
+统一脚本 `backend/env/sql/dm8/schema.sql` 当前创建 22 张表。
 
-| 状态线  | 枚举                     | 取值                                                  |
-|------|------------------------|-----------------------------------------------------|
-| 支付状态 | `PayStatus`            | UNPAID / PAID                                       |
-| 生命周期 | `OrderLifecycleStatus` | WAIT_PAY / ACTIVE / CLOSED                          |
-| 履约状态 | `FulfillmentStatus`    | WAIT_SHIP / SHIPPED / RECEIVED / CANCELLED          |
-| 退款状态 | `OrderRefundStatus`    | NONE / REFUNDING / PARTIAL_REFUNDED / FULL_REFUNDED |
+| 表 | 说明 |
+|---|---|
+| `t_product` | 商品、价格、四桶库存 |
+| `t_order_info` | 主订单、legacy 状态与多维状态 |
+| `t_order_item` | 订单明细和商品快照 |
+| `t_payment_order` | 本地支付尝试单 |
+| `t_payment_info` | 渠道成交支付记录 |
+| `t_payment_channel` | 微信/支付宝渠道配置 |
+| `t_payment_app` | 渠道下应用配置 |
+| `t_inventory_reservation` | 订单库存预占记录 |
+| `t_inventory_transaction` | 库存四桶变化流水 |
+| `t_order_shipment` | 发货与物流记录 |
+| `t_refund_order` | 退款业务单 |
+| `t_refund_item` | 退款明细 |
+| `t_refund_info` | 渠道退款记录 |
+| `t_stock_import` | Excel 库存导入记录 |
+| `t_bill_import` | 对账导入批次 |
+| `t_bill_record` | 渠道账单流水 |
+| `t_bill_reconcile_discrepancy` | 对账差异 |
+| `t_local_message` | Transactional Outbox |
+| `t_user` | 用户 |
+| `t_password_reset_request` | 密码重置申请 |
+| `t_region` | 三级行政区划 |
+| `t_shipping_address` | 用户收货地址 |
 
-- **t_order_info**：主订单（含 version 乐观锁、pay_status、四条状态线、收货地址快照）
-- **t_order_item**：订单明细，**快照价**（下单时价格/标题固化，不受后续改价影响）
-- **t_payment_info**：渠道支付记录（payer_total 分），双唯一约束防重（order_no+pay_type、transaction_id+pay_type）
-- **主动查单**：用户端与管理端可主动向渠道查询支付状态并同步本地（`/api/admin/order/{orderNo}/channel-query` 等）
+## 5. 订单与支付模型
 
-**本地订单与三方渠道单的单据关系**
+### 5.1 单据关系
 
 ```mermaid
 flowchart LR
-    subgraph CH["三方渠道侧（微信 / 支付宝）"]
-        direction TB
-        C1["微信 prepay_id / transaction_id<br/>支付宝 trade_no<br/>（渠道侧交易单）"]
-    end
+    O[t_order_info<br/>业务订单]
+    I[t_order_item<br/>订单明细]
+    R[t_inventory_reservation<br/>库存预占]
+    P[t_payment_order<br/>支付尝试]
+    PI[t_payment_info<br/>渠道成交记录]
 
-    subgraph LOC["本地侧"]
-        direction TB
-        P["t_payment_order 支付单<br/>（本地订单 1:N 渠道支付尝试）<br/>状态: CREATED→PAYING→SUCCESS/CLOSED<br/>channel_order_no 记录渠道交易号"]
-        O["t_order_info 本地订单<br/>（仅允许一笔有效成交）<br/>legacy: NOTPAY→SUCCESS/CLOSED/CANCEL"]
-        R["t_inventory_reservation 库存预占<br/>LOCKED→COMMITTED/RELEASED"]
-        O ---|"1:N 每渠道至多一个活跃单<br/>同渠道复用 跨渠道各建"| P
-        O ---|"1:1 同事务创建"| R
-        P ---|"1:1 渠道交易号锚定<br/>(markSuccess 回写)"| C1
-    end
+    O -->|1:N| I
+    O -->|1:N| P
+    O -->|1:N| PI
+    O -->|1:N 明细预占| R
 ```
 
-支付单（`t_payment_order`）核心规则：
+一个业务订单允许多个支付尝试，但只有一笔真正成交。
 
-| 规则             | 实现                                                                                            |
-|----------------|-----------------------------------------------------------------------------------------------|
-| 一个业务订单允许多次支付尝试 | 本地订单 1:N 支付单                                                                                  |
-| 每渠道至多一个活跃单     | `startPayment` 同渠道查活跃单复用；跨渠道新建（旧渠道单不提前关，扫旧码仍能正确落行）                                            |
-| 只允许一笔有效成交      | `markSuccess` CAS（CREATED/PAYING→SUCCESS）；成交后 `closeActiveByOrderNoExceptPaymentNo` 收口其它渠道活跃单 |
-| 支付单过期窗口        | `expire_time = min(订单过期, now+2h)`；距订单过期不足 60s 拒绝发起                                            |
+### 5.2 支付尝试规则
 
-**支付处理与库存联动架构**
+`t_payment_order` 用于描述“尝试支付”，和最终 `t_payment_info` 区分：
 
-```mermaid
-flowchart TB
-    subgraph INIT["① 支付发起（库存预占在先）"]
-        direction TB
-        A1["用户下单<br/>同一事务：订单 + 明细 + 预占 LOCKED<br/>(available→locked, CAS 防超卖)"]
-        A1 --> A2["选渠道发起支付 startPayment<br/>同渠道复用活跃单 / 跨渠道新建"]
-        A2 --> A3["渠道预下单（微信 prepay / 支付宝预创建）"]
-        A3 --> A4["markPaying: 支付单 PAYING + codeUrl<br/>前端展示二维码（3s 轮询）"]
-    end
-
-    subgraph SRC["② 三方状态到达入口（可重复/并发）"]
-        direction LR
-        E1["渠道回调 notify<br/>锁: payment:wx:notify:pay:{orderNo}<br/>+ 事务 + 验签验金额（普通读，权威由 Redis 锁 + CAS 兜底）<br/>(V2 另有 Redis notifyId 24h 去重)"]
-        E2["主动查单（用户轮询/管理端渠道查单）<br/>锁: payment:wx:check:order:{orderNo}"]
-        E3["延迟关单（MQ 到期 / 兜底扫描60s<br/>→ 先查渠道真实状态）"]
-    end
-
-    INIT --> SRC
-
-    subgraph CORE["③ 统一支付成功处理器 PaymentSuccessService"]
-        direction TB
-        H1["订单普通读（findByOrderNo）<br/>权威靠 Redis 锁 + CAS"]
-        H1 --> H2["渠道感知定位支付单<br/>同渠道活跃单 > 已成交单兼容补建"]
-        H2 --> H3["支付单 CAS CREATED/PAYING→SUCCESS<br/>(并发败者幂等返回)"]
-        H3 --> H4{订单状态分派}
-    end
-
-    E1 --> CORE
-    E2 --> CORE
-    E3 --> CLOSE
-
-    subgraph ACT["④ 成交路径（首次）→ 库存提交"]
-        H4 -->|NOTPAY| S1["订单 CAS NOTPAY→SUCCESS"]
-        S1 --> S2["收口其它渠道活跃支付单<br/>closeActiveByOrderNoExceptPaymentNo"]
-        S2 --> S3["写渠道支付流水 t_payment_info<br/>(uk 防重, DuplicateKey 幂等)"]
-        S3 --> S4["事务提交后 afterCommit:<br/>commitReservation<br/>预占 LOCKED→COMMITTED<br/>💰 库存数量不变 保持锁定"]
-        S4 --> S5["后续确认收货:<br/>locked→sold 结转已售"]
-    end
-
-    subgraph CLOSE["⑤ 关单路径（超时未付）→ 库存释放"]
-        direction TB
-        K1{"渠道查单结果?"}
-        K1 -->|"SUCCESS(晚到支付)"| CORE
-        K1 -->|"NOTPAY"| K2["渠道关单 + 本地 CAS<br/>NOTPAY→CLOSED"]
-        K1 -->|"渠道无此交易"| K3["本地 CAS NOTPAY→CLOSED<br/>(从未发起支付)"]
-        K1 -->|CLOSED| K3
-        K2 --> K4["closeActiveByOrderNo 关全部活跃支付单<br/>+ markConsumed 关单发件箱"]
-        K3 --> K4
-        K4 --> K5["事务提交后 afterCommit:<br/>releaseReservation<br/>预占 LOCKED→RELEASED<br/>💰 locked→available 归还可用"]
-    end
-
-    subgraph EX["⑥ 异常冲正（不动库存）"]
-        direction LR
-        X1["订单已 SUCCESS 又来一笔支付<br/>duplicatePayment 冲正"]
-        X2["订单已 CLOSED/CANCEL 才付成功<br/>latePayment 冲正"]
-        X1 -.->|"免审退款单 原路退回<br/>不回补库存"| X3["渠道退款"]
-        X2 -.-> X3
-    end
-
-    H4 -->|"SUCCESS"| X1
-    H4 -->|"CLOSED/CANCEL"| X2
+```text
+CREATED → PAYING → SUCCESS
+                  ↘ CLOSED
 ```
 
-**库存动作与支付事件对应速查**
+规则：
 
-| 支付事件      | 本地动作               | 库存动作                    | 数量变化                              |
-|-----------|--------------------|-------------------------|-----------------------------------|
-| 下单（支付发起前） | 订单+预占同事务           | 预占 LOCKED               | `available -= qty, locked += qty` |
-| 首次支付成功    | 订单→SUCCESS、成交支付单落定 | 预占 **LOCKED→COMMITTED** | **无变化**（保持锁定）                     |
-| 超时关单/取消   | 订单→CLOSED、活跃支付单全关  | 预占 **LOCKED→RELEASED**  | `locked -= qty, available += qty` |
-| 确认收货      | 履约→RECEIVED        | **COMMITTED→结转已售**      | `locked -= qty, sold += qty`      |
-| 重复支付/晚到支付 | 冲正退款单（免审）          | **无库存动作**               | 不回补（货权未转移或已由首笔锁定）                 |
+- 同订单可有多次支付尝试。
+- 同渠道优先复用活跃支付单。
+- 跨渠道可各自存在支付尝试。
+- 支付成功 CAS 只允许首个有效成交获胜。
+- 首笔成功后关闭其它活跃支付尝试。
+- 已成交订单再次收到另一笔真实支付：自动冲正。
+- 已关闭/取消订单收到晚到支付：自动冲正。
 
-**要点**
+### 5.3 支付成功统一入口
 
-- **库存动作全部挂在本地订单状态 CAS 之后**：`commitReservation`/`releaseReservation` 经 `afterCommit`
-  在订单事务提交后执行，订单状态推进与库存变更同生共死，不留中间态
-- **关单前必查渠道真实状态**：MQ
-  延迟关单消费者不直接关本地单，而是先调渠道查单——渠道已付则走支付成功（避免「本地关了渠道付了」的资损），渠道无单/未付才执行渠道关单+本地关单（TTL =
-  `payment.order.expire-minutes` × 60000，默认 3 分钟）+ 定时兜底扫描（60s）；强制关单幂等（已关闭直接返回成功）
-- **渠道感知定位**：通知/查单携带渠道标识，按「订单号+渠道」定位支付单，跨渠道多次扫码不会把冲正锚到错误渠道
-- **冲正不动库存是刻意设计**：重复支付的库存已由首笔成交锁定；晚到支付的库存已随关单归还——冲正只处理资金侧原路退回
+关键组件：
 
-### 3.4 库存预占模型（InventoryService）
-
-库存操作**全部本地事务同步执行，不走 MQ**（见 `InventoryService` 接口注释）；幂等为五层防线（通知幂等 → 上游状态闸门 → 预占状态机
-CAS → 数量条件 UPDATE → 唯一键兜底，见下方「幂等防线架构」）。
-
-**四桶计数（t_product）+ 预占状态机（t_inventory_reservation）**
-
-```
-available_stock 可用 │ locked_stock 锁定 │ sold_stock 已售 │ lost_stock 丢失/货损
-（恒等式：available + locked + sold + lost = 入库总量）
-
-LOCKED ──支付成功CAS──→ COMMITTED（库存数量不变，保持锁定，待收货结转）
-LOCKED ──关单/取消CAS──→ RELEASED（locked 归还 available）
+```text
+payment.application.PaymentSuccessService
 ```
 
-**下单链路库存流程**
+多种触发源最终汇入统一支付成功逻辑：
 
 ```mermaid
 flowchart TD
-    A[用户下单 / 快速购买] --> B["同一本地事务：创建订单+明细(快照价)"]
-    B --> C["reserveForOrder 按 productId 排序逐项<br/>(排序防并发死锁)"]
-    C --> D{"插入预占记录 LOCKED<br/>(uk: order_item_id 幂等)"}
-    D -->|DuplicateKey| D1[已预占 幂等跳过该明细] --> E
-    D --> E{"reserveStock CAS<br/>available-=qty, locked+=qty<br/>WHERE available>=qty"}
-    E -->|"affectedRows=0 库存不足"| F["抛 BizException<br/>整个下单事务回滚<br/>(订单/明细/预占/流水全撤销)"]
-    E -->|成功| G["写 ORDER_RESERVE 流水"]
-    G --> H["发件箱落库延迟关单消息<br/>→ 投递 MQ (TTL=expire-minutes×60000)"]
-    H --> I{支付结果?}
-    I -->|"渠道回调 / 主动查单"| J["订单 CAS: NOTPAY→SUCCESS<br/>支付单 CAS→SUCCESS"]
-    J --> K["事务提交后 commitReservation:<br/>预占 CAS LOCKED→COMMITTED<br/>(库存数量不变 保持锁定)"]
-    K --> L["写 ORDER_COMMIT 流水(delta 全 0)"]
-    I -->|"超时未支付<br/>MQ 延迟到期 / 兜底扫描60s"| M["订单 CAS: NOTPAY→CLOSED<br/>+ 关闭活跃支付单"]
-    M --> N["事务提交后 releaseReservation:<br/>预占 CAS LOCKED→RELEASED<br/>locked-=qty, available+=qty"]
-    N --> O["写 ORDER_RELEASE 流水"]
-    L --> P["发货 → 物流送达 → 确认收货"]
-    P --> Q["convertToSoldOnReceipt:<br/>结转数量 = quantity - restockedQty<br/>(已回补部分不重复结转)"]
-    Q --> R["commitSoldStock CAS:<br/>locked-=qty, sold+=qty<br/>写 ORDER_SOLD 流水(bizNo 幂等)"]
+    A[微信/支付宝回调]
+    B[用户主动查单]
+    C[管理端渠道查单]
+    D[超时关单前渠道反查]
+
+    A --> E[PaymentSuccessService]
+    B --> E
+    C --> E
+    D --> E
+
+    E --> F[定位渠道支付尝试]
+    F --> G[支付单 CAS → SUCCESS]
+    G --> H{订单状态}
+    H -->|NOTPAY| I[订单 CAS → SUCCESS]
+    H -->|SUCCESS| J[重复支付冲正]
+    H -->|CLOSED/CANCEL| K[晚到支付冲正]
 ```
 
-**退款链路库存流程（按类型 × 履约状态分流，回补/核销时点由 `RefundPolicy` §37 决定）**
+## 6. 库存模型
 
-```mermaid
-flowchart TD
-    A[用户申请退款] --> B["创建退款单 APPLYING<br/>+ 三层额度冻结<br/>(明细 refundedQty/Amount 原子累加<br/>+ 订单层 freezeOrderRefund)"]
-    B --> C{退款类型 RefundType}
-    C -->|CANCEL_BEFORE_SHIP 未发货取消| D["用户申请即自动受理(免审批)<br/>restockForRefund afterReceipt=false<br/>locked-=qty, available+=qty"]
-    D --> G["restockedQty 累加(上限守卫)<br/>写 REFUND_RESTOCK 流水(bizNo 幂等)"]
-    G --> H[发起渠道退款 → SUCCESS]
-    C -->|RETURN_AND_REFUND 退货退款| I[管理员受理 → 等待退货物流]
-    I --> J["管理员确认签收质检<br/>restockForRefund afterReceipt=true<br/>sold-=qty, available+=qty"]
-    J --> G
-    C -->|"REFUND_ONLY 仅退款"| RO{是否已确认收货?}
-    RO -->|"未收货(SHIPPED)<br/>货不回仓"| RP["writeOffLostForRefund<br/>locked-=qty, lost+=qty<br/>写 REFUND_LOST 流水(bizNo 幂等)"]
-    RP --> H
-    RO -->|"已收货(RECEIVED)<br/>瑕疵补偿 货留用户"| RQ["writeOffLostForRefund<br/>sold-=qty, lost+=qty<br/>写 REFUND_LOST 流水(bizNo 幂等)"]
-    RQ --> H
-    C -->|PRICE_ADJUSTMENT 差价| L
-    C -->|用户撤销 / 管理员拒绝| M[仅释放三层冻结额度 不动库存]
-    N["系统冲正 ExceptionRefundService<br/>(免审 不占售后额度)"] --> O["DUPLICATE_PAYMENT / LATE_PAYMENT<br/>原路退款 不补库存"]
+### 6.1 四桶恒等式
+
+```text
+available_stock + locked_stock + sold_stock + lost_stock = 入库总量
 ```
 
-**幂等防线架构（五层，重复/并发/重投安全）**
-
-```mermaid
-flowchart TB
-    subgraph T["触发源（可重复 / 并发到达）"]
-        direction LR
-        T1["支付回调 notify<br/>渠道会重试推送"]
-        T2["主动查单 / 渠道查单<br/>与回调并发"]
-        T3["MQ 延迟关单<br/>+ 兜底扫描双触发<br/>+ Outbox 重投"]
-        T4["用户/管理员操作<br/>重复点击 / 页面重放"]
-    end
-
-    T --> L1
-
-    subgraph L1["第 1 层 · 通知幂等（Redis，仅回调路径）"]
-        N1["notifyId 去重<br/>重复通知在入口即拦截，不触达库存域"]
-    end
-
-    L1 --> L2
-
-    subgraph L2["第 2 层 · 上游状态闸门（业务动作只成功一次）"]
-        direction LR
-        G1["订单 CAS<br/>NOTPAY→SUCCESS<br/>NOTPAY→CLOSED"]
-        G2["支付单 CAS<br/>CREATED/PAYING→SUCCESS"]
-        G3["物流单 CAS<br/>DELIVERED→RECEIVED<br/>(仅物流送达后用户可确认)"]
-        G4["退款单 Redis 锁 refund:xxx:{refundNo}<br/>+ 状态机校验 ensureApplying"]
-    end
-
-    L2 -->|"闸门通过才进入库存域"| L3
-
-    subgraph L3["第 3 层 · 预占状态机 CAS（核心幂等闸）"]
-        S1["casTransition<br/>UPDATE ... SET status=to<br/>WHERE order_no=? AND status=from<br/>LOCKED→COMMITTED / LOCKED→RELEASED<br/>并发只有一个赢家"]
-        S2["败者状态复核（changed=0 分流）<br/>全部已目标态 → 幂等返回<br/>含对立态 → 抛错（成交不可释放等）<br/>无记录 → 告警放行（历史单）"]
-    end
-
-    L3 --> L4
-
-    subgraph L4["第 4 层 · 数量变更条件 UPDATE（防负防超）"]
-        direction LR
-        Q1["reserveStock<br/>WHERE available≥qty"]
-        Q2["releaseReservedStock<br/>WHERE locked≥qty"]
-        Q3["commitSoldStock<br/>WHERE locked≥qty"]
-        Q4["releaseSoldStock<br/>WHERE sold≥qty"]
-        Q5["addRestockedQty<br/>WHERE restocked+qty<br/>≤ refunded+frozen"]
-        Q6["writeOffLostStock<br/>locked-=qty, lost+=qty<br/>WHERE locked≥qty"]
-    end
-
-    L4 --> L5
-
-    subgraph L5["第 5 层 · 唯一键兜底（DB 最终闸门）"]
-        direction LR
-        U1["uk_reservation_order_item<br/>(order_item_id)<br/>重复预占 DuplicateKey→跳过"]
-        U2["uk_inventory_biz_no (biz_no)<br/>TYPE:单号:itemId<br/>重复流水 DuplicateKey→跳过留痕"]
-    end
-
-    subgraph TX["贯穿 · 事务原子性"]
-        X1["@Transactional：库存操作与订单/退款状态变更同事务<br/>任一步失败整体回滚，不留中间态<br/>commit/release 经 afterCommit 在订单事务提交后执行"]
-    end
-
-    L5 -.-> TX
-```
-
-**各库存操作的幂等矩阵**
-
-| 操作                              | 前置闸门（第2层）                              | 自身幂等机制（第3/4/5层）                                                                                                                  | 重复/并发到达时                                      |
-|---------------------------------|----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
-| `reserveForOrder` 下单预占          | 订单+明细同事务插入                             | `uk(order_item_id)` 挡重复预占；`reserveStock` 条件 UPDATE 防超卖                                                                           | 重复预占按明细跳过；库存不足**整单回滚**（订单不产生）                 |
-| `commitReservation` 支付提交        | 订单 CAS NOTPAY→SUCCESS；支付单 CAS          | `casTransition(LOCKED→COMMITTED)` + 败者状态复核；流水 `biz_no` UK                                                                        | 已 COMMITTED 幂等返回；遇 RELEASED 抛错；无记录放行（历史单）     |
-| `releaseReservation` 关单释放       | 订单 CAS NOTPAY→CLOSED + 关闭活跃支付单         | `casTransition(LOCKED→RELEASED)` + 败者状态复核；流水 UK                                                                                  | 已 RELEASED 幂等返回；遇 COMMITTED 抛错（已成交不可释放）；无记录放行 |
-| `convertToSoldOnReceipt` 收货结转   | 物流 CAS DELIVERED→RECEIVED（仅物流送达后可确认收货） | `biz_no` 预检（ORDER_SOLD:orderNo:itemId）+ 结转数量 quantity-restockedQty + `commitSoldStock` 条件 UPDATE + 流水 UK                         | 已结转跳过；锁定不足仅告警不阻塞收货（旧模型兼容）                     |
-| `restockForRefund` 退款回补         | Redis 锁 refund:xxx:{refundNo} + 状态机（受理/签收各一次）                  | `biz_no` 预检（REFUND_RESTOCK:refundNo:itemId）+ `addRestockedQty` 上限守卫 + 流水 UK                                                      | 已回补跳过；超「已退+冻结」上限抛错（防超补）                       |
-| `writeOffLostForRefund` 仅退款货损核销 | Redis 锁 refund:xxx:{refundNo} + 受理状态机（REFUND_ONLY 未收货/已收货）     | `biz_no` 预检（REFUND_LOST:refundNo:itemId）+ `addRestockedQty` 上限守卫 + `writeOffLostStock`/`writeOffSoldLostStock` 条件 UPDATE + 流水 UK | 已核销跳过；锁定/已售不足抛错；restockedQty 累加使收货结转自动跳过已核销数量 |
-| `insertTransaction` 流水落库        | —                                      | `uk(biz_no)` + DuplicateKeyException 捕获                                                                                          | 重复流水跳过并留日志（审计终态兜底）                            |
-
-**要点**
-
-- **防超卖根闸门**：`ProductMapper.reserveStock` 条件 UPDATE（`WHERE available_stock >= qty`）；库存不足时**下单整体回滚**
-  （订单不会产生），而非下单后扣减失败再退款
-- **支付成功不动库存数量**：仅预占状态 LOCKED→COMMITTED，库存保持锁定；已售结转延迟到确认收货（`commitSoldStock`
-  ：locked→sold），为退款处理留出「未收货时库存仍在锁定桶」的通道
-- **退款库存分三条路径**：① 未发货取消 / 退货退款签收 → **回补**（`restockForRefund`，未收货 locked→available、已收货签收
-  sold→available，货物回仓可再售）；② 仅退款（不退货）→ **核销货损**（`writeOffLostForRefund` 按履约状态分流：未收货
-  locked→lost、已收货 sold→lost，货物不回仓计入 lost_stock）；③ 差价 / 系统冲正 → **不动库存**（资金侧处理）
-- **`biz_no` 是全链路幂等锚**：格式 `TYPE:orderNo/refundNo:itemId`，预检 selectCount + insert 时 UK
-  捕获双重防护，即使预检与插入之间存在并发窗口也被 UK 兜底
-- **MQ 重投安全**：关单消费者与 Outbox 重投（`LocalMessageSendJob` 每 30s 重扫 PENDING）依赖上述幂等——消息重复投递不产生重复库存动作
-- `t_inventory_transaction`
-  ：库存流水（bizType：ORDER_RESERVE/ORDER_COMMIT/ORDER_SOLD/ORDER_RELEASE/REFUND_RESTOCK/REFUND_LOST/MANUAL_ADJUST；operationStatus=FAILED
-  仅用于管理员手工调整申请被拒绝的留痕，库存不变）
-- 重复支付/晚到支付冲正由 `PaymentSuccessService` 在支付成功链路自动触发；`OVER_SOLD` 熔断入口（
-  `ExceptionRefundService.trigger`）为旧模型在途单兼容保留，当前交易链路无调用方
-
-### 3.5 订单履约与退款
-
-- **t_order_shipment**：发货单（运单号、发货时间、物流时间线），物流状态机 `SHIPPED → IN_TRANSIT → DELIVERED → RECEIVED`；
-  `MockLogisticsProvider`（order 上下文 infrastructure.logistics）+ `MockLogisticsSimulationJob` 定时模拟推进（发货后 20s 运输中、再 40s 送达，
-  `logistics.mock.*-delay-ms` 可配）
-- **收货地址**：`t_region`（三级行政区划，`RegionController` 公开级联查询）+ `t_shipping_address`（用户地址 CRUD，
-  `UserAddressController`）；结算时选择地址并快照入订单
-- 用户端：查看物流时间线；**确认收货仅物流 `DELIVERED` 后可操作**（订单列表 VO 透出 `shipmentStatus`
-  ，前端按此渲染按钮与「运输中/已送达」标签）；已付款未发货仅显示「取消订单」（整单自动受理退款 + 回补库存），
-  「申请退款」按钮在发货/收货后才显示
-- 管理端：模拟发货、强制关单、退款受理、标记付款（线下收款）
-- **退款单模型**（RefundOrder/RefundItem，区别于渠道退款记录 t_refund_info）：
-    - 类型 `RefundType`（6 种）：未发货取消（受理后自动回补 locked→available）、退货退款（签收质检后回补
-      sold→available）、仅退款（核销货损：未收货 locked→lost、已收货 sold→lost）、差价退款（管理员发起手填金额，不动库存）、重复支付/晚到支付自动原路退款（
-      `ExceptionRefundService` 系统冲正，不占售后额度）
-    - **线下收款退款**：锚定 `OFFLINE` 支付单的退款不调用渠道退款接口，受理/签收后直接将渠道退款记录置成功，
-      由 `RefundSucceeded` 事件本地结转（冻结转已退、全额退关闭订单，库存回补规则不变）；微信/支付宝支付单仍走渠道原路退回
-    - 状态 `RefundOrderStatus`：APPLYING（待审核，可编辑/撤销）→ 受理后冻结额度 → 审核/退货签收 → 渠道退款 → SUCCESS/FAILED
-    - **防超退**：受理即冻结可退额度，前端 `refundQuota.js` 与后端 `RefundPolicy` 双重核算；最后一件吃尾差，金额以服务端为准
-
-### 3.6 支付配置体系
-
-支付参数全部存数据库动态加载，支持管理后台页面维护（无需重启）：
-
-- **t_payment_channel** — 支付渠道配置（WXPAY/ALIPAY），**商户参数内联在渠道表**：
-    - 渠道公共参数 `config_params`（JSON：domain、gatewayUrl、contentKey、notifyUrl、returnUrl）
-    - 微信列：appid、mch_id、mch_serial_no、**private_key（商户私钥 PEM 内容入库，替代 apiclient_key.pem 文件）**
-      、api_v3_key、partner_key
-    - 支付宝列：alipay_app_id、seller_id、merchant_private_key、alipay_public_key
-    - 私钥文件配置体系已移除（`wxpay.properties` 等不再存在），该结构已固化在 `schema.sql` 全量脚本中
-- **t_payment_app** — 渠道下应用配置（appName/appCode/channelId），订单绑定支付应用
-- `PaymentConfigLoader` 启动加载并缓存；下单时从 `/api/payment-app` 加载启用应用；通知按订单绑定配置校验金额/商户号/appId；配置缓存可通过
-  `POST /api/payment-config/reload` 刷新
-
-### 3.7 批量库存维护与 Excel 存储
-
-- 管理后台「批量库存维护」页：上传 .xlsx（前端 SheetJS 解析）→ 生成 `t_stock_import` 导入记录（PENDING/IMPORTED，CAS 防重复确认）
-- 点选记录 → 新路由 `/admin/stock-edit/:id` 打开全屏 Luckysheet 编辑器（UMD 脚本由 index.html
-  引入，隐藏公共头尾）核对/编辑保存 → 回列表确认入库
-- 确认入库逐条独立原子事务（CAS 库存更新 + MANUAL_ADJUST 流水），失败行返回原因不影响成功行
-- 库存流水分页接口支持商品/业务类型/状态过滤
-- **文件存储抽象**：
-    - `StockImportFileStore` 接口 + `LocalStockImportFileStore`（`stock.import.dir`）+ `MinioStockImportFileStore`（
-      `stock.import.minio.*`，环境变量 `STOCK_IMPORT_MINIO_*` 覆盖）+ `StockImportFileStorage` 路由门面
-    - `t_stock_import.storage_type/file_path` 按记录持久化后端与地址；读取按记录自身 storage_type 路由（null → LOCAL
-      兼容旧记录）
-
-### 3.8 本地消息表（Outbox）
-
-- `t_local_message`：关单/退款状态同步消息在业务事务内以 `PENDING` 落库 → 事务提交后投递 → broker 确认后标 `SENT` →
-  消费成功后回写 `CONSUMED`
-- 投递失败指数退避重试（3^n 秒，最多 5 次），耗尽转 `FAILED` 人工补偿
-- `LocalMessageSendJob` 每 30 秒重扫 `PENDING`；人工补偿：修复故障后将 `FAILED` 行置回 `PENDING` 并重置 `next_retry_time`
-  （消费端幂等，重投安全）
-- 发布端可靠性：publisher confirm（correlated）+ returns + mandatory；确认/退回失败由 `RabbitReliabilityConfig` 记日志（携带
-  orderNo/refundNo 关联），由 DB 兜底任务对账
-
-### 3.9 对账架构（账单上传 + 同步对账）
-
-对账采用「管理员下载微信交易账单 CSV → 页面上传 → 系统同步解析入库并对账」模式，不走 MQ、无定时调度。
-
-#### 账单种类与解析（依据微信支付 v3《交易账单详细说明》）
-
-`WxTradeBillParser`（无 Spring 依赖，可独立单测）按表头列名定位字段而非固定下标，自动识别种类：
-
-| 种类      | 识别条件                  | 内容              | 对账范围      |
-|---------|-----------------------|-----------------|-----------|
-| ALL     | 表头含「微信退款单号」列          | 支付行 + 退款行 + 撤销行 | 支付 + 退款双向 |
-| SUCCESS | 表头无退款相关列              | 仅支付成功行          | 仅支付方向     |
-| REFUND  | 表头含「退款申请时间」/「退款成功时间」列 | 仅退款行            | 仅退款方向     |
-
-解析规则：
-
-- 行类型由「交易状态」列判定：`SUCCESS`=支付行，`REFUND`=转入退款行，`REVOKED`=付款码撤销行
-- 字段值前反引号 `` ` `` 前缀（防 Excel 科学计数法）解析时去除；金额元→分用 BigDecimal `movePointRight(2)`
-- 表头/汇总行/首字段非交易时间行一律跳过；坏行计数跳过不中断整单
-- BOM 清洗、双引号包裹与 `""` 转义兼容；撤销行无退款单号时回退原支付订单号
-
-#### 数据模型（三表）
-
-- **t_bill_import**
-  ：批次表。import_no（BILL+序号，UK）、channel_code、bill_kind（ALL/SUCCESS/REFUND）、bill_date、file_hash（SHA-256，UK）、笔数统计、status（IMPORTED/RECONCILED/FAILED）。唯一约束：uk(
-  import_no)、uk(渠道,类型,日期,种类)、uk(file_hash)
-- **t_bill_record**：流水表。record_type（PAY/REFUND）、channel_serial_no（支付=微信订单号/退款=微信退款单号，UK）、biz_no、金额（分）、交易时间、raw_line（CLOB
-  原始行）
-- **t_bill_reconcile_discrepancy**：差异单表。biz_type、discrepancy_type（8
-  类）、双方金额/状态快照、status（OPEN/RESOLVED）、resolve_remark（必填）、resolved_by/time
-
-#### 上传与对账流程
-
-```
-上传 CSV → 参数校验（非空/大小/历史日期）
-  → SHA-256 hash 命中？→ 直接返回原批次（幂等）
-  → 解析 CSV（识别 billKind）→ 账单日+种类互斥校验（锁外快速拒绝）
-  → Redisson 锁 bill-reconcile:WXPAY:{billDate}
-      ├─ 锁内二次检查
-      ├─ 事务1：批次 + 流水入库
-      └─ 事务2：对账（失败标 FAILED，批次保留可重跑）
-  → 返回批次
-```
-
-- **支付核对**：账单 PAY 行 vs t_payment_info（order_no + WXPAY）：本地无→PAY_CHANNEL_ONLY；金额不符→PAY_AMOUNT_MISMATCH；本地非
-  SUCCESS→PAY_STATUS_MISMATCH；反向扫描账单日本地 SUCCESS 但账单无→PAY_LOCAL_ONLY
-- **退款核对**：账单 REFUND 行 vs t_refund_info（refund_no）：同理四类，PROCESSING 中间态不判差异
-- **重跑**：先按 import_id 删除旧差异单再重算，结果确定不重复
-- **金额口径**：账单元→分 BigDecimal 精确转换；本地取 payer_total / refund（分），Integer 直接比较
-
-## 4. 数据库表（22 张）
-
-| 实体                           | 表名                                 | 说明                                                    |
-|------------------------------|------------------------------------|-------------------------------------------------------|
-| `PaymentChannel`             | `t_payment_channel`                | 支付渠道配置（商户参数内联，私钥入库）                                   |
-| `PaymentApp`                 | `t_payment_app`                    | 渠道下应用配置                                               |
-| `Product`                    | `t_product`                        | 商品（价格分、库存、上下架状态）                                      |
-| `OrderInfo`                  | `t_order_info`                     | 主订单（version 乐观锁 + 四条状态线）                              |
-| `OrderItem`                  | `t_order_item`                     | 订单明细（快照价）                                             |
-| `PaymentOrder`               | `t_payment_order`                  | 支付单（渠道单号/支付单状态/渠道尝试记录）                                |
-| `PaymentInfo`                | `t_payment_info`                   | 渠道支付记录（payer_total 分，双唯一约束）                           |
-| `OrderShipment`              | `t_order_shipment`                 | 发货单（运单号/物流时间线）                                        |
-| `InventoryReservation`       | `t_inventory_reservation`          | 库存预占（LOCKED/COMMITTED/RELEASED）                       |
-| `InventoryTransaction`       | `t_inventory_transaction`          | 库存流水（available/locked/sold/lost 四桶 delta，含 FAILED 记录） |
-| `StockImport`                | `t_stock_import`                   | Excel 导入记录（storage_type/file_path）                    |
-| `RefundOrder` / `RefundItem` | `t_refund_order` / `t_refund_item` | 退款单/退款明细（冻结额度防超退）                                     |
-| `RefundInfo`                 | `t_refund_info`                    | 渠道退款记录（refund 分）                                      |
-| `UserAccount`                | `t_user`                           | 用户账户（角色/禁用状态）                                         |
-| `PasswordResetRequest`       | `t_password_reset_request`         | 找回密码申请                                                |
-| `ShippingAddress`            | `t_shipping_address`               | 收货地址                                                  |
-| `Region`                     | `t_region`                         | 三级行政区划                                                |
-| `BillImport`                 | `t_bill_import`                    | 账单批次（hash/种类幂等）                                       |
-| `BillRecord`                 | `t_bill_record`                    | 账单流水（PAY/REFUND 行）                                    |
-| `BillReconcileDiscrepancy`   | `t_bill_reconcile_discrepancy`     | 对账差异（8 类 + 快照 + 处理记录）                                 |
-| `LocalMessage`               | `t_local_message`                  | 本地消息表（Outbox：PENDING/SENT/CONSUMED/FAILED）            |
-| `BaseEntity`                 | —                                  | 公共基类（id/createTime/updateTime）                        |
-
-> 建表脚本：`backend/env/sql/dm8/schema.sql`（一体化全量脚本：20 张核心业务表 + 种子数据 + `t_region` 行政区划 +
-> `t_shipping_address` 地址表，共 22 张；可重复执行，头部带遗留表 DROP 守卫，等同清库重建）。
-
-## 5. Controller 路由（24 个）
-
-**商城端**
-
-| Controller                    | 路径前缀                   | 说明                                  |
-|-------------------------------|------------------------|-------------------------------------|
-| `AuthController`              | `/api/auth`            | 注册/登录/登出/双 Token 刷新/改密/找回密码申请       |
-| `ProductController`           | `/api/product`         | 商品列表/详情（GET 公开）                     |
-| `CartController`              | `/api/cart`            | Redis 购物车（管理员禁入）                    |
-| `CheckoutController`          | `/api/checkout`        | 结算下单/订单查询/微信/支付宝下单（管理员禁入）           |
-| `OrderInfoController`         | `/api/order-info`      | 用户订单查询                              |
-| `OrderShipmentController`     | `/api/order`           | 物流时间线/确认收货/已付款未发货取消（转退款申请）          |
-| `RefundApplyController`       | `/api/refund-applies`  | 分项退款申请创建/编辑/撤销/我的列表                 |
-| `RefundApplicationController` | （方法级多路径）               | 旧退款入口兼容（`/api/refund-info/apply` 等） |
-| `RefundInfoController`        | `/api/refund-info`     | 渠道退款记录查询（管理员）                       |
-| `WxPayController`             | `/api/wx-pay`          | 微信支付 V3（Native 扫码/退款/通知/查单/关单/账单下载） |
-| `WxPayV2Controller`           | `/api/wx-pay-v2`       | 微信支付 V2（扫码/通知）                      |
-| `AliPayController`            | `/api/ali-pay`         | 支付宝（表单跳转下单/退款/通知/账单）                |
-| `PaymentAppController`        | `/api/payment-app`     | 支付应用（公开列表/渠道维度查询 + 管理端 CRUD）        |
-| `PaymentChannelController`    | `/api/payment-channel` | 支付渠道配置 CRUD（管理员）                    |
-| `PaymentConfigController`     | `/api/payment-config`  | 配置缓存重载（管理员）                         |
-| `RegionController`            | `/api/regions`         | 三级行政区划级联（公开 `/tree`）               |
-| `UserAddressController`       | `/api/user/address`    | 收货地址 CRUD                           |
-
-**管理端（仅 ROLE_ADMIN）**
-
-| Controller                            | 路径前缀                                 | 说明                                     |
-|---------------------------------------|--------------------------------------|----------------------------------------|
-| `AdminUserController`                 | `/api/admin/users`                   | 用户分页/详情/禁用启用                           |
-| `AdminProductController`              | `/api/admin/products`                | 商品 CRUD/库存调整/批量调整/上下架                  |
-| `AdminOrderShipmentController`        | `/api/admin/order`                   | 全部订单/待发货/发货/强制关单（幂等）/标记已付/渠道查单/支付单尝试记录 |
-| `AdminRefundOrderController`          | `/api/admin/refund`                  | 退款受理/拒绝/退货签收/渠道重试/状态查询/差价退款            |
-| `StockAdminController`                | `/api/admin/stock`                   | 库存操作日志/异常重放/流水分页/Excel 导入记录与确认         |
-| `AdminPasswordResetRequestController` | `/api/admin/password-reset-requests` | 找回密码申请受理/拒绝                            |
-| `ReconciliationController`            | `/api/reconciliation`                | 账单上传/批次/流水/差异/重跑/标记处理                  |
-
-> `payment.interfaces.support.WxPayNotifyHandler` 为微信 V3 通知验签/解密支撑组件，非独立路由。
-
-## 6. Service 层要点
-
-| Service                                                                      | 说明                                               |
-|------------------------------------------------------------------------------|--------------------------------------------------|
-| `AuthService` / `LoginGuardService`                                          | 双 Token 认证、Token 版本校验、登录失败按用户名计数与锁定               |
-| `ProductService` / `ProductStockService`                                     | 商品 CRUD、库存 CAS 调整                                |
-| `CartService`                                                                | Redis 购物车（实时价/库存）                                |
-| `CheckoutService`                                                            | 多商品下单（快照价 + 收货地址 + 库存预占 + 支付单创建）                 |
-| `OrderInfoService`                                                           | 订单状态机、关单幂等                                       |
-| `PaymentOrderService`                                                        | 支付单状态与渠道尝试记录收口                                   |
-| `PaymentSuccessService`                                                      | 支付成功统一处理（扣库存/状态推进/事件发布）                          |
-| `InventoryService`                                                           | 预占 LOCKED→COMMITTED/RELEASED，CAS 防超卖             |
-| `ShipmentService` + order 上下文 `MockLogisticsProvider`                     | 发货/物流时间线/确认收货/模拟物流推进                             |
-| `ShippingAddressService`                                                     | 收货地址管理                                           |
-| `RefundOrderService` + `refund.domain.policy.RefundPolicy`                   | 退款单状态机、额度冻结与防超退核算                                |
-| `RefundApplicationService`                                                   | 用户分项退款申请/编辑/撤销                                   |
-| `OrderRefundStatusService`（refund 应用层）                                     | 订单级退款状态汇总推进                                      |
-| `ExceptionRefundService`                                                     | 重复支付/晚到支付自动冲正退款                                  |
-| `RefundStatusSyncMessageService`                                             | 退款状态同步延迟消息（Outbox）                               |
-| `OrderCloseMessageService`                                                   | 订单关闭延迟消息（Outbox）                                 |
-| `LocalMessageService`                                                        | 本地消息表投递/确认/重试/补偿                                 |
-| `AliPayService`                                                              | 支付宝支付/退款/查单/关单/账单                                |
-| payment 应用层 `wxpay/WxPayOrderFacade` / `WxPayRefundFacade` / `WxPayBillFacade`（门面接口） | 微信 V3 订单/退款/账单门面；实现为 `impl/wxpay/WxPayOrderService` / `WxPayRefundService` / `WxPayBillService`，同包另有 `WxPayHttpClient`、`WxPayNotificationDecoder`、`WxChannelPaymentQueryHandler`、`WxPayPrivateKeyUtil` 配套组件 |
-| `PaymentChannelService` / `PaymentAppService` + `PaymentConfigLoader`（payment 基础设施层） | 支付配置加载/缓存/维护                                     |
-| `StockImportService`                                                         | Excel 导入记录/确认入库（CAS）/失败明细/文件存储路由                 |
-| `bill.application.BillReconcileService`                                      | 账单上传对账（幂等/种类互斥/8 类差异）                            |
-| `bill.application.parser.WxTradeBillParser`                                  | 微信交易账单 CSV 解析（可独立单测）                             |
-| `PasswordResetRequestService`                                                | 找回密码申请受理/重置                                      |
-
-## 7. MQ 与定时任务
-
-### 队列拓扑（启动时由 Spring AMQP 声明，详见 backend/docs/RABBITMQ_OPERATIONS.md）
-
-**订单延迟关单（OrderCloseRabbitConfig）**
-
-| 类型          | 名称                                                          | 说明                                              |
-|-------------|-------------------------------------------------------------|-------------------------------------------------|
-| exchange    | `payment.order.close.event.exchange`                        | 生产者发布延迟关单消息                                     |
-| exchange    | `payment.order.close.dead-letter.exchange`                  | 接收过期消息                                          |
-| queue       | `payment.order.close.delay.queue`                           | 延迟队列，TTL = expire-minutes × 60000（改 TTL 需删队列重建） |
-| queue       | `payment.order.close.release.queue`                         | 消费队列（OrderCloseConsumer）                        |
-| routing key | `payment.order.close.delay` / `payment.order.close.release` | —                                               |
-
-**退款状态同步（RefundStatusSyncRabbitConfig）**：`payment.refund.status-sync.*` 同构，TTL =
-`payment.refund.status-sync-delay-ms`。
-
-### 可靠性策略
-
-- 消费重试：指数退避 2s→6s→18s 共 4 次，耗尽拒绝且不回队（避免热重试），由 DB 兜底任务接管
-- 发布可靠：publisher confirm + returns + mandatory，失败由 `RabbitReliabilityConfig` 记日志
-- Outbox：见 3.8 节
-
-### 定时任务
-
-| 任务                           | 周期  | 说明                      |
-|------------------------------|-----|-------------------------|
-| `TimeoutOrderCloseScheduler` | 60s | 超时未支付订单兜底关单（幂等）         |
-| `RefundStatusSyncScheduler`  | 60s | PROCESSING 退款状态兜底同步（幂等） |
-| `LocalMessageSendJob`        | 30s | 重扫 PENDING 本地消息投递       |
-| `MockLogisticsSimulationJob` | 定时  | 模拟物流状态推进（发货→运输→送达）      |
-
-> 对账不走 MQ：上传后同步解析入库并对账。
-
-## 8. 前端工程
-
-两工程均为 React 18 + Vite 5 + antd 5 + axios，react-router 6；axios baseURL 均为 `http://localhost:8080`（CORS 直连，无
-Vite 代理）；401 时经 `refreshSingleFlight` 单飞刷新 Token。
-
-### user-ui — 用户商城（dev :3000，HashRouter）
-
-移动 App 风格界面（渐变顶栏 + 搜索药丸 + 卡片化布局，`global.css`/`mobile.css`/`theme.css`）。
-
-| 页面                   | 路由                     | 说明                                                                 |
-|----------------------|------------------------|--------------------------------------------------------------------|
-| `Home`               | `/`                    | 商品列表、加购                                                            |
-| `Login`              | `/login`               | 登录/注册/忘记密码（品牌渐变 Hero + 悬浮白卡）                                       |
-| `Cart`               | `/cart`                | 购物车、选择收货地址、选择支付方式、结算下单                                             |
-| `OrdersV2`           | `/orders`              | 订单列表、微信扫码弹窗（QRCodeSVG + 轮询）、支付宝跳转、主动查单、分项退款、取消/确认收货（仅物流送达后可点）、物流查看 |
-| `RefundApplications` | `/refund-applications` | 退款申请列表、编辑/撤销（前端额度核算 `refundQuota.js`）                              |
-| `Account`            | `/account`             | 用户中心、弹窗式修改密码、退出登录                                                  |
-| `Addresses`          | `/addresses`           | 收货地址管理（Cascader 三级区域）                                              |
-| `Success`            | `/success`             | 支付成功页                                                              |
-
-逻辑单测（`npm run test:logic`）：Token 单飞刷新。
-
-### admin-ui — 管理后台（dev :3002，HashRouter）
-
-「电商商城平台 · 管理后台」顶栏 + 左侧 11 项菜单 + 右侧内容区；`RequireAdmin` 路由守卫；登录态存
-localStorage（`admin_` 前缀）；主题色 `#1677FF`；Luckysheet UMD 资源位于 `public/luckysheet/`，由全屏编辑器页 index.html 引入。
-
-| 菜单      | 路由                         | 页面能力                               |
-|---------|----------------------------|------------------------------------|
-| 订单管理    | `/admin/orders`            | 多状态线筛选、详情抽屉、强制关单、标记已付、渠道查单、支付单尝试记录 |
-| 订单发货    | `/admin/shipping`          | 待发货列表、模拟发货                         |
-| 商品库存    | `/admin/products`          | 商品 CRUD、库存调整（单个/批量）、上下架、详情抽屉       |
-| 退款受理    | `/admin/refunds`           | 退款列表、受理/拒绝/退货签收/渠道重试/状态查询/差价退款     |
-| 用户列表    | `/admin/users`             | 分页搜索、禁用启用、用户详情                     |
-| 密码重置申请  | `/admin/reset-requests`    | 找回密码申请受理/拒绝                        |
-| 重置用户密码  | `/admin/reset-password`    | 按用户直接重置（随机密码仅展示一次）                 |
-| 批量库存维护  | `/admin/stock-maintenance` | Excel 导入、记录列表、确认入库                 |
-| （全屏编辑器） | `/admin/stock-edit/:id`    | Luckysheet 全屏核对/编辑导入文件             |
-| 下载账单    | `/admin/download`          | 微信/支付宝账单下载跳转                       |
-| 支付配置    | `/admin/payment-config`    | 渠道/应用配置维护（商户参数、私钥内容）               |
-| 对账管理    | `/admin/reconciliation`    | 账单上传、批次/流水/差异查看、重跑、标记处理            |
-
-逻辑单测（`npm run test:logic`）：Token 单飞刷新。
-
-## 9. 配置要点（backend/src/main/resources/application.yml）
-
-| 配置                                    | 说明                                                                                                                      |
-|---------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
-| `server.port`                         | 8080                                                                                                                    |
-| `spring.datasource.*`                 | DM8 连接（`jdbc:dm://${DM_HOST}:${DM_PORT}?schema=${DM_SCHEMA}`，环境变量 DM_HOST/DM_PORT/DM_SCHEMA/DM_USERNAME/DM_PASSWORD 覆盖） |
-| `spring.redis.*`                      | Redis 连接（购物车/Token/锁定/幂等）                                                                                               |
-| `spring.rabbitmq.*`                   | RabbitMQ 连接与可靠性（confirm/returns/listener retry）                                                                         |
-| `mybatis-plus.mapper-locations`       | `classpath:mapper/*.xml`（18 个 XML，平铺；其余 Mapper 仅用 MyBatis-Plus BaseMapper 方法）                                                                                      |
-| `payment.auth.access-ttl-seconds`     | Access Token TTL（默认 1800 = 30 分钟）                                                                                       |
-| `payment.auth.refresh-ttl-seconds`    | Refresh Token TTL（默认 604800 = 7 天）                                                                                      |
-| `payment.auth.jwt-secret`             | JWT 密钥（环境变量 `AUTH_JWT_SECRET` 覆盖）                                                                                       |
-| `payment.order.expire-minutes`        | 本地订单未支付超时（分钟，默认 3）：到时释放预占库存并关单；延迟关单 TTL = 该值 × 60000                                                                    |
-| `payment.refund.status-sync-delay-ms` | 退款状态同步延迟（默认 60000）                                                                                                      |
-| `stock.import.storage`                | Excel 存储后端：`local` / `minio`                                                                                            |
-| `stock.import.dir`                    | local 模式保存目录                                                                                                            |
-| `stock.import.minio.*`                | minio 模式 endpoint/access-key/secret-key/bucket（`STOCK_IMPORT_MINIO_*` 环境变量覆盖）                                           |
-
-## 10. 测试基线与文档索引
-
-**后端测试**（`backend/src/test`，16 个测试类、121 个用例，纯 JUnit 5 + Mockito，不连真实 DM8/Redis/RabbitMQ/支付渠道）：
-
-| 测试类 | 覆盖内容 |
+| 桶 | 含义 |
 |---|---|
-| `OrderAggregateTest` / `PaymentOrderAggregateTest` / `ProductAggregateTest` / `StockImportAggregateTest` | 领域聚合状态机与不变量守卫 |
-| `MoneyTest` | 值对象 Money 金额运算 |
-| `RefundPolicyTest` | 退款额度/防超退/尾差核算 |
-| `*POConvertersTest`（product/order/payment/refund/user/bill 6 个） | PO ↔ 领域模型全字段往返转换 |
-| `WxTradeBillParserTest` | 微信账单 CSV 解析（种类识别/坏行/金额换算） |
-| `PaymentSuccessServiceImplTest` / `RefundOrderServiceImplTest` / `CartServiceImplTest` | 应用服务用例编排（Mockito 隔离端口） |
-| `LoginGuardServiceTest` | 登录失败计数与用户名维度锁定 |
+| `available_stock` | 可售库存 |
+| `locked_stock` | 已被订单占用但尚未最终结转 |
+| `sold_stock` | 用户已确认收货的已售库存 |
+| `lost_stock` | 不回仓、不可再次销售的货损库存 |
 
-**前端测试**：仅 user-ui 提供 `npm run test:logic`（Node 内置 test runner，Token 单飞刷新）。
+### 6.2 订单库存流转
 
-**文档索引**：
+```mermaid
+flowchart LR
+    A[available] -->|下单预占| B[locked]
+    B -->|确认收货| C[sold]
+    B -->|超时关单/取消| A
+    B -->|仅退款 未收货| D[lost]
+    C -->|仅退款 已收货| D
+    C -->|退货签收后| A
+```
 
-- [AGENTS.md](AGENTS.md) — 问题分类、分支命名、领域不变量、测试要求与 DoD 规则
-- [README.md](README.md) — 功能概览、快速启动、环境配置
-- [backend/docs/DAMENG_DM8_OPERATIONS.md](backend/docs/DAMENG_DM8_OPERATIONS.md) — DM8 启动/初始化/清库重建
-- [backend/docs/RABBITMQ_OPERATIONS.md](backend/docs/RABBITMQ_OPERATIONS.md) — 队列拓扑、可靠性策略、冒烟测试与回滚说明
+支付成功本身不做 `locked → sold`：
 
-实现、测试、文档三者不一致即视为工作未完成。
+```text
+InventoryReservation: LOCKED → COMMITTED
+库存桶数量：不变
+```
+
+这样在“已支付但未收货”阶段仍可清晰区分货权状态。
+
+### 6.3 防超卖
+
+核心 SQL 思路：
+
+```sql
+UPDATE t_product
+SET available_stock = available_stock - ?,
+    locked_stock = locked_stock + ?
+WHERE id = ?
+  AND available_stock >= ?
+```
+
+受影响行数为 0 即库存不足，整个下单事务失败。
+
+### 6.4 库存幂等
+
+库存业务动作同时依赖：
+
+```text
+业务状态闸门
+→ reservation 状态 CAS
+→ 数量条件 UPDATE
+→ t_inventory_transaction.biz_no 唯一约束
+```
+
+典型 `biz_no`：
+
+```text
+ORDER_RESERVE:<orderNo>:<itemId>
+ORDER_COMMIT:<orderNo>:<itemId>
+ORDER_RELEASE:<orderNo>:<itemId>
+ORDER_SOLD:<orderNo>:<itemId>
+REFUND_RESTOCK:<refundNo>:<itemId>
+REFUND_LOST:<refundNo>:<itemId>
+```
+
+## 7. 事务边界说明
+
+这一点对理解代码很重要。
+
+### 7.1 下单
+
+`CheckoutServiceImpl` 创建订单/明细并调用 `reserveForOrder`；库存预占发生在下单业务事务范围内。购物车已选项清理由 `afterCommit` 执行，避免业务回滚却先清购物车。
+
+### 7.2 订单状态成功/关闭后的库存终态
+
+`OrderInfoServiceImpl.updateStatusByOrderNoIfStatus` 在订单 CAS 成功后注册：
+
+```text
+SUCCESS → commitReservationAfterCommit(orderNo)
+CLOSED/CANCEL → releaseReservationAfterCommit(orderNo)
+```
+
+即：
+
+```text
+订单状态事务先提交
+→ TransactionSynchronization.afterCommit
+→ 调用 InventoryService 完成库存 reservation 终态
+```
+
+因此这里是**提交后衔接的幂等最终一致性动作，不是同一个数据库事务**。文档和新代码都不应把它描述成“订单状态与库存终态原子提交”。
+
+如果后续修改这段逻辑，需要同时考虑 afterCommit 失败后的恢复策略，不能只依靠事务回滚幻想跨事务原子性。
+
+## 8. 订单关单
+
+### 8.1 原则
+
+超时消息不能直接把本地订单关掉。必须：
+
+```text
+订单超时
+→ 查询渠道真实状态
+    ├─ 已支付 → 走支付成功统一逻辑
+    ├─ 未支付 → 必要时关渠道单
+    └─ 渠道无单/已关 → 本地 CAS 关闭
+```
+
+这样避免：
+
+```text
+本地已经释放库存
+但渠道实际上已经收款
+```
+
+### 8.2 两条触发路径
+
+```text
+RabbitMQ 延迟消息
+        +
+TimeoutOrderCloseScheduler DB 扫描
+```
+
+两者最终调用同一渠道查单/关单逻辑，依赖 CAS 和幂等实现并发安全。
+
+## 9. 退款模型
+
+### 9.1 退款类型
+
+业务退款覆盖 6 类语义：
+
+```text
+CANCEL_BEFORE_SHIP
+RETURN_AND_REFUND
+REFUND_ONLY
+PRICE_ADJUSTMENT
+DUPLICATE_PAYMENT
+LATE_PAYMENT
+```
+
+其中后两类主要用于系统自动冲正。
+
+### 9.2 防超退
+
+核心策略：
+
+```text
+用户申请
+→ 服务端 RefundPolicy 计算可退额度
+→ 受理时冻结金额/数量
+→ 渠道退款/退货流程
+→ 成功后冻结转已退
+```
+
+前端额度计算仅是 UI 提示，服务端永远是最终权威。
+
+### 9.3 退款与库存
+
+| 场景 | 库存动作 |
+|---|---|
+| 未发货取消 | `locked → available` |
+| 退货退款 | 退货签收/质检后 `sold → available` |
+| 仅退款，未收货 | `locked → lost` |
+| 仅退款，已收货 | `sold → lost` |
+| 差价退款 | 不动库存 |
+| 重复支付冲正 | 不动库存 |
+| 晚到支付冲正 | 不动库存 |
+
+原则：**退款成功不等于库存回补。** 是否回补由货物是否实际回仓决定。
+
+## 10. RabbitMQ 设计
+
+### 10.1 发布可靠性
+
+`RabbitReliabilityConfig` 配合 `application.yml`：
+
+```text
+publisher-confirm-type = correlated
+publisher-returns = true
+template.mandatory = true
+```
+
+`LocalMessageServiceImpl` 使用 `CorrelationData` 等待 broker confirm；成功后 Outbox 由 `PENDING → SENT`，失败则排期重试。
+
+### 10.2 Transactional Outbox
+
+`t_local_message` 状态：
+
+```text
+PENDING → SENT → CONSUMED
+   └────────────→ FAILED（发送重试超限）
+```
+
+流程：
+
+```mermaid
+flowchart TD
+    A[业务产生消息] --> B[插入 t_local_message PENDING]
+    B --> C{存在业务事务?}
+    C -->|是| D[afterCommit 发布]
+    C -->|否| E[立即发布]
+    D --> F[等待 broker confirm]
+    E --> F
+    F -->|ACK| G[CAS 标记 SENT]
+    F -->|失败/超时| H[指数退避重新排期]
+    H --> I[LocalMessageSendJob 每30秒扫描]
+    H -->|超过发送重试上限| J[FAILED 人工补偿]
+```
+
+消费者业务成功后调用 `markConsumed`。
+
+### 10.3 消费 ACK 策略
+
+当前使用：
+
+```yaml
+acknowledge-mode: auto
+```
+
+正确语义：
+
+```text
+业务处理成功
+→ markConsumed
+→ Listener return
+→ Spring ACK
+```
+
+异常：
+
+```text
+业务方法抛异常
+→ Listener 异常退出
+→ Spring Retry
+→ 4 次仍失败
+→ reject(requeue=false)
+→ release queue DLX
+→ failure queue
+```
+
+不要在现有同步消费者中额外 catch 后吞异常，否则会破坏 AUTO ACK 的失败识别边界。
+
+### 10.4 订单关单 MQ 拓扑
+
+```text
+payment.order.close.event.exchange
+    ↓ routing: payment.order.close.delay
+payment.order.close.delay.queue
+    ↓ TTL
+payment.order.close.dead-letter.exchange
+    ↓ routing: payment.order.close.release
+payment.order.close.release.queue
+    ↓ OrderCloseConsumer
+    └─ retry exhausted / reject
+         ↓
+payment.order.close.failure.exchange
+         ↓ routing: payment.order.close.failure
+payment.order.close.failure.queue
+
+人工确认 poison message 后，可按运维流程转入：
+payment.order.close.parking-lot.queue
+```
+
+### 10.5 退款状态同步 MQ 拓扑
+
+```text
+payment.refund.status-sync.event.exchange
+    ↓
+payment.refund.status-sync.delay.queue
+    ↓ TTL
+payment.refund.status-sync.dead-letter.exchange
+    ↓
+payment.refund.status-sync.release.queue
+    ↓ RefundStatusSyncConsumer
+    └─ retry exhausted
+         ↓
+payment.refund.status-sync.failure.exchange
+         ↓
+payment.refund.status-sync.failure.queue
+
+人工长期隔离：
+payment.refund.status-sync.parking-lot.queue
+```
+
+两个业务失败域完全隔离，不共用 Failure Queue。
+
+### 10.6 Failure Queue 与 Parking Lot
+
+职责区别：
+
+```text
+Failure Queue
+= 自动进入的最终消费失败队列
+= 排障、审计、人工决定是否重放
+
+Parking Lot Queue
+= 人工认定暂不应重放的 poison message
+= 长期隔离
+= 不配置自动回灌
+```
+
+DB Scheduler 继续独立保证业务最终一致性，不因为新增 Failure Queue 而删除。
+
+### 10.7 RabbitMQ Queue 参数迁移
+
+`release.queue` 当前已配置：
+
+```text
+x-dead-letter-exchange
+x-dead-letter-routing-key
+```
+
+RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧环境升级时需要删除旧 Release Queue 后由应用重新声明。具体操作必须遵循 `backend/docs/RABBITMQ_OPERATIONS.md`。
+
+## 11. 定时任务
+
+| 类 | 作用 |
+|---|---|
+| `TimeoutOrderCloseScheduler` | 扫描超时未支付订单，重新走渠道反查/关单 |
+| `RefundStatusSyncScheduler` | 扫描处理中退款，向渠道重新同步状态 |
+| `LocalMessageSendJob` | 每 30 秒扫描 PENDING Outbox 并重投 |
+| `MockLogisticsSimulationJob` | 模拟物流状态推进 |
+
+注意：
+
+```text
+MQ = 快速异步触发
+DB Scheduler = 最终一致性兜底
+```
+
+两者不是互相替代。
+
+## 12. 支付渠道配置
+
+主要表：
+
+```text
+t_payment_channel
+t_payment_app
+```
+
+`PaymentConfigLoader` 负责加载/缓存支付配置；管理后台可以维护渠道与应用，`/api/payment-config/reload` 用于刷新缓存。
+
+支付商户参数不应再散落成新的本地 properties 文件。敏感配置不得在新增代码或文档中硬编码真实生产值。
+
+## 13. Excel 库存导入
+
+流程：
+
+```text
+上传 xlsx
+→ 创建 t_stock_import
+→ 存储文件（local / minio）
+→ 管理端 Luckysheet 编辑/核对
+→ 确认入库
+→ 每行库存调整
+→ 写 MANUAL_ADJUST 库存流水
+```
+
+存储抽象支持：
+
+```text
+LocalStockImportFileStore
+MinioStockImportFileStore
+StockImportFileStorage
+```
+
+`t_stock_import.storage_type` 记录每个历史文件实际使用的存储后端，切换全局配置后仍可按记录读取旧文件。
+
+## 14. 账单对账
+
+### 14.1 数据模型
+
+```text
+t_bill_import
+    └── t_bill_record
+    └── t_bill_reconcile_discrepancy
+```
+
+### 14.2 账单类型
+
+```text
+ALL
+SUCCESS
+REFUND
+```
+
+`WxTradeBillParser` 按表头字段识别账单格式，处理 BOM、双引号、反引号前缀、金额元转分等情况。
+
+### 14.3 差异类型
+
+支付：
+
+```text
+PAY_CHANNEL_ONLY
+PAY_LOCAL_ONLY
+PAY_AMOUNT_MISMATCH
+PAY_STATUS_MISMATCH
+```
+
+退款：
+
+```text
+REFUND_CHANNEL_ONLY
+REFUND_LOCAL_ONLY
+REFUND_AMOUNT_MISMATCH
+REFUND_STATUS_MISMATCH
+```
+
+### 14.4 对账幂等
+
+```text
+文件 SHA-256
+→ 账单日期/种类互斥
+→ Redisson 分布式锁
+→ DB 唯一约束
+→ 批次状态
+```
+
+对账是上传后同步执行，不经过 RabbitMQ。
+
+## 15. 用户与认证
+
+主要组件位于 `user` 与 `shared.security`。
+
+能力：
+
+- 注册/登录。
+- Access Token + Refresh Token。
+- 401 single-flight Refresh。
+- 退出登录。
+- 修改密码后 Token 失效。
+- 登录失败按用户名计数。
+- 密码重置申请。
+- 管理员处理重置申请。
+- 收货地址管理。
+- 三级行政区划。
+
+管理员角色禁止进入购物车和用户结算下单链路。
+
+## 16. Controller 导览
+
+当前共 24 个 Controller。
+
+### 16.1 用户与公共能力
+
+| Controller | 前缀 | 主要职责 |
+|---|---|---|
+| `AuthController` | `/api/auth` | 注册、登录、刷新、退出、密码 |
+| `RegionController` | `/api/regions` | 行政区划 |
+| `UserAddressController` | `/api/user/address` | 地址 CRUD |
+| `ProductController` | `/api/product` | 商城商品 |
+| `CartController` | `/api/cart` | 购物车 |
+| `CheckoutController` | `/api/checkout` | 下单、订单、支付入口 |
+| `OrderInfoController` | `/api/order-info` | 订单列表/渠道状态查询 |
+| `OrderShipmentController` | `/api/order` | 物流、收货、取消 |
+| `RefundApplyController` | `/api/refund-applies` | 用户退款申请 |
+| `RefundApplicationController` | 方法级兼容路由 | 兼容退款入口 |
+
+### 16.2 支付
+
+| Controller | 前缀 |
+|---|---|
+| `WxPayController` | `/api/wx-pay` |
+| `WxPayV2Controller` | `/api/wx-pay-v2` |
+| `AliPayController` | `/api/ali-pay` |
+| `PaymentAppController` | `/api/payment-app` |
+| `PaymentChannelController` | `/api/payment-channel` |
+| `PaymentConfigController` | `/api/payment-config` |
+
+### 16.3 管理能力
+
+| Controller | 前缀 |
+|---|---|
+| `AdminOrderShipmentController` | `/api/admin/order` |
+| `AdminProductController` | `/api/admin/products` |
+| `StockAdminController` | `/api/admin/stock` |
+| `AdminRefundOrderController` | `/api/admin/refund` |
+| `RefundInfoController` | `/api/refund-info` |
+| `AdminUserController` | `/api/admin/users` |
+| `AdminPasswordResetRequestController` | `/api/admin/password-reset-requests` |
+| `ReconciliationController` | `/api/reconciliation` |
+
+## 17. 前端导览
+
+### 17.1 user-ui
+
+开发端口：`3000`。
+
+| 路由 | 页面 |
+|---|---|
+| `/` | 商品首页 |
+| `/login` | 登录/注册/找回密码 |
+| `/cart` | 购物车与结算 |
+| `/orders` | 订单、支付、查单、物流、退款入口 |
+| `/refund-applications` | 退款申请 |
+| `/account` | 用户中心 |
+| `/addresses` | 地址管理 |
+| `/success` | 支付成功 |
+
+`/orders-v2` 当前只是重定向到 `/orders` 的兼容路由。
+
+### 17.2 admin-ui
+
+开发端口：`3002`。
+
+| 路由 | 功能 |
+|---|---|
+| `/admin/orders` | 订单管理 |
+| `/admin/shipping` | 发货管理 |
+| `/admin/products` | 商品/库存 |
+| `/admin/refunds` | 退款管理 |
+| `/admin/users` | 用户管理 |
+| `/admin/reset-requests` | 密码重置申请 |
+| `/admin/reset-password` | 直接重置密码 |
+| `/admin/stock-maintenance` | Excel 库存维护 |
+| `/admin/stock-edit/:id` | Luckysheet 全屏编辑 |
+| `/admin/download` | 账单下载 |
+| `/admin/payment-config` | 支付配置 |
+| `/admin/reconciliation` | 对账 |
+
+## 18. application.yml 关键配置
+
+| 配置 | 作用 |
+|---|---|
+| `server.port` | 后端端口，默认 8080 |
+| `spring.datasource.*` | DM8 |
+| `spring.redis.*` | Redis |
+| `spring.rabbitmq.*` | RabbitMQ 连接、confirm、returns、AUTO ACK、Retry |
+| `payment.auth.access-ttl-seconds` | Access Token TTL |
+| `payment.auth.refresh-ttl-seconds` | Refresh Token TTL |
+| `payment.auth.jwt-secret` | JWT 签名密钥 |
+| `payment.order.expire-minutes` | 订单超时 / Order Close delay TTL |
+| `payment.refund.status-sync-delay-ms` | Refund Sync delay |
+| `stock.import.storage` | local / minio |
+| `stock.import.dir` | 本地文件目录 |
+| `stock.import.minio.*` | MinIO 配置 |
+
+## 19. 测试基线
+
+后端：
+
+```text
+20 个测试类
+129 个用例
+JUnit 5 + Mockito
+不连接真实 DM8 / Redis / RabbitMQ / 支付渠道
+```
+
+主要测试：
+
+| 测试 | 内容 |
+|---|---|
+| `OrderAggregateTest` | 订单聚合 |
+| `PaymentOrderAggregateTest` | 支付单状态机 |
+| `ProductAggregateTest` | 商品聚合 |
+| `StockImportAggregateTest` | 库存导入聚合 |
+| `MoneyTest` | 金额值对象 |
+| `RefundPolicyTest` | 防超退策略 |
+| `*POConvertersTest` | PO / Domain 全字段转换 |
+| `WxTradeBillParserTest` | 微信 CSV |
+| `PaymentSuccessServiceImplTest` | 支付成功编排 |
+| `RefundOrderServiceImplTest` | 退款编排 |
+| `CartServiceImplTest` | 购物车 |
+| `LoginGuardServiceTest` | 登录防护 |
+| `OrderCloseConsumerTest` | Order Close 消费异常传播/成功回写 |
+| `RefundStatusSyncConsumerTest` | Refund Sync 消费异常传播/成功回写 |
+| `OrderCloseRabbitConfigTest` | Order Failure DLX / Parking Lot 拓扑 |
+| `RefundStatusSyncRabbitConfigTest` | Refund Failure DLX / Parking Lot 拓扑 |
+
+命令：
+
+```powershell
+cd backend
+mvn test
+```
+
+用户前端：
+
+```powershell
+cd user-ui
+npm run test:logic
+```
+
+当前验证 Refresh Token single-flight。
+
+## 20. 修改核心链路前必须掌握的规则
+
+### 订单
+
+```text
+NOTPAY 不能被无条件更新
+超时关单前必须查渠道
+```
+
+### 支付
+
+```text
+业务订单允许多个支付尝试
+但只允许一个有效成交
+重复/晚到支付必须冲正
+```
+
+### 库存
+
+```text
+库存不足时下单整体失败
+支付成功不立即 locked→sold
+退款成功不自动等于回补库存
+```
+
+### 退款
+
+```text
+服务端 RefundPolicy 是金额权威
+受理阶段冻结额度
+```
+
+### MQ
+
+```text
+AUTO ACK 保持
+消费者异常必须抛出
+Retry 耗尽进入 Failure Queue
+Parking Lot 不自动回灌
+DB Scheduler 继续兜底
+```
+
+### DB
+
+```text
+schema.sql 是唯一结构权威
+不要新建另一套最终增量脚本
+```
+
+## 21. 文档关系
+
+```text
+README.md
+  └─ 我怎么启动、配置、使用项目？
+
+CODE_INTRO.md
+  └─ 代码为什么这样组织？交易和一致性怎么实现？
+
+AGENTS.md
+  └─ 我修改代码时必须遵守什么规则？
+
+backend/docs/*.md
+  └─ DM8 / RabbitMQ 如何部署、迁移、排障？
+```
+
+当代码、测试和文档冲突时，以当前经过验证的实现为事实基线，并同步修正文档。

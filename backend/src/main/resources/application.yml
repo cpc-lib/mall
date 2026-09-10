@@ -27,7 +27,7 @@ spring:
           initial-interval: 2000
           multiplier: 3.0
           max-interval: 20000
-        default-requeue-rejected: false # 重试耗尽后拒绝且不再回队（避免无限热重试）；后续由 DB 兜底定时任务对账（关单/退款同步均为幂等链路）
+        default-requeue-rejected: false # 重试耗尽后 reject；release queue 通过 DLX 进入独立 failure queue，不回原队列；DB 兜底任务继续负责业务最终收敛
 
   redis:
     host: 192.168.1.200

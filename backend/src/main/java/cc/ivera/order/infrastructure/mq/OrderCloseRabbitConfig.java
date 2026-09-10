@@ -19,8 +19,13 @@ public class OrderCloseRabbitConfig {
     public static final String ORDER_CLOSE_DEAD_LETTER_EXCHANGE = "payment.order.close.dead-letter.exchange";
     public static final String ORDER_CLOSE_DELAY_QUEUE = "payment.order.close.delay.queue";
     public static final String ORDER_CLOSE_RELEASE_QUEUE = "payment.order.close.release.queue";
+    public static final String ORDER_CLOSE_FAILURE_EXCHANGE = "payment.order.close.failure.exchange";
+    public static final String ORDER_CLOSE_FAILURE_QUEUE = "payment.order.close.failure.queue";
+    public static final String ORDER_CLOSE_PARKING_LOT_QUEUE = "payment.order.close.parking-lot.queue";
     public static final String ORDER_CLOSE_DELAY_ROUTING_KEY = "payment.order.close.delay";
     public static final String ORDER_CLOSE_RELEASE_ROUTING_KEY = "payment.order.close.release";
+    public static final String ORDER_CLOSE_FAILURE_ROUTING_KEY = "payment.order.close.failure";
+    public static final String ORDER_CLOSE_PARKING_LOT_ROUTING_KEY = "payment.order.close.parking-lot";
 
     @Bean(name = "orderCloseEventExchange")
     public DirectExchange orderCloseEventExchange() {
@@ -30,6 +35,11 @@ public class OrderCloseRabbitConfig {
     @Bean(name = "orderCloseDeadLetterExchange")
     public DirectExchange orderCloseDeadLetterExchange() {
         return new DirectExchange(ORDER_CLOSE_DEAD_LETTER_EXCHANGE, true, false);
+    }
+
+    @Bean(name = "orderCloseFailureExchange")
+    public DirectExchange orderCloseFailureExchange() {
+        return new DirectExchange(ORDER_CLOSE_FAILURE_EXCHANGE, true, false);
     }
 
     //延时处理机制（TTL 与本地订单未支付超时共用 payment.order.expire-minutes）
@@ -44,7 +54,20 @@ public class OrderCloseRabbitConfig {
 
     @Bean(name = "orderCloseReleaseQueue")
     public Queue orderCloseReleaseQueue() {
-        return new Queue(ORDER_CLOSE_RELEASE_QUEUE, true);
+        Map<String, Object> args = new HashMap<>();
+        args.put("x-dead-letter-exchange", ORDER_CLOSE_FAILURE_EXCHANGE);
+        args.put("x-dead-letter-routing-key", ORDER_CLOSE_FAILURE_ROUTING_KEY);
+        return new Queue(ORDER_CLOSE_RELEASE_QUEUE, true, false, false, args);
+    }
+
+    @Bean(name = "orderCloseFailureQueue")
+    public Queue orderCloseFailureQueue() {
+        return new Queue(ORDER_CLOSE_FAILURE_QUEUE, true);
+    }
+
+    @Bean(name = "orderCloseParkingLotQueue")
+    public Queue orderCloseParkingLotQueue() {
+        return new Queue(ORDER_CLOSE_PARKING_LOT_QUEUE, true);
     }
 
     @Bean
@@ -59,5 +82,21 @@ public class OrderCloseRabbitConfig {
         return BindingBuilder.bind(orderCloseReleaseQueue)
             .to(orderCloseDeadLetterExchange)
             .with(ORDER_CLOSE_RELEASE_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding orderCloseFailureBinding(@Qualifier("orderCloseFailureQueue") Queue orderCloseFailureQueue,
+                                            @Qualifier("orderCloseFailureExchange") DirectExchange orderCloseFailureExchange) {
+        return BindingBuilder.bind(orderCloseFailureQueue)
+            .to(orderCloseFailureExchange)
+            .with(ORDER_CLOSE_FAILURE_ROUTING_KEY);
+    }
+
+    @Bean
+    public Binding orderCloseParkingLotBinding(@Qualifier("orderCloseParkingLotQueue") Queue orderCloseParkingLotQueue,
+                                               @Qualifier("orderCloseFailureExchange") DirectExchange orderCloseFailureExchange) {
+        return BindingBuilder.bind(orderCloseParkingLotQueue)
+            .to(orderCloseFailureExchange)
+            .with(ORDER_CLOSE_PARKING_LOT_ROUTING_KEY);
     }
 }
