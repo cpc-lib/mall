@@ -112,6 +112,7 @@ public class OrderRepositoryImpl implements OrderRepository {
     public List<OrderInfo> listTimeoutNotPay(Date cutoff) {
         LambdaQueryWrapper<OrderInfoPO> q = new LambdaQueryWrapper<OrderInfoPO>()
             .eq(OrderInfoPO::getLegacyStatus, OrderStatus.NOTPAY.getType())
+            .eq(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType())
             .lt(OrderInfoPO::getCreateTime, cutoff)
             .orderByAsc(OrderInfoPO::getCreateTime)
             .last("limit 100");
@@ -122,6 +123,7 @@ public class OrderRepositoryImpl implements OrderRepository {
             // DM8 对 LIMIT 语法兼容性依赖模式；退化为不带 LIMIT 的扫描，不改变业务时序。
             rows = orderInfoMapper.selectList(new LambdaQueryWrapper<OrderInfoPO>()
                 .eq(OrderInfoPO::getLegacyStatus, OrderStatus.NOTPAY.getType())
+                .eq(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType())
                 .lt(OrderInfoPO::getCreateTime, cutoff)
                 .orderByAsc(OrderInfoPO::getCreateTime));
         }
@@ -149,6 +151,11 @@ public class OrderRepositoryImpl implements OrderRepository {
         OrderInfoPO po = new OrderInfoPO();
         po.setCodeUrl(codeUrl);
         return orderInfoMapper.update(po, wrapper) > 0;
+    }
+
+    @Override
+    public boolean casUnpaidToPaying(String orderNo) {
+        return orderInfoMapper.casUnpaidToPaying(orderNo) > 0;
     }
 
     @Override

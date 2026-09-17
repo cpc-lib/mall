@@ -16,6 +16,11 @@ public enum PayStatus {
     UNPAID("UNPAID"),
 
     /**
+     * 支付中（渠道已下单、二维码已生成，等待用户扫码确认）
+     */
+    PAYING("PAYING"),
+
+    /**
      * 已支付
      */
     PAID("PAID");

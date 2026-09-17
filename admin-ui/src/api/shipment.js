@@ -9,5 +9,6 @@ export default {
   forceClose: (orderNo) => request.post(`/api/admin/order/${orderNo}/force-close`),
   markPaid: (orderNo) => request.post(`/api/admin/order/${orderNo}/mark-paid`),
   channelQuery: (orderNo) => request.get(`/api/admin/order/${orderNo}/channel-query`),
-  paymentOrders: (orderNo) => request.get(`/api/admin/order/${orderNo}/payment-orders`)
+  paymentOrders: (orderNo) => request.get(`/api/admin/order/${orderNo}/payment-orders`),
+  refundOrders: (orderNo) => request.get(`/api/admin/refund/order/${orderNo}`)
 }

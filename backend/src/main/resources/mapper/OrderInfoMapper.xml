@@ -62,6 +62,15 @@
     )
   </select>
 
+  <!-- 渠道下单成功：UNPAID → PAYING（CAS），仅当 pay_status 仍为 UNPAID 时切换，避免覆盖 PAID/PAYING。 -->
+  <update id="casUnpaidToPaying">
+    update t_order_info
+    set pay_status = 'PAYING',
+    update_time = CURRENT_TIMESTAMP
+    where order_no = #{orderNo}
+    and pay_status = 'UNPAID'
+  </update>
+
   <!-- 支付成功 CAS：仅 WAIT_PAY 订单可转入 ACTIVE，同时落支付状态/实付/支付时间 -->
   <update id="casWaitPayToActive">
     update t_order_info
@@ -74,10 +83,11 @@
     and order_status = 'WAIT_PAY'
   </update>
 
-  <!-- 超时关单 CAS：仅 WAIT_PAY 订单可关闭 -->
+  <!-- 超时关单 CAS：仅 WAIT_PAY 订单可关闭（UNPAID/PAYING 均重置 pay_status 为 UNPAID） -->
   <update id="casWaitPayToClosed">
     update t_order_info
     set order_status = 'CLOSED',
+    pay_status = 'UNPAID',
     fulfillment_status = 'CANCELLED',
     update_time = CURRENT_TIMESTAMP
     where order_no = #{orderNo}

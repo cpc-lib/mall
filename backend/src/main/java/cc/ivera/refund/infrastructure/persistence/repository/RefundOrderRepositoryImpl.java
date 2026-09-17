@@ -55,6 +55,14 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     }
 
     @Override
+    public List<RefundOrder> listByOrderNoCreateTimeDesc(String orderNo) {
+        return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
+                .eq(RefundOrderPO::getOrderNo, orderNo)
+                .orderByDesc(RefundOrderPO::getCreateTime))
+            .stream().map(RefundOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
     public List<RefundOrder> listByUserIdCreateTimeDesc(Long userId) {
         return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
                 .eq(RefundOrderPO::getUserId, userId)

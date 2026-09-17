@@ -11,6 +11,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.validation.Valid;
+import java.util.List;
 
 /**
  * 管理员退款处理（V2）：拒绝 / 退货签收确认 / 失败重试 / 差价退款。
@@ -63,5 +64,11 @@ public class AdminRefundOrderController {
     public R<RefundApplyVO> priceAdjustment(@Valid @RequestBody PriceAdjustmentRequest req) {
         return R.ok(refundOrderService.createPriceAdjustment(req.getOrderNo(), req.getAmount(), req.getReason()))
             .setMessage("差价退款申请已创建并冻结额度");
+    }
+
+    @ApiOperation("按订单号查询退款单列表（订单详情页展示）")
+    @GetMapping("/order/{orderNo}")
+    public R<List<RefundApplyVO>> listByOrderNo(@PathVariable String orderNo) {
+        return R.ok(refundOrderService.listByOrderNo(orderNo));
     }
 }

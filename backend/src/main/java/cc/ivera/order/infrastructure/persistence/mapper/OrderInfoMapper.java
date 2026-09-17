@@ -33,12 +33,17 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfoPO> {
                                        @Param("paymentAppId") Long paymentAppId);
 
     /**
+     * 渠道下单成功 CAS：pay_status UNPAID → PAYING。
+     */
+    int casUnpaidToPaying(@Param("orderNo") String orderNo);
+
+    /**
      * 支付成功 CAS：WAIT_PAY → ACTIVE，同时置 pay_status=PAID、实付金额、支付时间。
      */
     int casWaitPayToActive(@Param("orderNo") String orderNo, @Param("paidAmount") Integer paidAmount);
 
     /**
-     * 超时关单 CAS：WAIT_PAY → CLOSED（履约同步置 CANCELLED）。
+     * 超时关单 CAS：WAIT_PAY → CLOSED，pay_status 重置为 UNPAID，履约同步置 CANCELLED。
      */
     int casWaitPayToClosed(@Param("orderNo") String orderNo);
 

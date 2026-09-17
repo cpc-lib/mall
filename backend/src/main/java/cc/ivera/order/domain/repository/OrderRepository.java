@@ -77,6 +77,11 @@ public interface OrderRepository {
     boolean updateCodeUrlIfAbsent(String orderNo, String codeUrl);
 
     /**
+     * 渠道下单成功 CAS：pay_status UNPAID → PAYING（幂等，返回 true=切换成功；false=已非 UNPAID）。
+     */
+    boolean casUnpaidToPaying(String orderNo);
+
+    /**
      * 直接更新 legacy 状态（V1 兼容入口，无 CAS 条件）。
      */
     void updateLegacyStatus(String orderNo, String legacyStatus);

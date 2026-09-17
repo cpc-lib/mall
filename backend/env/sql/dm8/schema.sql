@@ -209,7 +209,7 @@ END;
 -- ----------------------------
 -- t_order_info 订单表（V2 四维状态模型）
 -- order_status: WAIT_PAY/ACTIVE/CLOSED/COMPLETED
--- pay_status: UNPAID/PAID
+-- pay_status: UNPAID/PAYING/PAID
 -- fulfillment_status: WAIT_SHIP/SHIPPED/RECEIVED/CANCELLED
 -- refund_status: NONE/REFUNDING/PARTIAL_REFUNDED/FULL_REFUNDED
 -- legacy_status 保留 V1 单一状态值（NOTPAY/SUCCESS/...）仅供审计/回滚
@@ -267,7 +267,7 @@ ON COLUMN t_order_info.legacy_status IS 'V1 旧状态值，仅供审计/回滚�
 COMMENT
 ON COLUMN t_order_info.order_status IS '交易状态：WAIT_PAY-待支付，ACTIVE-有效，CLOSED-已关闭，COMPLETED-已完成';
 COMMENT
-ON COLUMN t_order_info.pay_status IS '支付状态：UNPAID-未支付，PAID-已支付';
+ON COLUMN t_order_info.pay_status IS '支付状态：UNPAID-未支付，PAYING-支付中（渠道已下单），PAID-已支付';
 COMMENT
 ON COLUMN t_order_info.fulfillment_status IS '履约状态：WAIT_SHIP-待发货，SHIPPED-已发货，RECEIVED-已收货，CANCELLED-已取消';
 COMMENT
@@ -8230,19 +8230,11 @@ CREATE TABLE t_shipping_address
 );
 CREATE INDEX idx_ssa_user ON t_shipping_address (user_id);
 
-ALTER TABLE t_refund_order ADD goods_disposition VARCHAR(20);
-COMMENT ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
+-- 以下结构已在 PART 1 的全量建表定义中固化，不再重复执行增量 ALTER/CREATE INDEX：
+-- t_refund_order.goods_disposition
+-- t_bill_reconcile_discrepancy.local_biz_no / local_ledger_no / local_serial_no
+-- idx_payment_order_channel_status_paid_time
+-- idx_refund_order_status_success_time
 
-ALTER TABLE t_bill_reconcile_discrepancy ADD local_biz_no VARCHAR(50);
-ALTER TABLE t_bill_reconcile_discrepancy ADD local_ledger_no VARCHAR(64);
-ALTER TABLE t_bill_reconcile_discrepancy ADD local_serial_no VARCHAR(64);
-COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_biz_no IS '平台侧业务单号：支付为订单号，退款为退款单号';
-COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_ledger_no IS '平台账本单号：支付为payment_no，退款为refund_no';
-COMMENT ON COLUMN t_bill_reconcile_discrepancy.local_serial_no IS '平台记录的渠道流水号：支付为channel_order_no；退款当前可为空';
-
-CREATE INDEX idx_payment_order_channel_status_paid_time
-    ON t_payment_order(channel, status, paid_time);
-CREATE INDEX idx_refund_order_status_success_time
-    ON t_refund_order(status, success_time);
 -- 初始化完成后显式提交数据
 COMMIT;

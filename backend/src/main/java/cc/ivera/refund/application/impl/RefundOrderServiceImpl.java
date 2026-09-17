@@ -214,6 +214,11 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return details(refundOrderRepository.listAllCreateTimeDesc());
     }
 
+    @Override
+    public List<RefundApplyVO> listByOrderNo(String orderNo) {
+        return details(refundOrderRepository.listByOrderNoCreateTimeDesc(orderNo));
+    }
+
     private RefundApplyVO doCreate(Long userId, RefundApplyRequest request, String forcedType, RefundInfo[] channelHolder) {
         OrderInfo order = orderRepository.findByOrderNo(request.getOrderNo());
         if (order == null || !Objects.equals(order.getUserId(), userId)) {

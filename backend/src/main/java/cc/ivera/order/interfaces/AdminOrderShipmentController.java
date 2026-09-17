@@ -75,13 +75,14 @@ public class AdminOrderShipmentController {
             orderNo, userId, startTime, endTime));
     }
 
-    @ApiOperation("强制关单（仅未支付订单，释放预占库存）")
+    @ApiOperation("强制关单（仅未支付/支付中订单，释放预占库存）")
     @PostMapping("/{orderNo}/force-close")
     public R<?> forceClose(@PathVariable String orderNo) {
         OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
         if (order == null) throw new BizException("订单不存在");
-        if (!PayStatus.UNPAID.getType().equals(order.getPayStatus()))
-            throw new BizException("仅未支付订单可强制关单，当前支付状态：" + order.getPayStatus());
+        String ps = order.getPayStatus();
+        if (!PayStatus.UNPAID.getType().equals(ps) && !PayStatus.PAYING.getType().equals(ps))
+            throw new BizException("仅未支付/支付中订单可强制关单，当前支付状态：" + ps);
         // 幂等：已被超时调度器或前次操作关闭的订单直接返回成功
         if (OrderStatus.CLOSED.getType().equals(order.getOrderStatus())) {
             return R.ok().setMessage("订单已关闭（幂等），无需重复操作");
@@ -91,13 +92,14 @@ public class AdminOrderShipmentController {
         return R.ok().setMessage("订单已强制关闭，预占库存已释放");
     }
 
-    @ApiOperation("手动标记支付成功（线下收款，仅未支付订单；补记 OFFLINE 支付单，该单退款本地结转）")
+    @ApiOperation("手动标记支付成功（线下收款，仅未支付/支付中订单；补记 OFFLINE 支付单，该单退款本地结转）")
     @PostMapping("/{orderNo}/mark-paid")
     public R<?> markPaid(@PathVariable String orderNo) {
         OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
         if (order == null) throw new BizException("订单不存在");
-        if (!PayStatus.UNPAID.getType().equals(order.getPayStatus()))
-            throw new BizException("仅未支付订单可标记支付，当前支付状态：" + order.getPayStatus());
+        String ps = order.getPayStatus();
+        if (!PayStatus.UNPAID.getType().equals(ps) && !PayStatus.PAYING.getType().equals(ps))
+            throw new BizException("仅未支付/支付中订单可标记支付，当前支付状态：" + ps);
         boolean ok = paymentSuccessService.markOfflinePaid(orderNo);
         if (!ok) throw new BizException("标记失败：订单状态可能已被并发修改，请刷新后重试");
         return R.ok().setMessage("订单已标记为支付成功，预占库存已提交");

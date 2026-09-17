@@ -1,10 +1,11 @@
 package cc.ivera.payment.application.impl;
 
-import cc.ivera.order.domain.model.OrderInfo;
+import cc.ivera.order.domain.repository.OrderRepository;
 import cc.ivera.payment.application.PaymentOrderService;
 import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.payment.domain.repository.PaymentOrderRepository;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -20,9 +21,11 @@ import java.util.Date;
 public class PaymentOrderServiceImpl implements PaymentOrderService {
 
     private final PaymentOrderRepository paymentOrderRepository;
+    private final OrderRepository orderRepository;
 
-    public PaymentOrderServiceImpl(PaymentOrderRepository paymentOrderRepository) {
+    public PaymentOrderServiceImpl(PaymentOrderRepository paymentOrderRepository, OrderRepository orderRepository) {
         this.paymentOrderRepository = paymentOrderRepository;
+        this.orderRepository = orderRepository;
     }
 
     @Override
@@ -58,7 +61,15 @@ public class PaymentOrderServiceImpl implements PaymentOrderService {
         if (!StringUtils.hasText(paymentNo)) {
             return;
         }
-        paymentOrderRepository.markPaying(paymentNo, codeUrl);
+        boolean paying = paymentOrderRepository.markPaying(paymentNo, codeUrl);
+        if (paying) {
+            // 联动：渠道下单成功后，订单 pay_status UNPAID → PAYING（幂等 CAS，不覆盖 PAID）
+            PaymentOrder po = paymentOrderRepository.findByPaymentNo(paymentNo);
+            if (po != null && StringUtils.hasText(po.getOrderNo())) {
+                orderRepository.casUnpaidToPaying(po.getOrderNo());
+                log.info("订单 pay_status UNPAID → PAYING，orderNo={}, paymentNo={}", po.getOrderNo(), paymentNo);
+            }
+        }
     }
 
     @Override

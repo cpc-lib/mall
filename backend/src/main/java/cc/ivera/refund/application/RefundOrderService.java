@@ -75,4 +75,9 @@ public interface RefundOrderService {
     List<RefundApplyVO> listForUser(Long userId);
 
     List<RefundApplyVO> listAll();
+
+    /**
+     * 按订单号查询退款单列表（管理员订单详情展示）。
+     */
+    List<RefundApplyVO> listByOrderNo(String orderNo);
 }

@@ -16,6 +16,8 @@ export default function AdminOrders() {
   const [channelQueryRow, setChannelQueryRow] = useState(null)
   const [channelQueryLoading, setChannelQueryLoading] = useState(false)
   const [payAttempts, setPayAttempts] = useState([])
+  const [detailPayAttempts, setDetailPayAttempts] = useState([])
+  const [detailRefundOrders, setDetailRefundOrders] = useState([])
   const loadAllOrders = () => {
     const params = {}
     if (orderFilter.payStatus) params.payStatus = orderFilter.payStatus
@@ -62,7 +64,28 @@ export default function AdminOrders() {
     { title: '发起时间', width: 150, render: (_, r) => r.createTime ? new Date(r.createTime).toLocaleString() : '-' },
     { title: '支付时间', width: 150, render: (_, r) => r.paidTime ? new Date(r.paidTime).toLocaleString() : '-' }
   ]
-  const openDetail = d => { setDetailRow(d); setPaAmount(0); setPaReason('差价补偿') }
+  const refundCols = [
+    { title: '退款单号', render: (_, r) => r.apply?.refundNo || '-', width: 170 },
+    { title: '类型', render: (_, r) => r.apply?.refundType || '-', width: 110 },
+    { title: '来源', render: (_, r) => r.apply?.applyType || '-', width: 80 },
+    {
+      title: '状态', width: 110,
+      render: (_, r) => {
+        const s = r.apply?.status
+        const color = s === 'SUCCESS' ? 'green' : s === 'FAILED' ? 'red' : s === 'REJECTED' || s === 'CANCELLED' ? 'default' : 'orange'
+        return s ? <Tag color={color}>{s}</Tag> : '-'
+      }
+    },
+    { title: '金额', width: 90, render: (_, r) => r.apply?.refundAmount != null ? `¥${(r.apply.refundAmount / 100).toFixed(2)}` : '-' },
+    { title: '原因', render: (_, r) => r.apply?.reason || '-', ellipsis: true },
+    { title: '创建时间', width: 150, render: (_, r) => r.apply?.createTime ? new Date(r.apply.createTime).toLocaleString() : '-' },
+    { title: '成功时间', width: 150, render: (_, r) => r.apply?.successTime ? new Date(r.apply.successTime).toLocaleString() : '-' }
+  ]
+  const openDetail = d => {
+    setDetailRow(d); setPaAmount(0); setPaReason('差价补偿')
+    shipmentApi.paymentOrders(d.order.orderNo).then(r => setDetailPayAttempts(r.data || []))
+    shipmentApi.refundOrders(d.order.orderNo).then(r => setDetailRefundOrders(r.data || []))
+  }
   const submitPriceAdjust = async () => {
     if (!detailRow || !Number(paAmount)) { message.error('请填写退款金额（分）'); return }
     await refundApi.priceAdjustment({ orderNo: detailRow.order.orderNo.trim(), amount: Number(paAmount), reason: paReason.trim() || '差价补偿' })
@@ -80,8 +103,8 @@ export default function AdminOrders() {
     { title: '创建时间', render: (_, d) => d.order.createTime ? new Date(d.order.createTime).toLocaleString() : '-' },
     {
       title: '操作', width: 200, render: (_, d) => {
-        const canClose = d.order.payStatus === 'UNPAID' && (d.order.orderStatus === '未支付' || d.order.orderStatus === '超时已关闭')
-        const canMarkPaid = d.order.payStatus === 'UNPAID' && d.order.orderStatus === '未支付'
+        const canClose = (d.order.payStatus === 'UNPAID' || d.order.payStatus === 'PAYING') && (d.order.orderStatus === '未支付' || d.order.orderStatus === '超时已关闭')
+        const canMarkPaid = (d.order.payStatus === 'UNPAID' || d.order.payStatus === 'PAYING') && d.order.orderStatus === '未支付'
         return <Space>
           <Button size="small" onClick={() => openDetail(d)}>详情</Button>
           {canClose && <Button danger size="small" onClick={() => forceClose(d.order.orderNo)}>强制关单</Button>}
@@ -98,14 +121,15 @@ export default function AdminOrders() {
     { title: '小计(分)', render: (_, i) => (Number(i.unitPrice || 0) * Number(i.quantity || 0)) }
   ]
   const o = detailRow?.order
-  const canClose = o && o.payStatus === 'UNPAID' && (o.orderStatus === '未支付' || o.orderStatus === '超时已关闭')
-  const canMarkPaid = o && o.payStatus === 'UNPAID' && o.orderStatus === '未支付'
+  const canClose = o && (o.payStatus === 'UNPAID' || o.payStatus === 'PAYING') && (o.orderStatus === '未支付' || o.orderStatus === '超时已关闭')
+  const canMarkPaid = o && (o.payStatus === 'UNPAID' || o.payStatus === 'PAYING') && o.orderStatus === '未支付'
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>订单管理</Typography.Title>
     <Card>
     <Space style={{ marginBottom: 16 }} wrap>
       <Select placeholder="支付状态" allowClear style={{ width: 120 }} value={orderFilter.payStatus || undefined} onChange={v => setOrderFilter({ ...orderFilter, payStatus: v || '' })}>
         <Select.Option value="UNPAID">待支付</Select.Option>
+        <Select.Option value="PAYING">支付中</Select.Option>
         <Select.Option value="PAID">已支付</Select.Option>
       </Select>
       <Select placeholder="订单生命周期" allowClear style={{ width: 130 }} value={orderFilter.orderStatus || undefined} onChange={v => setOrderFilter({ ...orderFilter, orderStatus: v || '' })}>
@@ -157,6 +181,10 @@ export default function AdminOrders() {
           <Input placeholder="退款原因" value={paReason} maxLength={255} onChange={e => setPaReason(e.target.value)} style={{ width: 240 }} />
           <Button type="primary" onClick={submitPriceAdjust}>提交差价退款</Button>
         </Space>
+        <h4 style={{ marginTop: 24 }}>支付尝试记录</h4>
+        <Table rowKey="id" dataSource={detailPayAttempts} columns={poCols} pagination={false} size="small" style={{ marginBottom: 16 }} />
+        <h4>退款单记录</h4>
+        <Table rowKey={(r) => r.apply?.refundNo || r.apply?.id} dataSource={detailRefundOrders} columns={refundCols} pagination={false} size="small" locale={{ emptyText: '暂无退款记录' }} />
       </div>}
     </Drawer>
     <Modal

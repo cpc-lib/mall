@@ -33,6 +33,11 @@ public interface RefundOrderRepository {
     RefundOrder findByOrderNoAndApplyType(String orderNo, String applyType);
 
     /**
+     * 订单退款单按创建时间倒序。
+     */
+    List<RefundOrder> listByOrderNoCreateTimeDesc(String orderNo);
+
+    /**
      * 用户退款单按创建时间倒序。
      */
     List<RefundOrder> listByUserIdCreateTimeDesc(Long userId);

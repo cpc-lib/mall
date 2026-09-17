@@ -1,4 +1,4 @@
-export const PAY_LABEL = { UNPAID: '待支付', PAID: '已支付' }
+export const PAY_LABEL = { UNPAID: '待支付', PAYING: '支付中', PAID: '已支付' }
 export const FULFILLMENT_LABEL = { WAIT_SHIP: '待发货', SHIPPED: '已发货', RECEIVED: '已收货', CANCELLED: '已取消' }
 export const ORDER_LIFECYCLE_LABEL = { WAIT_PAY: '待支付', ACTIVE: '已激活', CLOSED: '已关闭' }
 export const ORDER_REFUND_LABEL = { NONE: '', REFUNDING: '退款中', PARTIAL_REFUNDED: '部分退款', FULL_REFUNDED: '已全额退款' }

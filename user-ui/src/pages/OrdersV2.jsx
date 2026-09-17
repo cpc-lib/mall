@@ -126,7 +126,7 @@ export default function OrdersV2() {
         : orders.map(d => {
           const o = d.order
           const noRefund = o.refundStatus == null || o.refundStatus === 'NONE'
-          const canPay = o.payStatus === 'UNPAID' && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
+          const canPay = (o.payStatus === 'UNPAID' || o.payStatus === 'PAYING') && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
           const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP' && noRefund
           const canConfirm = o.fulfillmentStatus === 'SHIPPED' && d.shipmentStatus === 'DELIVERED' && noRefund
           const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus) && noRefund
