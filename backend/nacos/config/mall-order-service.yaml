@@ -1,0 +1,85 @@
+server:
+  port: ${SERVER_PORT:8085}
+
+spring:
+  application:
+    name: mall-order-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:mall}
+    password: ${RABBITMQ_PASSWORD:Cpc2026#@Mq}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # 订单服务消费延迟关单与支付成功事件
+        auto-startup: true
+        acknowledge-mode: manual
+        default-requeue-rejected: false
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 3000ms
+      password: ${REDIS_PASSWORD:cpc!23#@}
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    username: ${DM_USERNAME:SYSDBA}
+    password: ${DM_PASSWORD:Cpc2026#@Dm}
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+
+user:
+  service:
+    base-url: ${USER_SERVICE_BASE_URL:}
+
+cart:
+  service:
+    base-url: ${CART_SERVICE_BASE_URL:}
+
+product:
+  service:
+    base-url: ${PRODUCT_SERVICE_BASE_URL:}
+
+payment:
+  service:
+    base-url: ${PAYMENT_SERVICE_BASE_URL:}
+  order:
+    expire-minutes: 3 # 本地订单未支付超时（分钟）：到时释放锁定库存并关单（MQ 延迟关单 TTL 与 DB 兜底判定共用此值）
+    timeout-scan-ms: 60000 # DB 最终一致性兜底：扫描超时 NOTPAY 订单的周期
+
+order:
+  saga:
+    recovery-delay-ms: 300000 # 判定 Saga 卡住（进程中断残留）的阈值
+    recovery-scan-ms: 60000 # 恢复调度扫描周期
+  request:
+    ttl-hours: 24 # 下单幂等记录保留时长
+
+logistics:
+  mock:
+    advance-ms: 15000
+
+local-message:
+  relay-enabled: false # 同库阶段由 user-bff 统一中继 Outbox，避免双发布
+
+logging:
+  level:
+    root: info

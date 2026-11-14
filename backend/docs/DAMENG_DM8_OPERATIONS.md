@@ -36,12 +36,23 @@ env/sql/dm8
 带 `--if-missing` 参数时，脚本先检测必需业务表：齐全则直接跳过（不破坏已有数据），缺失才执行破坏性重建。`start-dm8.sh`
 内部正是以该方式自动调用的。
 
+脚本内部用 `disql` 执行 SQL，并为容器设置 UTF-8 locale：`schema.sql` 中的中文 `COMMENT` / `INSERT` 在 POSIX locale 下会被
+`disql` 判为非法字符（`[-70037] String not integrated`），导致初始化中途失败。可用 `DM_LOCALE` 覆盖默认值 `zh_CN.utf8`。
+
 ## 3. 登录验证
 
 ```bash
 docker exec -it payment-demo-dm8 bash
-cd /opt/dmdbms/bin
-./disql SYSDBA/'Cpc2026#@Dm'
+cd /home/dmdba/dmdbms/bin
+./disql SYSDBA
+# 交互输入密码：Cpc2026#@Dm
+```
+
+密码同时包含 `#` 和 `@`，不能写成 `./disql SYSDBA/'Cpc2026#@Dm'`：`#` 会被 `disql` 当作扩展选项起点，`@` 会被当作连接符，
+表现为打印 `CONN` 用法或 `[-2501] Invalid username or password`。需要非交互连接时用双引号包裹密码：
+
+```bash
+./disql 'SYSDBA/"Cpc2026#@Dm"@127.0.0.1:5236'
 ```
 
 ## 4. 应用连接
@@ -52,7 +63,7 @@ cd /opt/dmdbms/bin
 spring:
   datasource:
     driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:192.168.1.200}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
     username: ${DM_USERNAME:SYSDBA}
     password: ${DM_PASSWORD:Cpc2026#@Dm}
 ```
@@ -62,7 +73,7 @@ spring:
 谨慎执行，下面命令会删除 `dm8-data` 数据卷：
 
 ```bash
-docker compose -f env/docker-compose.dm8.yml down -v
+docker compose -f env/docker-compose.yml down -v
 bash env/scripts/dm8/start-dm8.sh
 bash env/scripts/dm8/init-dm8-sql.sh
 ```

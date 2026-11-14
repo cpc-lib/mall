@@ -22,6 +22,7 @@ export default function Cart() {
   const [addressList, setAddressList] = useState([])
   const [selectedAddrId, setSelectedAddrId] = useState(null)
   const [addrOpen, setAddrOpen] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [addrForm] = Form.useForm()
   const [regions, setRegions] = useState([])
   const load = async () => {
@@ -59,15 +60,22 @@ export default function Cart() {
   const changeQty = async (row, q) => { await cartApi.put({ productId: row.productId, quantity: q, selected: row.selected }); await load() }
 
   const checkout = async () => {
+    if (submitting) return
     const app = apps.find(a => a.channelCode === channelCode)
     if (!app) return message.error('请选择支付方式')
     const paymentType = paymentTypeOf(channelCode)
     if (!paymentType) return message.error(`暂不支持渠道 ${channelCode}`)
     const payload = { paymentType, paymentAppId: app.id }
     if (selectedAddrId) payload.addressId = selectedAddrId
-    const r = await checkoutApi.create(payload)
-    message.success(`订单已创建：${r.data?.order?.orderNo}`)
-    location.hash = '#/orders'
+    const idempotencyKey = window.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setSubmitting(true)
+    try {
+      const r = await checkoutApi.create(payload, idempotencyKey)
+      message.success(`订单已创建：${r.data?.order?.orderNo}`)
+      location.hash = '#/orders'
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   const submitAddr = async () => {
@@ -156,7 +164,7 @@ export default function Cart() {
       <div className="tb-cart-bar">
         <span className="m-dim">已选 <b className="m-count">{selectedItems.length}</b> 件商品</span>
         <div className="tb-cart-total">合计：<b>¥{(total / 100).toFixed(2)}</b></div>
-        <Button className="tb-cart-checkout" disabled={!canCheckout} onClick={checkout}>结 算</Button>
+        <Button className="tb-cart-checkout" disabled={!canCheckout || submitting} loading={submitting} onClick={checkout}>结 算</Button>
       </div>
     </div>
     <Modal open={addrOpen} onCancel={() => setAddrOpen(false)} title="新增收货地址" onOk={submitAddr}>

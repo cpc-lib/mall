@@ -1,0 +1,39 @@
+server:
+  # 管理端 BFF：8080 由 mall-gateway 占用，本进程只接受网关转发
+  port: ${SERVER_PORT:8082}
+
+spring:
+  application:
+    name: mall-admin-bff
+  config:
+    import: classpath:application-core.yml,optional:nacos:mall-common.yaml,optional:nacos:mall-admin-bff.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        import-check:
+          enabled: false
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+          mall-product-service:
+            connect-timeout: 3000
+            read-timeout: 30000
+  rabbitmq:
+    listener:
+      simple:
+        # 后台 MQ 消费只在 user-bff 进程执行，管理端 BFF 不启动监听容器
+        auto-startup: false

@@ -3,158 +3,48 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>cc.ivera</groupId>
-  <artifactId>backend</artifactId>
+  <artifactId>mall-backend</artifactId>
   <version>0.0.1-SNAPSHOT</version>
-  <name>mall</name>
-  <description>Demo project for Spring Boot</description>
+  <packaging>pom</packaging>
+  <name>mall-backend</name>
+  <description>商城后端聚合：mall-core 领域内核 + user/admin BFF + 网关</description>
+
+  <modules>
+    <module>mall-common</module>
+    <module>mall-api-order</module>
+    <module>mall-api-payment</module>
+    <module>mall-api-refund</module>
+    <module>mall-infra</module>
+    <module>mall-api-user</module>
+    <module>mall-api-cart</module>
+    <module>mall-api-product</module>
+    <module>mall-core</module>
+    <module>mall-user-service</module>
+    <module>mall-cart-service</module>
+    <module>mall-product-service</module>
+    <module>mall-payment-service</module>
+    <module>mall-refund-service</module>
+    <module>mall-order-service</module>
+    <module>mall-bill-service</module>
+    <module>mall-user-bff</module>
+    <module>mall-admin-bff</module>
+    <module>mall-gateway</module>
+  </modules>
 
   <properties>
-    <java.version>1.8</java.version>
+    <java.version>21</java.version>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-    <spring-boot.version>2.3.7.RELEASE</spring-boot.version>
+    <spring-boot.version>3.5.16</spring-boot.version>
+    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+    <lombok.version>1.18.48</lombok.version>
+    <mybatis-plus.version>3.5.18</mybatis-plus.version>
+    <redisson.version>3.52.0</redisson.version>
+    <springdoc.version>2.10.0</springdoc.version>
+    <archunit.version>1.5.1</archunit.version>
   </properties>
-
-  <dependencies>
-    <!--web-->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-web</artifactId>
-    </dependency>
-
-    <!--参数校验-->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
-
-    <!--Swagger-->
-    <dependency>
-      <groupId>io.springfox</groupId>
-      <artifactId>springfox-swagger2</artifactId>
-      <version>2.7.0</version>
-    </dependency>
-    <!--Swagger ui-->
-    <dependency>
-      <groupId>io.springfox</groupId>
-      <artifactId>springfox-swagger-ui</artifactId>
-      <version>2.7.0</version>
-    </dependency>
-
-    <!--lombok-->
-    <dependency>
-      <groupId>org.projectlombok</groupId>
-      <artifactId>lombok</artifactId>
-      <version>1.18.30</version>
-    </dependency>
-
-    <!-- 达梦 DM8 JDBC 驱动（JDK 8） -->
-    <dependency>
-      <groupId>com.dameng</groupId>
-      <artifactId>DmJdbcDriver18</artifactId>
-      <version>8.1.2.192</version>
-    </dependency>
-
-    <!--MyBatis-Plus：是MyBatis的增强-->
-    <dependency>
-      <groupId>com.baomidou</groupId>
-      <artifactId>mybatis-plus-boot-starter</artifactId>
-      <version>3.3.1</version>
-    </dependency>
-
-    <!-- 生成自定义配置的元数据信息 -->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-configuration-processor</artifactId>
-      <optional>true</optional>
-    </dependency>
-
-    <!--微信支付SDK-->
-    <dependency>
-      <groupId>com.github.wechatpay-apiv3</groupId>
-      <artifactId>wechatpay-apache-httpclient</artifactId>
-      <version>0.3.0</version>
-    </dependency>
-
-    <!--微信支付 APIv2 SDK-->
-    <dependency>
-      <groupId>com.github.wxpay</groupId>
-      <artifactId>wxpay-sdk</artifactId>
-      <version>0.0.3</version>
-    </dependency>
-
-    <!--支付宝 SDK-->
-    <dependency>
-      <groupId>com.alipay.sdk</groupId>
-      <artifactId>alipay-sdk-java</artifactId>
-      <version>4.22.57.ALL</version>
-    </dependency>
-
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-test</artifactId>
-      <scope>test</scope>
-      <exclusions>
-        <exclusion>
-          <groupId>org.junit.vintage</groupId>
-          <artifactId>junit-vintage-engine</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-actuator</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-amqp</artifactId>
-    </dependency>
-
-    <!--Redis：用于分布式锁，防止重复创建订单和重复提交关键业务-->
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-data-redis</artifactId>
-    </dependency>
-
-    <!--MinIO 对象存储：Excel 导入文件可选存储后端（V6）-->
-    <dependency>
-      <groupId>io.minio</groupId>
-      <artifactId>minio</artifactId>
-      <version>8.5.7</version>
-    </dependency>
-
-    <!-- Apache POI：解析微信支付下载的 .xlsx 交易账单 -->
-    <dependency>
-      <groupId>org.apache.poi</groupId>
-      <artifactId>poi-ooxml</artifactId>
-      <version>5.2.5</version>
-    </dependency>
-    <!-- MinIO 8.5.7 会传递引入 commons-compress 1.24.0；POI 5.2.5 运行 XLSX 写/读需要新版 API，显式钉版本避免 NoSuchMethodError。 -->
-    <dependency>
-      <groupId>org.apache.commons</groupId>
-      <artifactId>commons-compress</artifactId>
-      <version>1.26.1</version>
-    </dependency>
-    <!-- 显式钉版本：规避 Spring Boot 2.3 BOM 将 okhttp/kotlin-stdlib 降级到 MinIO 不兼容版本 -->
-    <dependency>
-      <groupId>com.squareup.okhttp3</groupId>
-      <artifactId>okhttp</artifactId>
-      <version>4.12.0</version>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>kotlin-stdlib</artifactId>
-      <version>1.8.21</version>
-    </dependency>
-
-    <!--Redisson：分布式锁，支持看门狗自动续期-->
-    <dependency>
-      <groupId>org.redisson</groupId>
-      <artifactId>redisson-spring-boot-starter</artifactId>
-      <version>3.16.8</version>
-    </dependency>
-
-  </dependencies>
 
   <dependencyManagement>
     <dependencies>
@@ -165,6 +55,65 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>com.alibaba.cloud</groupId>
+        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
+        <version>${spring-cloud-alibaba.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-order</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-payment</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-refund</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-infra</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-user</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-cart</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-api-product</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
     </dependencies>
   </dependencyManagement>
 
@@ -173,33 +122,29 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.8.1</version>
+        <version>3.14.0</version>
         <configuration>
-          <source>1.8</source>
-          <target>1.8</target>
+          <release>${maven.compiler.release}</release>
           <encoding>UTF-8</encoding>
+          <parameters>true</parameters>
+          <!-- JDK 23+ 默认关闭隐式注解处理，需显式声明 Lombok 处理器 -->
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+          </annotationProcessorPaths>
         </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.22.2</version>
-      </plugin>
-      <plugin>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-maven-plugin</artifactId>
-        <version>2.3.7.RELEASE</version>
+        <version>3.5.2</version>
         <configuration>
-          <mainClass>cc.ivera.Application</mainClass>
+          <!-- 对账日切按 Asia/Shanghai 归账，测试 JVM 时区与之保持一致 -->
+          <argLine>-Duser.timezone=Asia/Shanghai</argLine>
         </configuration>
-        <executions>
-          <execution>
-            <id>repackage</id>
-            <goals>
-              <goal>repackage</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>

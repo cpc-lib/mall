@@ -1,0 +1,36 @@
+server:
+  port: ${SERVER_PORT:8089}
+
+spring:
+  application:
+    name: mall-cart-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+          mall-product-service:
+            connect-timeout: 3000
+            read-timeout: 30000
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    username: ${DM_USERNAME:SYSDBA}
+    password: ${DM_PASSWORD:Cpc2026#@Dm}
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+product:
+  service:
+    base-url: ${PRODUCT_SERVICE_BASE_URL:}
+
+logging:
+  level:
+    root: info

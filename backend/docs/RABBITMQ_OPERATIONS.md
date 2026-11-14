@@ -62,6 +62,16 @@ Consumer reliability (Spring AMQP listener, applies to all `@RabbitListener` con
   Delivery retries use exponential backoff (3^n seconds, max 5 attempts) then `FAILED` for manual compensation;
   `LocalMessageSendJob` rescans `PENDING` every 30s. Manual compensation: fix the fault, then set `status='PENDING'`,
   `next_retry_time=CURRENT_TIMESTAMP` for `FAILED` rows — redelivery is safe (consumers are idempotent).
+- Process ownership after P6: order-close consumers, payment-event consumers, order `@Scheduled` jobs (timeout scan, logistics
+  mock, saga recovery) and the order MQ topology run only in `mall-order-service`. Only the `LocalMessageSendJob` outbox relay
+  runs in `mall-user-bff`. Refund reversal consumers (`payment.duplicate.refund.queue`, `payment.late.refund.queue`),
+  `RefundStatusSyncConsumer` and `RefundStatusSyncScheduler` run only in `mall-refund-service`, which keeps
+  `local-message.relay-enabled=false` so refund status-sync messages are still published by the user-bff relay.
+  `mall-order-service` also keeps `local-message.relay-enabled=false`. `mall-admin-bff` and `mall-payment-service` set
+  `spring.rabbitmq.listener.simple.auto-startup=false`; `mall-payment-service` additionally sets
+  `local-message.relay-enabled=false`, so it declares the payment event topology for local operations but neither consumes
+  queues nor scans `t_local_message`. Do not enable listeners or the relay in payment-service, or duplicate order/payment
+  consumers in user-bff, without first removing the duplicate-consumer risk.
 - Durability: exchanges and queues are declared durable; Spring AMQP messages default to PERSISTENT delivery mode.
 - Manual compensation endpoints: `POST /api/admin/order/{orderNo}/force-close` (admin "强制关单" button) and the admin
   refund status query (triggers channel sync).
@@ -97,7 +107,8 @@ Declared by `cc.ivera.order.infrastructure.mq.OrderCloseRabbitConfig`.
 
 ### Refund Status Sync
 
-Declared by `cc.ivera.refund.infrastructure.config.RefundStatusSyncRabbitConfig`.
+Declared by `cc.ivera.refund.infrastructure.config.RefundStatusSyncRabbitConfig` (in `mall-api-refund`, consumed by
+`mall-refund-service`).
 
 | Type        | Name                                              | Notes                                                            |
 |-------------|---------------------------------------------------|------------------------------------------------------------------|
@@ -112,6 +123,30 @@ Declared by `cc.ivera.refund.infrastructure.config.RefundStatusSyncRabbitConfig`
 | routing key | `payment.refund.status-sync.release`              | Delay dead-letter exchange to release queue.                                             |
 | routing key | `payment.refund.status-sync.failure`              | Failure exchange to failure queue.                                                       |
 | routing key | `payment.refund.status-sync.parking-lot`          | Failure exchange to parking-lot queue for manual quarantine.                             |
+
+### Payment Business Events
+
+Declared by `cc.ivera.payment.infrastructure.mq.PaymentEventRabbitConfig`.
+
+| Type        | Name                               | Notes                                                                                     |
+|-------------|------------------------------------|-------------------------------------------------------------------------------------------|
+| exchange    | `payment.event.exchange`           | Producer publishes payment outcome events here.                                            |
+| exchange    | `payment.event.failure.exchange`   | Receives messages rejected from business queues after Spring Retry is exhausted.           |
+| queue       | `payment.succeeded.order.queue`    | Durable queue consumed by the order context to advance the order to paid.                  |
+| queue       | `payment.duplicate.refund.queue`   | Durable queue consumed by `ExceptionPaymentRefundConsumer` for duplicate-payment reversal.  |
+| queue       | `payment.late.refund.queue`        | Durable queue consumed by `ExceptionPaymentRefundConsumer` for late-payment reversal.       |
+| queue       | `payment.succeeded.failure.queue`  | Durable operational failure queue for the succeeded event.                                 |
+| queue       | `payment.duplicate.failure.queue`  | Durable operational failure queue for the duplicate event.                                 |
+| queue       | `payment.late.failure.queue`       | Durable operational failure queue for the late event.                                      |
+| queue       | `payment.event.parking.queue`      | Durable long-term poison-message quarantine; no automatic replay.                           |
+| routing key | `payment.succeeded`                | Event exchange to the succeeded order queue.                                                |
+| routing key | `payment.duplicate`                | Event exchange to the duplicate refund queue.                                               |
+| routing key | `payment.late`                     | Event exchange to the late refund queue.                                                    |
+| routing key | `<key>.failure`                    | Business queue DLX to the matching failure queue.                                           |
+
+Business queues are declared with `x-dead-letter-exchange=payment.event.failure.exchange` and
+`x-dead-letter-routing-key=<routingKey>.failure`; the failure exchange also binds `payment.event.parking.queue`.
+These queues are new, so first deployment only needs the application to declare them (no existing-queue deletion).
 
 ## Pre-Deployment Checks
 
@@ -153,9 +188,19 @@ Start refund status sync message
 Finished refund status sync message
 ```
 
+8. For payment events: trigger a sandbox payment success and confirm a `payment.succeeded` message reaches
+   `payment.succeeded.order.queue`, the order becomes paid, and `t_payment_deal` has exactly one row for the order.
+9. Trigger a second successful payment on the same order and confirm a `payment.duplicate` message reaches
+   `payment.duplicate.refund.queue`, the reversal refund is created for that `payment_no`, and stock is unchanged.
+10. Confirm a forced consumer failure retries four times, then lands in the matching `payment.*.failure.queue` with
+    `x-death` metadata instead of requeueing to the business queue.
+
 ## Rollback Notes
 
 - Rolling back the application stops producing and consuming refund status sync messages.
 - Existing delayed/failure/parking-lot messages remain in RabbitMQ until consumed, replayed, purged, or deleted by operations.
 - A rollback to a version that declares the old release queue arguments will hit `PRECONDITION_FAILED` while the new release queues still exist. For such a rollback, drain/preserve required messages, stop consumers, delete the two release queues, and let the old version redeclare them.
 - Order-close and refund-status-sync failure topologies are independent; do not purge one while operating on the other.
+- Payment event queues are additive. Rolling back to a version without `PaymentEventRabbitConfig` stops producing payment
+  events; `t_payment_deal` rows written by the newer version are historical facts and must not be deleted as part of a
+  code rollback. Drain or preserve unprocessed `payment.*` messages before deleting their queues.

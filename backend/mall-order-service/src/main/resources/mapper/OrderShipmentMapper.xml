@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="cc.ivera.order.infrastructure.persistence.mapper.OrderShipmentMapper">
+
+  <update id="casShipmentStatus">
+    update t_order_shipment
+    set status = #{to},
+    <choose>
+      <when test="timeColumn == 'shippedTime'">shipped_time = #{now},</when>
+      <when test="timeColumn == 'inTransitTime'">in_transit_time = #{now},</when>
+      <when test="timeColumn == 'deliveredTime'">delivered_time = #{now},</when>
+      <when test="timeColumn == 'receivedTime'">received_time = #{now},</when>
+      <otherwise>shipped_time = #{now},</otherwise>
+    </choose>
+    update_time = #{now}
+    where tracking_no = #{trackingNo}
+    and status = #{from}
+  </update>
+
+</mapper>

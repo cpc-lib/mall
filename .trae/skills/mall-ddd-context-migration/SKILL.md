@@ -35,23 +35,23 @@ description: "mall backend DDD 限界上下文迁移清单：四层搬移、PO/�
    Converter（toPO/toDomain 全字段、null 判空）+ RepositoryImpl（`@Repository`，Wrapper/方言降级/last("limit 1") 全落这里；
    insert 后回写 id/createTime/updateTime 到 domain；MP 实体更新 NOT_NULL 语义，补丁式更新复刻
    `toPO(patch)` + 键字段置 null + `wrapper.eq(键)`）。
-4. **application**：服务接口（**import interfaces.dto/vo**，与 refund/user 批次一致）+ impl；
+4. **application**：服务接口（**import `application.dto/vo`**；DTO/VO 归属 application，禁止 application 反向依赖 interfaces）+ impl；
    领域事件与 AFTER_COMMIT listener 落 `application.event`；构造器循环用 `@Lazy` 打断；
    impl 只依赖 domain.repository 端口与其他上下文 application 接口，禁止出现 mapper/po。
 5. **interfaces**：controller（URL/`@RequestMapping`/`R<>`/注解/消息文案一字不动，仅改 import；
-   `import ...web.bind.annotation.*` 通配符是仓库统一惯例，保持）、dto/vo 平铺到 `interfaces.dto`/`interfaces.vo`
-   （controller 直接返回 domain model 的 JSON 契约不变，字段与 PO 同名）、mq consumer、job
+   `import ...web.bind.annotation.*` 通配符是仓库统一惯例，保持；BFF 拆分后 controller 物理位置在
+   `mall-user-bff`/`mall-admin-bff`，但包名仍为 `cc.ivera.<context>.interfaces`，不要改成 BFF 专属包）、
+   dto/vo 平铺到 `application.dto`/`application.vo`
+   （契约收口后不再放 interfaces；controller 直接返回 domain model 的 JSON 契约不变，字段与 PO 同名）、mq consumer、job
    （job 内联 LambdaQueryWrapper 必须收口为仓储方法）。
 6. **跨上下文收口**：按第 1 步 grep 结果，把外部上下文的旧包引用逐个改到新包；
    共享内核（如 `shared.security` 的 AuthContext/AuthPrincipal/JwtTokenService 被多上下文共用）保留原位，仅改其 import；
    跨上下文需要的查询/更新能力补到对应上下文的 domain 端口（如 order 补 casCloseIfFullRefunded、product 收 RefundStockLine 边界类型）。
 7. **编译门禁**：`cd backend; mvn -q clean compile -DskipTests`（PowerShell 用 `;` 连接，禁 bash heredoc）。
 8. **删旧 + 兜底**：grep 确认旧包名残留**只存在于待删文件内部**后，删旧文件与空目录；
-   **必须复核 `backend/src/main/resources/mapper/*.xml` 的 namespace 与 resultType/parameterType 已指向新包**
+   **必须复核 `backend/mall-core/src/main/resources/mapper/*.xml` 的 namespace 与 resultType/parameterType 已指向新包**
    （javac 不校验 XML，漏改运行时才炸——已两次踩中）。
-9. **单测门禁**：新增 Converter 往返测试（new domain → set 全字段 → toDomain(toPO(x)) 逐字段 assertEquals；
-   `assertNull(toPO(null))` / `toDomain((XxxPO)null)`）+ 纯域策略单测（尾差/边界/异常分支）；
-   跑 `cd backend; mvn clean test`（**必须带 clean**，否则 IDE JDT 增量编译的 "Unresolved compilation problem" class 污染结果）；
+9. **编译门禁**：后端当前不包含自动化测试代码，迁移后执行 `cd backend; mvn clean test`（**必须带 clean**，否则 IDE JDT 增量编译的 "Unresolved compilation problem" class 污染结果）确认全模块编译通过；
    行为保持类改动再跑 `user-ui` 的 `npm run test:logic`。测试禁连真实 DM8/Redis/RabbitMQ/支付渠道。
 
 ## 2. 分层 grep 兜底（删旧后必跑，全部应无匹配）

@@ -1,10 +1,11 @@
--- ===============================================================
+﻿-- ===============================================================
 -- 电商商城平台 DM8 一体化完整初始化脚本（单一文件，纯 DM8 语法）
 -- ===============================================================
 -- 内容：
---   PART 1  核心业务库（20 张表 + 种子数据，历次增量升级结构已全部固化）
+--   PART 1  核心业务库（25 张表 + 种子数据，历次增量升级结构已全部固化）
 --   PART 2  省市区基础数据（t_region 表 + 全国三级行政区划）
 --   PART 3  用户收货地址表（t_shipping_address）
+--   PART 4  购物车表（t_cart_item）
 --
 -- 本脚本为破坏性重建：先按依赖顺序 DROP 再 CREATE，并写入初始化数据；
 -- 可重复执行（等同清库重建）。
@@ -44,11 +45,15 @@
 -- 直接 DDL（非 PL/SQL），每条 ; 结尾；使用 IF EXISTS，首次执行及重复执行均不会因表不存在报错。
 -- ----------------------------
 DROP TABLE IF EXISTS t_local_message CASCADE;
+DROP TABLE IF EXISTS t_consumer_dedupe CASCADE;
+DROP TABLE IF EXISTS t_order_request CASCADE;
+DROP TABLE IF EXISTS t_saga_instance CASCADE;
 DROP TABLE IF EXISTS t_order_shipment CASCADE;
 DROP TABLE IF EXISTS t_inventory_transaction CASCADE;
 DROP TABLE IF EXISTS t_stock_import CASCADE;
 DROP TABLE IF EXISTS t_inventory_reservation CASCADE;
 DROP TABLE IF EXISTS t_payment_order CASCADE;
+DROP TABLE IF EXISTS t_payment_deal CASCADE;
 DROP TABLE IF EXISTS t_refund_item CASCADE;
 DROP TABLE IF EXISTS t_refund_order CASCADE;
 DROP TABLE IF EXISTS t_schema_migration CASCADE;
@@ -242,6 +247,7 @@ CREATE TABLE t_order_info
     payment_app_id       BIGINT,
     payment_channel_code VARCHAR(32),
     version              INT         DEFAULT 0           NOT NULL,
+    fence_token          BIGINT      DEFAULT 0           NOT NULL,
     CONSTRAINT pk_order_info PRIMARY KEY (id),
     CONSTRAINT uk_order_no UNIQUE (order_no)
 );
@@ -296,6 +302,8 @@ COMMENT
 ON COLUMN t_order_info.payment_channel_code IS '支付渠道编码：WXPAY、ALIPAY';
 COMMENT
 ON COLUMN t_order_info.version IS '乐观锁版本号';
+COMMENT
+ON COLUMN t_order_info.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
 
 CREATE INDEX idx_product_status_pay_type ON t_order_info (product_id, order_status, payment_type);
 CREATE INDEX idx_product_payment_status_time ON t_order_info (product_id, payment_type, order_status, create_time);
@@ -639,6 +647,7 @@ CREATE TABLE t_refund_order
     success_time        TIMESTAMP,
     create_time         TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
     update_time         TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    fence_token         BIGINT      DEFAULT 0           NOT NULL,
     CONSTRAINT pk_refund_order PRIMARY KEY (id),
     CONSTRAINT uk_refund_order_no UNIQUE (refund_no)
 );
@@ -679,6 +688,8 @@ COMMENT
 ON COLUMN t_refund_order.accepted_time IS '受理时间';
 COMMENT
 ON COLUMN t_refund_order.success_time IS '退款成功时间';
+COMMENT
+ON COLUMN t_refund_order.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
 
 CREATE TABLE t_refund_item
 (
@@ -748,6 +759,7 @@ CREATE TABLE t_payment_order
     paid_time            TIMESTAMP,
     create_time          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
     update_time          TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    fence_token          BIGINT      DEFAULT 0           NOT NULL,
     CONSTRAINT pk_payment_order PRIMARY KEY (id),
     CONSTRAINT uk_payment_order_no UNIQUE (payment_no)
 );
@@ -789,6 +801,39 @@ COMMENT
 ON COLUMN t_payment_order.expire_time IS '支付单过期时间（必须早于等于业务订单过期时间）';
 COMMENT
 ON COLUMN t_payment_order.paid_time IS '支付成功时间';
+COMMENT
+ON COLUMN t_payment_order.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
+
+-- ----------------------------
+-- t_payment_deal 有效支付成交事实（P4a：一个业务订单只允许一笔有效成交）
+-- 唯一键 order_no 是重复支付/晚到支付判定的最终兜底；payment 本地事务同时写支付单 CAS 与本表。
+-- ----------------------------
+CREATE TABLE t_payment_deal
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    payment_no  VARCHAR(64) NOT NULL,
+    order_no    VARCHAR(50) NOT NULL,
+    channel     VARCHAR(32) NOT NULL,
+    paid_amount INT         NOT NULL,
+    paid_time   TIMESTAMP   NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_payment_deal PRIMARY KEY (id),
+    CONSTRAINT uk_payment_deal_payment UNIQUE (payment_no),
+    CONSTRAINT uk_payment_deal_order UNIQUE (order_no)
+);
+COMMENT
+ON TABLE t_payment_deal IS '有效支付成交事实：一个业务订单只允许一笔有效成交，冲突即重复/异常支付';
+COMMENT
+ON COLUMN t_payment_deal.payment_no IS '本次有效成交的支付单号';
+COMMENT
+ON COLUMN t_payment_deal.order_no IS '业务订单号，唯一';
+COMMENT
+ON COLUMN t_payment_deal.channel IS '支付渠道';
+COMMENT
+ON COLUMN t_payment_deal.paid_amount IS '成交金额（分）';
+COMMENT
+ON COLUMN t_payment_deal.paid_time IS '渠道支付成功时间';
 
 -- ----------------------------
 -- t_inventory_reservation 库存预占（V2：未支付阶段防超卖）
@@ -1011,6 +1056,7 @@ CREATE TABLE t_bill_import
     error_message       VARCHAR(1000),
     create_time         TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
     update_time         TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    fence_token         BIGINT      DEFAULT 0           NOT NULL,
     CONSTRAINT pk_bill_import PRIMARY KEY (id),
     CONSTRAINT uk_bill_import_no UNIQUE (import_no),
     CONSTRAINT uk_bill_import_channel_date UNIQUE (channel_code, bill_type, bill_date, bill_kind),
@@ -1057,6 +1103,8 @@ COMMENT
 ON COLUMN t_bill_import.create_time IS '创建时间';
 COMMENT
 ON COLUMN t_bill_import.update_time IS '更新时间';
+COMMENT
+ON COLUMN t_bill_import.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
 
 CREATE INDEX idx_bill_import_bill_date ON t_bill_import (bill_date);
 CREATE INDEX idx_bill_import_status ON t_bill_import (status);
@@ -1314,7 +1362,7 @@ CREATE INDEX idx_local_message_biz ON t_local_message (biz_type, biz_no);
 COMMENT
 ON TABLE t_local_message IS '本地消息表（事务性发件箱）：延迟关单/退款同步消息可靠投递与消费回写';
 COMMENT
-ON COLUMN t_local_message.biz_type IS '业务类型：ORDER_CLOSE-延迟关单，REFUND_SYNC-退款状态同步';
+ON COLUMN t_local_message.biz_type IS '业务类型：ORDER_CLOSE-延迟关单，REFUND_SYNC-退款状态同步，PAYMENT_SUCCEEDED-支付成交，DUPLICATE_PAYMENT_DETECTED-重复支付，PAYMENT_LATE_ARRIVED-晚到支付';
 COMMENT
 ON COLUMN t_local_message.biz_no IS '业务单号：orderNo/refundNo';
 COMMENT
@@ -1325,6 +1373,101 @@ COMMENT
 ON COLUMN t_local_message.retry_count IS '投递重试次数';
 COMMENT
 ON COLUMN t_local_message.next_retry_time IS '下次重试时间';
+
+-- ----------------------------
+-- t_consumer_dedupe 跨上下文消费去重（P4a）
+-- consumer + event_id 唯一；消费方不再回写生产方的 t_local_message。
+-- ----------------------------
+CREATE TABLE t_consumer_dedupe
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    consumer    VARCHAR(64)  NOT NULL,
+    event_id    VARCHAR(128) NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_consumer_dedupe PRIMARY KEY (id),
+    CONSTRAINT uk_consumer_dedupe UNIQUE (consumer, event_id)
+);
+COMMENT
+ON TABLE t_consumer_dedupe IS '跨上下文消费去重：consumer + eventId 唯一，重复投递直接 ACK';
+COMMENT
+ON COLUMN t_consumer_dedupe.consumer IS '消费者标识（如 order.payment-succeeded）';
+COMMENT
+ON COLUMN t_consumer_dedupe.event_id IS '事件唯一标识（paymentNo）';
+
+-- ----------------------------
+-- t_order_request 下单请求幂等与结果回放（P6）
+-- 唯一键 (idem_key, user_id, api) 兜底并发；SUCCESS 后按 request_hash 回放响应。
+-- ----------------------------
+CREATE TABLE t_order_request
+(
+    id            BIGINT IDENTITY(1, 1) NOT NULL,
+    idem_key      VARCHAR(128) NOT NULL,
+    user_id       BIGINT       NOT NULL,
+    api           VARCHAR(64)  NOT NULL,
+    request_hash  VARCHAR(64)  NOT NULL,
+    status        VARCHAR(16)  NOT NULL,
+    order_no      VARCHAR(50),
+    response_body CLOB,
+    expire_at     TIMESTAMP    NOT NULL,
+    create_time   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_order_request PRIMARY KEY (id),
+    CONSTRAINT uk_order_request UNIQUE (idem_key, user_id, api)
+);
+CREATE INDEX idx_order_request_expire ON t_order_request (expire_at);
+COMMENT
+ON TABLE t_order_request IS '下单请求幂等表：同用户同接口同 Idempotency-Key 只产生一个订单，成功结果可回放';
+COMMENT
+ON COLUMN t_order_request.idem_key IS '客户端幂等键（Idempotency-Key）';
+COMMENT
+ON COLUMN t_order_request.api IS '接口标识，如 POST:/api/checkout/orders';
+COMMENT
+ON COLUMN t_order_request.request_hash IS '规范化请求体的 SHA-256，用于识别同键不同请求';
+COMMENT
+ON COLUMN t_order_request.status IS '状态：PROCESSING-处理中，SUCCESS-成功可回放，FAILED-失败可重试';
+COMMENT
+ON COLUMN t_order_request.response_body IS '成功响应报文JSON，用于幂等回放';
+COMMENT
+ON COLUMN t_order_request.expire_at IS '过期时间，由订单服务定时清理';
+
+-- ----------------------------
+-- t_saga_instance 订单下单 Saga 状态（P6）
+-- biz_type + biz_no 唯一；PROCESSING 由恢复调度收敛，CAP 补偿释放库存预占。
+-- ----------------------------
+CREATE TABLE t_saga_instance
+(
+    id              BIGINT IDENTITY(1, 1) NOT NULL,
+    saga_no         VARCHAR(64)  NOT NULL,
+    biz_type        VARCHAR(32)  NOT NULL,
+    biz_no          VARCHAR(64)  NOT NULL,
+    status          VARCHAR(16)  NOT NULL,
+    current_step    VARCHAR(32),
+    payload         CLOB,
+    retry_count     INT DEFAULT 0 NOT NULL,
+    next_retry_time TIMESTAMP,
+    create_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_saga_instance PRIMARY KEY (id),
+    CONSTRAINT uk_saga_instance_biz UNIQUE (biz_type, biz_no)
+);
+CREATE INDEX idx_saga_instance_status_retry ON t_saga_instance (status, next_retry_time);
+COMMENT
+ON TABLE t_saga_instance IS '下单 Saga 实例：持久化编排状态，支持跨进程崩溃恢复与补偿审计';
+COMMENT
+ON COLUMN t_saga_instance.saga_no IS 'Saga 编号';
+COMMENT
+ON COLUMN t_saga_instance.biz_type IS '业务类型：ORDER_CHECKOUT-下单';
+COMMENT
+ON COLUMN t_saga_instance.biz_no IS '业务单号：orderNo';
+COMMENT
+ON COLUMN t_saga_instance.status IS '状态：PROCESSING-处理中，SUCCEEDED-已完成，FAILED-已失败并完成补偿';
+COMMENT
+ON COLUMN t_saga_instance.current_step IS '当前步骤：CREATE_ORDER/RESERVE_INVENTORY';
+COMMENT
+ON COLUMN t_saga_instance.payload IS '请求摘要JSON（审计与恢复定位，不含敏感信息）';
+COMMENT
+ON COLUMN t_saga_instance.next_retry_time IS '恢复调度下次扫描时间';
 
 COMMIT;
 
@@ -8235,6 +8378,26 @@ CREATE INDEX idx_ssa_user ON t_shipping_address (user_id);
 -- t_bill_reconcile_discrepancy.local_biz_no / local_ledger_no / local_serial_no
 -- idx_payment_order_channel_status_paid_time
 -- idx_refund_order_status_success_time
+
+-- ===============================================================
+-- PART 4  购物车表（t_cart_item）
+-- ===============================================================
+
+DROP TABLE IF EXISTS t_cart_item CASCADE;
+-- 购物车条目：user_id + product_id 唯一，selected '1'=已勾选 '0'=未勾选
+CREATE TABLE t_cart_item
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    user_id     BIGINT      NOT NULL,
+    product_id  BIGINT      NOT NULL,
+    quantity    INT         NOT NULL,
+    selected    CHAR(1)     NOT NULL DEFAULT '1',
+    create_time TIMESTAMP            DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP            DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_cart_item PRIMARY KEY (id),
+    CONSTRAINT uk_cart_user_product UNIQUE (user_id, product_id)
+);
+CREATE INDEX idx_cart_item_user ON t_cart_item (user_id);
 
 -- 初始化完成后显式提交数据
 COMMIT;

@@ -1,0 +1,64 @@
+server:
+  port: ${SERVER_PORT:8083}
+
+spring:
+  application:
+    name: mall-user-service
+  config:
+    import: optional:nacos:mall-common.yaml,optional:nacos:mall-user-service.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        import-check:
+          enabled: false
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 3000ms
+      password: ${REDIS_PASSWORD:cpc!23#@}
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    username: ${DM_USERNAME:SYSDBA}
+    password: ${DM_PASSWORD:Cpc2026#@Dm}
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+
+payment:
+  auth:
+    access-ttl-seconds: 1800
+    jwt-secret: ${AUTH_JWT_SECRET:1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ}
+
+internal:
+  service:
+    # 不提供默认内部凭据；未配置时所有 internal 请求均失败关闭。
+    token: ${INTERNAL_SERVICE_TOKEN:}
+
+logging:
+  level:
+    root: info

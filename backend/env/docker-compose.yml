@@ -1,0 +1,185 @@
+name: payment-demo-infra
+
+services:
+  dm8:
+    image: ${DM_IMAGE:-registry.cn-hangzhou.aliyuncs.com/snow-io/dm8:latest}
+    container_name: payment-demo-dm8
+    restart: unless-stopped
+    privileged: true
+
+    environment:
+      TZ: Asia/Shanghai
+
+      # SYSDBA 密码：达梦初始化要求 9-48 位。
+      SYSDBA_PWD: "${DM_SYSDBA_PWD:-Cpc2026#@Dm}"
+
+      # 兼容不同 DM8 镜像的安装路径。
+      # 当前 snow-io/dm8 镜像中 disql 常见路径为 /home/dmdba/dmdbms/bin/disql。
+      DM_HOME: "${DM_HOME:-/home/dmdba/dmdbms}"
+      LD_LIBRARY_PATH: "/home/dmdba/dmdbms/bin:/home/dmdba/dmdbms/lib:/opt/dmdbms/bin:/opt/dmdbms/lib"
+
+      # SQL 初始化目录。脚本会读取该变量，也可通过宿主机环境变量 DM_SQL_DIR 覆盖。
+      DM_SQL_DIR: "${DM_SQL_DIR:-/dm8-init}"
+
+      # 初始化参数：仅首次创建 dm8-data 数据卷时生效。
+      PAGE_SIZE: "${DM_PAGE_SIZE:-16}"
+      EXTENT_SIZE: "${DM_EXTENT_SIZE:-32}"
+      LOG_SIZE: "${DM_LOG_SIZE:-1024}"
+
+      # 字符集：1 = UTF-8；同时保留 UNICODE_FLAG 兼容部分镜像入口脚本。
+      CHARSET: "${DM_CHARSET:-1}"
+      UNICODE_FLAG: "${DM_UNICODE_FLAG:-1}"
+
+      # 0 = 大小写不敏感；项目 SQL/Mapper 使用非引号表名，建议保持 0。
+      CASE_SENSITIVE: "${DM_CASE_SENSITIVE:-0}"
+
+      # 1 = VARCHAR 长度按字符计算（schema.sql 的列长度按字符设计，必须为 1）。
+      LENGTH_IN_CHAR: "${DM_LENGTH_IN_CHAR:-1}"
+
+      INSTANCE_NAME: "${DM_INSTANCE_NAME:-DMSERVER}"
+
+    ports:
+      - "${DM_PORT:-5236}:5236"
+
+    volumes:
+      # 达梦数据目录（镜像 entrypoint 固定在 /home/dmdba/data/DAMENG）。
+      # 不要随意删除该 volume，否则数据库数据会丢失。
+      - dm8-data:/home/dmdba/data
+
+      # 初始化 SQL 目录，只读挂载。脚本默认执行 /dm8-init 下的 *.sql。
+      - ./sql/dm8:/dm8-init:ro
+
+    shm_size: 1g
+
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      nproc:
+        soft: 65536
+        hard: 65536
+
+    healthcheck:
+      test: [ "CMD-SHELL", "ps -ef | grep -v grep | grep dmserver >/dev/null || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+    networks:
+      - payment-demo-net
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    container_name: payment-demo-redis
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+
+    command:
+      - redis-server
+      - --requirepass
+      - "${REDIS_PASSWORD:-cpc!23#@}"
+      - --appendonly
+      - "yes"
+
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test: [ "CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:-cpc!23#@}' ping | grep PONG" ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+    networks:
+      - payment-demo-net
+
+  rabbitmq:
+    image: ${RABBITMQ_IMAGE:-rabbitmq:3.13-management-alpine}
+    container_name: payment-demo-rabbitmq
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      # guest 账号只允许容器内 localhost 登录，宿主机连容器会被拒绝，因此创建独立账号。
+      RABBITMQ_DEFAULT_USER: "${RABBITMQ_DEFAULT_USER:-mall}"
+      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_DEFAULT_PASS:-Cpc2026#@Mq}"
+
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+
+    networks:
+      - payment-demo-net
+
+  nacos:
+    image: ${NACOS_IMAGE:-nacos/nacos-server:v3.0.3}
+    container_name: payment-demo-nacos
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      # 单机模式，使用内嵌 Derby 存储
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      # 开启鉴权，与 Spring 配置中的 nacos/nacos 凭据匹配
+      NACOS_AUTH_ENABLE: "true"
+      # token 密钥（base64，长度需 >= 32 字节），仅本地开发使用
+      NACOS_AUTH_TOKEN: "${NACOS_AUTH_TOKEN:-VGhpc0lzTmFjb3NBdXRoVG9rZW5TZWNyZXRLZXlGb3JMb2NhbERldjAyNDA2MDE=}"
+      # 集群节点身份校验（单机也需配置，避免启动告警）
+      NACOS_AUTH_IDENTITY_KEY: "${NACOS_AUTH_IDENTITY_KEY:-serverIdentity}"
+      NACOS_AUTH_IDENTITY_VALUE: "${NACOS_AUTH_IDENTITY_VALUE:-security}"
+      # Nacos 3.x 服务 API 端口（8848）与独立控制台端口（容器内 8080）
+      NACOS_APPLICATION_PORT: "8848"
+      NACOS_CONSOLE_PORT: "8080"
+
+    ports:
+      - "${NACOS_PORT:-8848}:8848"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+      - "${NACOS_CONSOLE_HOST_PORT:-8880}:8080"
+
+    volumes:
+      - nacos-data:/home/nacos/data
+      - nacos-logs:/home/nacos/logs
+
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -fs http://127.0.0.1:8080/v3/console/health/readiness >/dev/null && ([ -f /tmp/.nacos-admin-init ] || (curl -fs -X POST http://127.0.0.1:8080/v3/auth/user/admin -d \"password=${NACOS_ADMIN_PASSWORD:-nacos}\" >/dev/null && touch /tmp/.nacos-admin-init)) || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 30s
+
+    networks:
+      - payment-demo-net
+
+volumes:
+  dm8-data:
+    driver: local
+  redis-data:
+    driver: local
+  rabbitmq-data:
+    driver: local
+  nacos-data:
+    driver: local
+  nacos-logs:
+    driver: local
+
+networks:
+  payment-demo-net:
+    driver: bridge

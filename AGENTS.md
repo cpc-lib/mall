@@ -6,13 +6,16 @@
 
 本仓库是一个前后端分离的电商交易系统：
 
-- `backend/`：Spring Boot 2.3.7.RELEASE、Java 8、MyBatis-Plus 3.3.1、达梦 DM8、Redis + Redisson、RabbitMQ、MinIO（可选）。
+- `backend/`：Maven 聚合工程（Spring Boot 3.5.16、Java 21、MyBatis-Plus 3.5.18、达梦 DM8、Redis + Redisson、RabbitMQ、MinIO 可选），模块为 `mall-common`、`mall-api-order`、`mall-api-payment`、`mall-api-user`、`mall-api-cart`、`mall-api-product`、`mall-api-refund`、`mall-infra`（锁 / Outbox / MQ 公共实现 / Feign 公共配置 jar 库）、`mall-core`（两个 BFF 使用的远程适配器与共享配置 jar 库）、`mall-user-service`（用户领域实现）、`mall-cart-service`（购物车领域实现）、`mall-product-service`、`mall-order-service`（订单与物流领域实现）、`mall-payment-service`（支付领域实现）、`mall-refund-service`（退款领域实现）、`mall-bill-service`（账单核对领域实现）、`mall-user-bff`、`mall-admin-bff`、`mall-gateway`。
 - `user-ui/`：React 18 + Vite 5 + Ant Design 5，用户商城，开发端口 `3000`。
 - `admin-ui/`：React 18 + Vite 5 + Ant Design 5 + SheetJS + Luckysheet，管理后台，开发端口 `3002`。
-- 后端端口：`8080`；两个前端通过 CORS 直接访问 `http://localhost:8080`，当前无 Vite 代理。
-- 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`。
+- 后端对外入口：`backend/mall-gateway` 占用 `8080`（Spring Cloud Gateway，路由 + CORS）；`mall-user-bff` 默认 `8081`，`mall-admin-bff` 默认 `8082`，`mall-user-service` 默认 `8083`、`mall-cart-service` 默认 `8089`、`mall-product-service` 默认 `8084`、`mall-order-service` 默认 `8085`、`mall-payment-service` 默认 `8086`、`mall-refund-service` 默认 `8087`、`mall-bill-service` 默认 `8088`，后七者仅供服务间调用与本地排障。两个前端仍通过 CORS 访问 `http://localhost:8080`，当前无 Vite 代理。
+- 网关分流：退款申请/通知/查询与订单取消（`/api/refund-applies/**`、`/api/refund-info/**`、`/api/wx-pay/refunds`、`/api/wx-pay/refunds/**`、`/api/wx-pay/query-refund/**`、`/api/ali-pay/trade/refund`、`/api/ali-pay/trade/refund/**`、`/api/ali-pay/trade/fastpay/refund/**`、`/api/admin/refund/**`、`/api/order/*/cancel`）→ `mall-refund-service` 且必须排在 admin/order/payment 路由之前；`/api/admin/order/**` → `mall-order-service` 且必须排在 `/api/admin/**` 之前；`/api/reconciliation/**` → `mall-bill-service` 且必须排在 `/api/admin/**` 之前；`/api/admin/**` → `mall-admin-bff`；`/api/wx-pay/**`、`/api/wx-pay-v2/**`、`/api/ali-pay/**`、`/api/payment-*/**` → `mall-payment-service`；`/api/checkout/**`、`/api/order-info/**`、`/api/order/**` → `mall-order-service`；其余 `/api/**` → `mall-user-bff`；`/internal/**` 不经过网关，由 `INTERNAL_SERVICE_TOKEN` 认证且空配置失败关闭。Controller 归各自 BFF 或领域服务；`mall-core` 只保留两个 BFF 使用的用户/商品/购物车/支付远程适配器与共享配置，用户领域实现独立在 `mall-user-service`，购物车领域实现独立在 `mall-cart-service`，商品与库存领域实现独立在 `mall-product-service`，订单与物流领域实现独立在 `mall-order-service`，支付领域实现独立在 `mall-payment-service`，退款领域实现独立在 `mall-refund-service`，账单核对领域实现独立在 `mall-bill-service`。用户表和 Redis 用户会话只由用户服务写入，购物车表（`t_cart_item`）只由购物车服务写入，商品/库存表只由商品服务写入，订单/明细/物流表（`t_order_info`、`t_order_item`、`t_order_shipment`）与 `t_order_request`、`t_saga_instance` 只由订单服务写入，支付/成交/支付配置表只由支付服务写入，退款表（`t_refund_info`、`t_refund_item`、`t_refund_order`）只由退款服务写入，账单表（`t_bill_import`、`t_bill_record`、`t_bill_reconcile_discrepancy`）只由账单服务写入，BFF 不持有独立写权限。
+- 后台任务（`@Scheduled` / `@RabbitListener` / Outbox 扫描）按领域归属执行：订单关单消费、支付事件消费、超时关单扫描、物流模拟与下单 Saga 恢复在 `mall-order-service`；退款冲正消费、退款状态同步消费与 `RefundStatusSyncScheduler` 在 `mall-refund-service`；Outbox 中继只由 `mall-user-bff` 执行。`mall-order-service` 开启 `@EnableScheduling` / `@EnableRabbit`；`mall-admin-bff`、`mall-payment-service` 与 `mall-bill-service` 都不开启 `@EnableScheduling` / `@EnableRabbit`，并配置 `spring.rabbitmq.listener.simple.auto-startup=false`；`mall-payment-service`、`mall-refund-service` 与 `mall-bill-service` 配置 `local-message.relay-enabled=false`。`mall-user-service`、`mall-cart-service`、`mall-product-service`、`mall-order-service`、`mall-payment-service`、`mall-refund-service`、`mall-bill-service` 不导入 `application-core.yml`，除 user-bff 外都不执行 Outbox 扫描。
+- 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`；P3–P7 阶段用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与其他进程仍同库同 schema。
 - 每个业务上下文遵循四层结构：`interfaces / application / domain / infrastructure`。
-- 当前测试基线：后端 **23 个测试类、151 个用例**；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
+- 服务治理：所有可运行进程通过 Nacos 注册服务并从配置中心导入 `mall-common.yaml` 与 `<应用名>.yaml`（`spring.config.import: optional:nacos:...`）；内部调用统一使用 Spring Cloud OpenFeign（`cc.ivera.infra.feign.InternalFeignConfiguration` 注入 `X-Internal-Service-Token` 并解包 `R` 信封），网关路由目标统一为 `lb://mall-xxx-service`。`NACOS_ENABLED=false` 时注册与配置导入关闭，此时必须用 `USER_SERVICE_BASE_URL` 等 base-url 与 `MALL_*_URI` 直连。微信/支付宝渠道客户端保持独立 SDK/HTTP 客户端，不得改成 Feign。
+- 当前后端不包含自动化测试代码（`src/test` 已移除），验证以编译通过为准；`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。
 
 文档职责：
 
@@ -49,7 +52,7 @@
 
 ```text
 cc.ivera.<context>/
-├── interfaces       REST Controller / DTO / VO / MQ Consumer / Scheduler
+├── interfaces       REST Controller / MQ Consumer / Scheduler
 ├── application      用例编排、事务边界、应用服务
 ├── domain           领域模型、枚举、策略、repository/gateway 端口
 └── infrastructure   PO / Mapper / Converter / RepositoryImpl / 外部适配 / MQ 拓扑
@@ -58,6 +61,7 @@ cc.ivera.<context>/
 必须遵守：
 
 - `domain` 不得依赖 Spring、MyBatis-Plus 或具体 infrastructure 实现。
+- 请求/响应 DTO/VO 归属 `application.dto` / `application.vo`；`application` 不得反向依赖 `interfaces`（代码评审强制）。
 - 跨上下文只允许依赖对方 `domain` 中的模型、repository/gateway 端口，或明确的 application 服务接口。
 - 禁止跨上下文直接引用对方 `infrastructure` 下的 PO、Mapper、RepositoryImpl。
 - PO 只属于 `infrastructure.persistence.po`；领域模型与数据库模型保持分离。
@@ -101,9 +105,11 @@ WHERE available_stock >= qty
 
 - 一个业务订单允许 `1:N` 本地支付尝试（`t_payment_order`）。
 - 同渠道活跃支付单优先复用；跨渠道可以有不同支付尝试。
-- 一个业务订单只允许一笔真正有效的 `SUCCESS` 成交。
-- 成交后关闭其它活跃支付尝试。
-- 重复支付、关单后晚到支付由 `PaymentSuccessService` / `ExceptionRefundService` 走原路退款冲正，**冲正不改库存**。
+- 一个业务订单只允许一笔真正有效的 `SUCCESS` 成交，权威事实是 `t_payment_deal`：`payment_no` 与 `order_no` 双唯一。
+- 支付成交只做“支付单 CAS + 写成交事实 + 关闭其它活跃支付尝试 + 发事件”，**不得直接修改订单状态**；订单推进由订单侧消费 `PAYMENT_SUCCEEDED` 完成。
+- 关单 / 取消前必须先查成交事实，已成交则标记支付，禁止“已收款却本地关单”。
+- 不同 `paymentNo` 的真实重复支付发 `DUPLICATE_PAYMENT_DETECTED`；订单已关闭/取消后成交发 `PAYMENT_LATE_ARRIVED`；退款侧按 `paymentNo` 建冲正单，**冲正不改库存**。
+- 跨上下文消费必须用 `t_consumer_dedupe(consumer, event_id)` 去重，且保持“业务 → 去重回写 → `basicAck`”顺序。
 
 ### 5.4 退款防超退
 
@@ -111,6 +117,8 @@ WHERE available_stock >= qty
 - 退款受理时冻结可退额度，禁止先退款后补校验。
 - 用户端前置计算仅用于体验，不得取代后端最终核算。
 - 最后一件商品允许按服务端规则处理金额尾差。
+- `order_item.restocked_qty` 的累加守卫属于退款调用方：退款受理时先调用 `OrderRefundQuotaApi.addRestockedQty` 做 CAS 守卫，再调用商品服务的回补/核销接口；商品服务不得反向读取订单表判断可回补上限。
+- 渠道退款唯一入口是 `cc.ivera.api.payment.PaymentChannelRefundApi`；`payment` 上下文不得引用退款仓储、`RefundInfoService` 或写 `t_refund_*`，退款成功/处理中/失败由退款域回写。
 
 ### 5.5 账账核对不变量
 
@@ -128,9 +136,9 @@ WHERE available_stock >= qty
 订单、支付、退款、库存等关键推进采用：
 
 ```text
-Redis / Redisson 分布式锁
+Redis / Redisson 分布式锁（watchdog 自动续期 + fence 围栏令牌）
         +
-CAS 条件更新
+CAS 条件更新（含 fence_token <= newToken 围栏 CAS）
         +
 数据库唯一约束 / biz_no 幂等
 ```
@@ -138,6 +146,17 @@ CAS 条件更新
 禁止将关键状态机改造成无条件 UPDATE。
 
 **禁止引入 `select ... for update` 作为本项目的并发主方案。** 当前项目的并发权威是分布式锁 + CAS；远程支付渠道调用期间不得长时间持有数据库行锁。
+
+**分布式锁机制**：`DistributedLockTemplate.execute(lockKey, waitTimeMillis, supplier)` 统一使用 Redisson watchdog（`leaseTime = -1`，持有期间自动续期，调用方无需指定过期时间）。加锁成功后通过 Redis `INCR lock:fence:seq` 生成**全局**单调递增围栏令牌，写入 `FenceTokenHolder`（ThreadLocal）。令牌必须全局递增：同一聚合会被不同业务键的锁先后推进（支付→发货→收货→退款受理），按锁键各自计数会让新锁拿到的令牌小于行上已有令牌，导致合法 CAS 被静默丢弃。
+
+**Fence 围栏令牌**：核心聚合表（`t_order_info`、`t_payment_order`、`t_refund_order`、`t_bill_import`）均含 `fence_token BIGINT DEFAULT 0` 列。状态推进 UPDATE 在持锁时追加 `SET fence_token = #{fenceToken}` 与 `WHERE ... AND fence_token <= #{fenceToken}`，确保锁过期（异步复制延迟、进程停顿、GC 等）后旧持有者的写入被新持有者的更高令牌拒绝；同一把锁内允许连续多次推进（首次 UPDATE 已把行令牌写成当前令牌，用严格 `<` 会让同锁内的第二次更新静默失效）。未持锁时 `FenceTokenHolder.get()` 返回 null，围栏 CAS 自动跳过，不影响无锁场景的正常更新。
+
+### 5.7 购物车持久化
+
+- 购物车唯一权威存储是 DM8 `t_cart_item`，只由 `mall-cart-service` 读写；`mall-core` 只保留 `CartServiceRemoteAdapter`，禁止恢复 Redis 购物车实现或 Redis/DB 双写。
+- 加购使用 `MERGE INTO` 原子 upsert，由唯一键 `uk_cart_user_product (user_id, product_id)` 兜底并发重复插入。
+- `selected` 以 `CHAR(1)` 的 `'0'/'1'` 存储，null 视为已勾选，保持与历史行为一致。
+- 购物车不冗余商品字段，商品标题/价格/库存/状态在读取时通过商品服务 `ProductQueryApi` 实时获取。
 
 ## 6. RabbitMQ 可靠性约束
 
@@ -181,12 +200,28 @@ Delay Queue
               → Parking Lot Queue（人工隔离，不自动回灌）
 ```
 
+支付业务事件复用同一套 MANUAL ACK + Failure DLQ 语义，但使用独立拓扑：
+
+```text
+payment.event.exchange
+  ├─ payment.succeeded → payment.succeeded.order.queue
+  ├─ payment.duplicate → payment.duplicate.refund.queue
+  └─ payment.late      → payment.late.refund.queue
+        ↓ 重试耗尽（x-dead-letter-exchange=payment.event.failure.exchange）
+  payment.event.failure.exchange
+        ├─ payment.succeeded.failure.queue
+        ├─ payment.duplicate.failure.queue
+        ├─ payment.late.failure.queue
+        └─ payment.event.parking.queue
+```
+
 必须保持以下职责边界：
 
 - `Failure Queue`：保留最终消费失败消息，供排障、审计、人工重放。
 - `Parking Lot Queue`：人工长期隔离 poison message，不配置自动 Consumer，不形成自动循环。
 - `TimeoutOrderCloseScheduler` / `RefundStatusSyncScheduler`：DB 驱动的最终一致性兜底，与 Failure Queue 并行存在；订单扫描周期由 `payment.order.timeout-scan-ms` 控制，退款扫描周期由 `payment.refund.status-sync-scan-ms` 独立控制。单笔失败只能记录日志并等待后续收敛，不得中断同批次其它记录。
 - `t_local_message`：Transactional Outbox，负责“业务事务落库后可靠投递”，不是消费失败队列的替代品。
+- 后台任务与 MQ 消费者按领域归属运行：订单关单、支付事件消费、超时扫描、物流模拟与下单 Saga 恢复在 `mall-order-service`，退款冲正、退款状态同步消费与退款扫描在 `mall-refund-service`，Outbox 中继只由 `mall-user-bff` 执行；禁止在 `mall-admin-bff` 或 `mall-payment-service` 开启，避免重复消费与重复扫描。`mall-payment-service` 只声明支付事件拓扑，不消费队列、不扫描 `t_local_message`；`mall-refund-service` 与 `mall-order-service` 消费各自队列但配置 `local-message.relay-enabled=false`。
 
 修改已有 RabbitMQ Queue arguments（TTL、DLX 等）时必须注意 RabbitMQ 参数不可原地修改；需要在运维文档中给出删旧队列再重声明的迁移步骤。
 
@@ -208,32 +243,20 @@ backend/env/sql/dm8/schema.sql
 
 ## 8. 测试规则
 
-后端测试位于 `backend/src/test/java`，当前基线：**23 个测试类、151 个用例**。
-
-测试原则：
-
-- 新行为：必须补测试。
-- 缺陷修复：先写能复现问题的测试。
-- 重构：先用特征测试锁住原行为。
-- 测试不连接真实 DM8、Redis、RabbitMQ、微信或支付宝；使用 JUnit 5 + Mockito / 纯对象测试。
-- 涉及 MQ 消费者时必须验证：成功路径严格按“业务 → CONSUMED → `basicAck`”顺序执行；业务/CONSUMED 回写失败时不 ACK；明确忽略的无效消息会 ACK；`basicAck` 自身失败必须继续向外抛出。
-- 涉及 MQ 拓扑时必须验证 release queue 的 `x-dead-letter-exchange` / `x-dead-letter-routing-key` 以及 Failure/Parking Lot binding。
-- 涉及 DB 最终一致性兜底时必须验证 Scheduler 会扫描目标状态、复用既有业务链路，并且单条失败不会阻塞同批次后续记录。
-- 涉及账账核对时必须验证：订单 1:N 支付不会被折叠、渠道流水错配会产出差异、渠道/平台双向单边账可识别、汇总平衡条件不会被金额抵消绕过。
+后端当前不包含自动化测试代码（所有模块的 `src/test` 已移除），变更验证以 `mvn clean test` 编译通过为准。
 
 必须执行的回归：
 
 ```powershell
 cd backend
-mvn test
-
-cd ../user-ui
-npm run test:logic
+mvn clean test
 ```
 
-触碰前端页面时还应执行对应构建：
+`user-ui` 保留 Node 逻辑测试；触碰前端页面时还应执行对应构建：
 
 ```powershell
+cd ../user-ui
+npm run test:logic
 npm run build
 ```
 
@@ -276,8 +299,7 @@ npm run build
 - [ ] 领域不变量未被破坏。
 - [ ] 跨上下文依赖方向正确。
 - [ ] API / DB / MQ 兼容性影响已记录。
-- [ ] 新增或受影响测试已通过。
-- [ ] `mvn test` 全量通过。
+- [ ] `mvn clean test`（编译）通过。
 - [ ] 需要时 `user-ui` / `admin-ui` 构建通过。
 - [ ] `README.md` / `CODE_INTRO.md` / 运维文档与代码一致。
 - [ ] 没有无关代码、无关格式化或隐式行为变化。

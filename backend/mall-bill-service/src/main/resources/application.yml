@@ -1,0 +1,82 @@
+server:
+  port: ${SERVER_PORT:8088}
+
+spring:
+  application:
+    name: mall-bill-service
+  config:
+    import: optional:nacos:mall-common.yaml,optional:nacos:mall-bill-service.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        import-check:
+          enabled: false
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  rabbitmq:
+    host: ${RABBITMQ_HOST:127.0.0.1}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:mall}
+    password: ${RABBITMQ_PASSWORD:Cpc2026#@Mq}
+    listener:
+      simple:
+        # 账单域没有消费者，不启动监听容器
+        auto-startup: false
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: 0
+      timeout: 3000ms
+      password: ${REDIS_PASSWORD:cpc!23#@}
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    username: ${DM_USERNAME:SYSDBA}
+    password: ${DM_PASSWORD:Cpc2026#@Dm}
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/*.xml
+
+internal:
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN:}
+
+user:
+  service:
+    base-url: ${USER_SERVICE_BASE_URL:}
+
+payment:
+  service:
+    base-url: ${PAYMENT_SERVICE_BASE_URL:}
+
+refund:
+  service:
+    base-url: ${REFUND_SERVICE_BASE_URL:}
+
+local-message:
+  relay-enabled: false # 账单服务不中继 Outbox，统一由 user-bff 执行
+
+logging:
+  level:
+    root: info

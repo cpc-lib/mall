@@ -18,30 +18,30 @@ description: "Scan mall backend for leftover SELECT FOR UPDATE / pessimistic DB 
 
 ## 核查清单（5 项，全部必做）
 
-所有扫描根目录均为 `d:\release\mall\backend\src\main`（测试代码 `src/test` 的 mock 引用另查）。
+所有扫描根目录均为 `d:\release\mall\backend\mall-core\src\main`（测试代码 `src/test` 的 mock 引用另查）。
 
 ### 1. 跨行/夹注释的 `for update` SQL（multiline 正则）
 
 普通单行 grep 会漏掉 `for // 注释` 换行 `update`、`for /* */ update` 等写法：
 
 - Grep：pattern `(?is)for\s+(?://[^\n]*|/\*.*?\*/|\s)+update`，glob `**/*.{java,xml}`，
-  multiline=true，path `backend/src/main`
+  multiline=true，path `backend/mall-core/src/main`
 
 ### 2. MyBatis 注解 SQL（`@Select/@Update/@Insert/@Delete`）
 
-- Grep：pattern `@Select|@Update|@Insert|@Delete`，glob `**/*.java`，path `backend/src/main`
+- Grep：pattern `@Select|@Update|@Insert|@Delete`，glob `**/*.java`，path `backend/mall-core/src/main`
 - **误命中排除**：Spring MVC 的 `@DeleteMapping`/`@PostMapping` 等也会命中，必须逐个 Read
   确认命中行属于 MyBatis Mapper 接口而非 Controller。
 
 ### 3. 变体方法名
 
 - Grep：pattern `(?i)ForUpdate|forUpdate|findLocked|lockBy|selectLocked|readForLock|withLock|pessimistic`，
-  glob `**/*.{java,xml}`，path `backend/src/main`
+  glob `**/*.{java,xml}`，path `backend/mall-core/src/main`
 
 ### 4. 全部 XML mapper 全量扫
 
 - Grep：pattern `(?is)\bfor\b[\s\S]{0,80}?\bupdate\b`，glob `**/*.xml`，multiline=true，
-  path `backend/src/main/resources`
+  path `backend/mall-core/src/main/resources`
 
 ### 5. 区分 Redis 锁 vs DB 锁（关键，不可省）
 
@@ -77,14 +77,14 @@ description: "Scan mall backend for leftover SELECT FOR UPDATE / pessimistic DB 
    `@Transactional` 无 Redis 锁的调用点（历史上 V1 链路 `createRefundApplication`、
    `refreshOrderRefundStatus` 曾如此），**必须先补 Redis 锁再删行锁**，否则并发漏洞。
 2. 补锁模式参照 `RefundApplicationServiceImpl.approve`：外层
-   `@Transactional(propagation = NOT_SUPPORTED)` + `distributedLockTemplate.execute(lockKey, 5000L, -1L, ...)`
+   `@Transactional(propagation = NOT_SUPPORTED)` + `distributedLockTemplate.execute(lockKey, 5000L, ...)`
    + 锁内 `transactionTemplate.execute(...)`；锁键按业务维度命名（如
    `payment:refund:create:{orderNo}`、`payment:ali:check:order:{orderNo}`）。
 3. 删除顺序：端口接口方法 → 实现类方法 → Mapper 接口方法 → XML SQL → 调用点改普通读
-   （`findByXxx`）→ 测试 mock 同步。
+   （`findByXxx`）。
 4. 同步文档：`AGENTS.md` 领域不变量、`CODE_INTRO.md` 并发机制章节（机制表/流程图节点/
    退款联动表格）、`MyBatisPlusConfig` 乐观锁插件 Javadoc。
-5. 门禁：`mvn test`（当前基线 121 tests 全绿）；提交信息不含 agent/厂商署名。
+5. 门禁：`mvn clean test`（后端当前无自动化测试，以编译通过为准）；提交信息不含 agent/厂商署名。
 
 ## 完成定义
 

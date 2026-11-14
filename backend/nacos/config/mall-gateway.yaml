@@ -1,0 +1,78 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: mall-gateway
+
+  cloud:
+    gateway:
+      server:
+        webflux:
+          # 统一处理两个前端的跨域；核心应用仍保留 @CrossOrigin，靠 Dedupe 去重避免重复响应头
+          globalcors:
+            add-to-simple-url-handler-mapping: true
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns: "*"
+                allowed-methods: "*"
+                allowed-headers: "*"
+                exposed-headers: "*"
+                allow-credentials: true
+                max-age: 3600
+
+          default-filters:
+            - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_FIRST
+
+          routes:
+            # 退款域直连 refund-service；比 admin / payment 更具体，必须排在最前
+            - id: mall-refund-service
+              uri: ${MALL_REFUND_SERVICE_URI:lb://mall-refund-service}
+              predicates:
+                - Path=/api/refund-applies/**,/api/refund-info/**,/api/wx-pay/refunds,/api/wx-pay/refunds/**,/api/wx-pay/query-refund/**,/api/ali-pay/trade/refund,/api/ali-pay/trade/refund/**,/api/ali-pay/trade/fastpay/refund/**,/api/admin/refund/**,/api/order/*/cancel
+
+            # 订单管理端入口 → order-service；比 /api/admin/** 更具体，必须排在 admin 路由之前
+            - id: mall-order-service-admin
+              uri: ${MALL_ORDER_SERVICE_URI:lb://mall-order-service}
+              predicates:
+                - Path=/api/admin/order/**
+
+            # 账单核对入口 → bill-service；比 /api/admin/** 更具体，必须排在 admin 路由之前
+            - id: mall-bill-service
+              uri: ${MALL_BILL_SERVICE_URI:lb://mall-bill-service}
+              predicates:
+                - Path=/api/reconciliation/**
+
+            # 管理端前缀 → admin-bff；更具体的规则必须排在前面
+            - id: mall-admin-bff
+              uri: ${MALL_ADMIN_BFF_URI:lb://mall-admin-bff}
+              predicates:
+                - Path=/api/admin/**
+
+            # 支付回调、支付配置与收银台渠道下单直连 payment-service
+            - id: mall-payment-service
+              uri: ${MALL_PAYMENT_SERVICE_URI:lb://mall-payment-service}
+              predicates:
+                - Path=/api/payment-config/**,/api/payment-app/**,/api/payment-channel/**,/api/wx-pay-v2/**,/api/wx-pay/**,/api/ali-pay/**
+
+            # 订单域（结算/订单查询/履约）直连 order-service
+            - id: mall-order-service
+              uri: ${MALL_ORDER_SERVICE_URI:lb://mall-order-service}
+              predicates:
+                - Path=/api/checkout/**,/api/order-info/**,/api/order/**
+
+            # 其余业务入口 → user-bff；user-bff 仅保留 Outbox 中继，MQ 消费与领域扫描在各领域服务内
+            - id: mall-user-bff
+              uri: ${MALL_USER_BFF_URI:lb://mall-user-bff}
+              predicates:
+                - Path=/api/**,/v3/api-docs/**,/v3/api-docs.yaml,/swagger-ui/**,/swagger-ui.html,/error
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: info

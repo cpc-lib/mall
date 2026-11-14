@@ -1,6 +1,9 @@
 import request from '@/utils/request'
+const create = (data, idempotencyKey) => request.post('/api/checkout/orders', data, {
+  headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined
+})
 export default {
-  create: (data) => request.post('/api/checkout/orders', data),
+  create,
   list: () => request.get('/api/checkout/orders'),
   get: (orderNo) => request.get(`/api/checkout/orders/${orderNo}`),
   payQuery: (orderNo) => request.get(`/api/checkout/orders/${orderNo}/pay-query`),

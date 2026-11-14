@@ -1,0 +1,57 @@
+server:
+  port: ${SERVER_PORT:8089}
+
+spring:
+  application:
+    name: mall-cart-service
+  config:
+    import: optional:nacos:mall-common.yaml,optional:nacos:mall-cart-service.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      username: ${NACOS_USERNAME:nacos}
+      password: ${NACOS_PASSWORD:nacos}
+      discovery:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        enabled: ${NACOS_ENABLED:true}
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+        import-check:
+          enabled: false
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 3000
+            read-timeout: 10000
+          mall-product-service:
+            connect-timeout: 3000
+            read-timeout: 30000
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+  datasource:
+    driver-class-name: dm.jdbc.driver.DmDriver
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    username: ${DM_USERNAME:SYSDBA}
+    password: ${DM_PASSWORD:Cpc2026#@Dm}
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+internal:
+  service:
+    token: ${INTERNAL_SERVICE_TOKEN:}
+
+product:
+  service:
+    base-url: ${PRODUCT_SERVICE_BASE_URL:}
+
+logging:
+  level:
+    root: info

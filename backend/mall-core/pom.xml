@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>cc.ivera</groupId>
+    <artifactId>mall-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>mall-core</artifactId>
+  <name>mall-core</name>
+  <description>商城账账核对内核与用户/商品/购物车/支付/退款远程适配（供 BFF 聚合）</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-user</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-cart</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-product</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-order</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-payment</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-refund</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-infra</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.cloud</groupId>
+      <artifactId>spring-cloud-starter-openfeign</artifactId>
+    </dependency>
+
+    <!--web-->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!--OpenAPI：springdoc（Swagger UI 在 /swagger-ui.html，OpenAPI JSON 在 /v3/api-docs）-->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>${springdoc.version}</version>
+    </dependency>
+
+    <!-- 生成自定义配置的元数据信息 -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-configuration-processor</artifactId>
+      <optional>true</optional>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.junit.vintage</groupId>
+          <artifactId>junit-vintage-engine</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <!--ArchUnit：限界上下文边界守卫（仅测试期字节码分析，不引入运行时依赖）-->
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit</artifactId>
+      <version>${archunit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!--Redisson：分布式锁，支持看门狗自动续期-->
+    <dependency>
+      <groupId>org.redisson</groupId>
+      <artifactId>redisson-spring-boot-starter</artifactId>
+      <version>${redisson.version}</version>
+    </dependency>
+
+    <dependency>
+      <groupId>com.dameng</groupId>
+      <artifactId>DmJdbcDriver18</artifactId>
+      <version>8.1.2.192</version>
+    </dependency>
+
+  </dependencies>
+
+</project>
