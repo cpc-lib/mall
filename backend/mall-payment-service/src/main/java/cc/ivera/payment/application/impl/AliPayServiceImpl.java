@@ -20,6 +20,7 @@ import cc.ivera.payment.application.dto.ChannelRefundResult;
 import cc.ivera.payment.application.dto.ChannelRefundStatus;
 import cc.ivera.payment.application.dto.ChannelRefundSyncResult;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import cc.ivera.shared.infrastructure.util.MoneyUtils;
@@ -82,17 +83,16 @@ public class AliPayServiceImpl implements AliPayService {
     }
 
     @Override
+    @DistributedLock(key = "'payment:ali:pagepay:' + #productId + ':default'", waitTimeMillis = 3000L)
     public String tradeCreate(Long productId) {
         return tradeCreate(productId, null);
     }
 
     @Override
+    @DistributedLock(key = "'payment:ali:pagepay:' + #productId + ':' + (#paymentAppId == null ? 'default' : #paymentAppId)",
+        waitTimeMillis = 3000L)
     public String tradeCreate(Long productId, Long paymentAppId) {
-        return distributedLockTemplate.execute(
-            "payment:ali:pagepay:" + productId + ":" + (paymentAppId == null ? "default" : paymentAppId),
-            3000L,
-            () -> doTradeCreate(productId, paymentAppId)
-        );
+        return doTradeCreate(productId, paymentAppId);
     }
 
     private String doTradeCreate(Long productId, Long paymentAppId) {
@@ -135,48 +135,43 @@ public class AliPayServiceImpl implements AliPayService {
     }
 
     @Override
+    @DistributedLock(key = "'payment:ali:pagepay:order:' + #orderNo", waitTimeMillis = 3000L)
     public String tradeCreateByOrderNo(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
         }
-        return distributedLockTemplate.execute(
-            "payment:ali:pagepay:order:" + orderNo,
-            3000L,
-            () -> {
-                try {
-                    OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
-                    if (orderInfo == null) {
-                        throw new BizException("订单不存在，orderNo=" + orderNo);
-                    }
-                    if (!PayType.ALIPAY.getType().equals(orderInfo.getPaymentType())) {
-                        throw new BizException("订单支付方式不是支付宝，orderNo=" + orderNo);
-                    }
-                    if (!OrderStatus.NOTPAY.getType().equals(orderInfo.getLegacyStatus())) {
-                        throw new BizException("订单当前状态不可支付：" + orderInfo.getLegacyStatus());
-                    }
-                    PaymentAppConfig payConfig = resolveAliPayConfigByOrderNo(orderNo);
-                    // V2：发起支付前创建支付单（临近过期在此拒绝）。
-                    cc.ivera.payment.domain.model.PaymentOrder paymentOrder = paymentOrderService.startPayment(orderInfo, PaymentConfigGateway.CHANNEL_ALIPAY);
-                    AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
-                    request.setNotifyUrl(required(payConfig.getAlipayNotifyUrl(), "支付宝notifyUrl未配置"));
-                    request.setReturnUrl(required(payConfig.getReturnUrl(), "支付宝returnUrl未配置"));
-                    Map<String, Object> bizContent = new HashMap<>();
-                    bizContent.put("out_trade_no", orderInfo.getOrderNo());
-                    bizContent.put("total_amount", MoneyUtils.centsToYuan(orderInfo.getTotalFee()));
-                    bizContent.put("subject", orderInfo.getTitle());
-                    bizContent.put("product_code", "FAST_INSTANT_TRADE_PAY");
-                    request.setBizContent(JsonUtils.toJson(bizContent));
-                    AlipayTradePagePayResponse response = buildAlipayClient(payConfig).pageExecute(request);
-                    if (!response.isSuccess()) {
-                        throw new BizException("创建支付宝支付交易失败：" + response.getSubMsg());
-                    }
-                    paymentOrderService.markPaying(paymentOrder.getPaymentNo(), null);
-                    return response.getBody();
-                } catch (AlipayApiException e) {
-                    throw new BizException("创建支付宝支付交易失败", e);
-                }
+        try {
+            OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
+            if (orderInfo == null) {
+                throw new BizException("订单不存在，orderNo=" + orderNo);
             }
-        );
+            if (!PayType.ALIPAY.getType().equals(orderInfo.getPaymentType())) {
+                throw new BizException("订单支付方式不是支付宝，orderNo=" + orderNo);
+            }
+            if (!OrderStatus.NOTPAY.getType().equals(orderInfo.getLegacyStatus())) {
+                throw new BizException("订单当前状态不可支付：" + orderInfo.getLegacyStatus());
+            }
+            PaymentAppConfig payConfig = resolveAliPayConfigByOrderNo(orderNo);
+            // V2：发起支付前创建支付单（临近过期在此拒绝）。
+            cc.ivera.payment.domain.model.PaymentOrder paymentOrder = paymentOrderService.startPayment(orderInfo, PaymentConfigGateway.CHANNEL_ALIPAY);
+            AlipayTradePagePayRequest request = new AlipayTradePagePayRequest();
+            request.setNotifyUrl(required(payConfig.getAlipayNotifyUrl(), "支付宝notifyUrl未配置"));
+            request.setReturnUrl(required(payConfig.getReturnUrl(), "支付宝returnUrl未配置"));
+            Map<String, Object> bizContent = new HashMap<>();
+            bizContent.put("out_trade_no", orderInfo.getOrderNo());
+            bizContent.put("total_amount", MoneyUtils.centsToYuan(orderInfo.getTotalFee()));
+            bizContent.put("subject", orderInfo.getTitle());
+            bizContent.put("product_code", "FAST_INSTANT_TRADE_PAY");
+            request.setBizContent(JsonUtils.toJson(bizContent));
+            AlipayTradePagePayResponse response = buildAlipayClient(payConfig).pageExecute(request);
+            if (!response.isSuccess()) {
+                throw new BizException("创建支付宝支付交易失败：" + response.getSubMsg());
+            }
+            paymentOrderService.markPaying(paymentOrder.getPaymentNo(), null);
+            return response.getBody();
+        } catch (AlipayApiException e) {
+            throw new BizException("创建支付宝支付交易失败", e);
+        }
     }
 
     @Override

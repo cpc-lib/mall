@@ -2,7 +2,7 @@
 -- 电商商城平台 DM8 一体化完整初始化脚本（单一文件，纯 DM8 语法）
 -- ===============================================================
 -- 内容：
---   PART 1  核心业务库（25 张表 + 种子数据，历次增量升级结构已全部固化）
+--   PART 1  核心业务库 + Seata Saga/TC 存储（历次增量升级结构已全部固化）
 --   PART 2  省市区基础数据（t_region 表 + 全国三级行政区划）
 --   PART 3  用户收货地址表（t_shipping_address）
 --   PART 4  购物车表（t_cart_item）
@@ -48,6 +48,13 @@ DROP TABLE IF EXISTS t_local_message CASCADE;
 DROP TABLE IF EXISTS t_consumer_dedupe CASCADE;
 DROP TABLE IF EXISTS t_order_request CASCADE;
 DROP TABLE IF EXISTS t_saga_instance CASCADE;
+DROP TABLE IF EXISTS seata_state_inst CASCADE;
+DROP TABLE IF EXISTS seata_state_machine_inst CASCADE;
+DROP TABLE IF EXISTS seata_state_machine_def CASCADE;
+DROP TABLE IF EXISTS distributed_lock CASCADE;
+DROP TABLE IF EXISTS lock_table CASCADE;
+DROP TABLE IF EXISTS branch_table CASCADE;
+DROP TABLE IF EXISTS global_table CASCADE;
 DROP TABLE IF EXISTS t_order_shipment CASCADE;
 DROP TABLE IF EXISTS t_inventory_transaction CASCADE;
 DROP TABLE IF EXISTS t_stock_import CASCADE;
@@ -1432,42 +1439,155 @@ COMMENT
 ON COLUMN t_order_request.expire_at IS '过期时间，由订单服务定时清理';
 
 -- ----------------------------
--- t_saga_instance 订单下单 Saga 状态（P6）
--- biz_type + biz_no 唯一；PROCESSING 由恢复调度收敛，CAP 补偿释放库存预占。
+-- Seata Saga 状态机存储（P8）
+-- 列名与 seata-saga-engine-store 的 StateLangStoreSqls / StateLogStoreSqls 对齐。
+-- 旧自研 t_saga_instance 仅保留上面的 DROP 守卫用于清理存量库。
 -- ----------------------------
-CREATE TABLE t_saga_instance
+CREATE TABLE seata_state_machine_def
 (
-    id              BIGINT IDENTITY(1, 1) NOT NULL,
-    saga_no         VARCHAR(64)  NOT NULL,
-    biz_type        VARCHAR(32)  NOT NULL,
-    biz_no          VARCHAR(64)  NOT NULL,
-    status          VARCHAR(16)  NOT NULL,
-    current_step    VARCHAR(32),
-    payload         CLOB,
-    retry_count     INT DEFAULT 0 NOT NULL,
-    next_retry_time TIMESTAMP,
-    create_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_saga_instance PRIMARY KEY (id),
-    CONSTRAINT uk_saga_instance_biz UNIQUE (biz_type, biz_no)
+    id               VARCHAR(128) NOT NULL,
+    tenant_id        VARCHAR(32)  NOT NULL,
+    app_name         VARCHAR(32)  NOT NULL,
+    name             VARCHAR(128) NOT NULL,
+    status           VARCHAR(2)   NOT NULL,
+    gmt_create       TIMESTAMP(3) NOT NULL,
+    ver              VARCHAR(16)  NOT NULL,
+    type             VARCHAR(20),
+    content          CLOB,
+    recover_strategy VARCHAR(16),
+    comment_         VARCHAR(256),
+    CONSTRAINT pk_seata_state_machine_def PRIMARY KEY (id)
 );
-CREATE INDEX idx_saga_instance_status_retry ON t_saga_instance (status, next_retry_time);
 COMMENT
-ON TABLE t_saga_instance IS '下单 Saga 实例：持久化编排状态，支持跨进程崩溃恢复与补偿审计';
+ON TABLE seata_state_machine_def IS 'Seata Saga 状态机定义';
+
+CREATE TABLE seata_state_machine_inst
+(
+    id                  VARCHAR(128) NOT NULL,
+    machine_id          VARCHAR(128) NOT NULL,
+    tenant_id           VARCHAR(32)  NOT NULL,
+    parent_id           VARCHAR(128),
+    business_key        VARCHAR(128),
+    gmt_started         TIMESTAMP(3) NOT NULL,
+    gmt_end             TIMESTAMP(3),
+    status              VARCHAR(2)   NOT NULL,
+    compensation_status VARCHAR(2),
+    is_running          SMALLINT     NOT NULL,
+    gmt_updated         TIMESTAMP(3) NOT NULL,
+    start_params        CLOB,
+    end_params          CLOB,
+    -- Seata 用 JDK 序列化写入 byte[]，DM8 的 CLOB 会把字节转成十六进制文本导致反序列化失败，必须用 BLOB。
+    excep               BLOB,
+    CONSTRAINT pk_seata_state_machine_inst PRIMARY KEY (id)
+);
+CREATE INDEX idx_seata_sm_inst_business_key ON seata_state_machine_inst (business_key);
 COMMENT
-ON COLUMN t_saga_instance.saga_no IS 'Saga 编号';
+ON TABLE seata_state_machine_inst IS 'Seata Saga 状态机实例：按 business_key（订单号）检索与恢复';
+
+CREATE TABLE seata_state_inst
+(
+    id                       VARCHAR(128) NOT NULL,
+    machine_inst_id          VARCHAR(128) NOT NULL,
+    name                     VARCHAR(128),
+    type                     VARCHAR(20),
+    business_key             VARCHAR(128),
+    gmt_started              TIMESTAMP(3) NOT NULL,
+    service_name             VARCHAR(128),
+    service_method           VARCHAR(128),
+    service_type             VARCHAR(20),
+    is_for_update            SMALLINT,
+    status                   VARCHAR(2),
+    input_params             CLOB,
+    output_params            CLOB,
+    -- 同 seata_state_machine_inst.excep：JDK 序列化字节必须落 BLOB。
+    excep                    BLOB,
+    gmt_end                  TIMESTAMP(3),
+    state_id_compensated_for VARCHAR(128),
+    state_id_retried_for     VARCHAR(128),
+    gmt_updated              TIMESTAMP(3) NOT NULL,
+    CONSTRAINT pk_seata_state_inst PRIMARY KEY (id)
+);
+CREATE INDEX idx_seata_state_inst_machine ON seata_state_inst (machine_inst_id);
 COMMENT
-ON COLUMN t_saga_instance.biz_type IS '业务类型：ORDER_CHECKOUT-下单';
+ON TABLE seata_state_inst IS 'Seata Saga 状态明细：每个状态的动作、入参、出参与补偿关系';
+
+-- ----------------------------
+-- Seata TC 事务协调器存储（store.mode=db）
+-- 列名与 seata 2.x DB 存储 SQL（global / branch / lock / distributed lock）对齐。
+-- 当前下单链路只做 Saga 客户端补偿（sagaBranchRegisterEnable=false），TC 不参与分支注册；
+-- 但 TC 以 DB 模式启动仍要求这四张表存在。
+-- ----------------------------
+CREATE TABLE global_table
+(
+    xid                       VARCHAR(128) NOT NULL,
+    transaction_id            BIGINT,
+    status                    TINYINT      NOT NULL,
+    application_id            VARCHAR(32),
+    transaction_service_group VARCHAR(32),
+    transaction_name          VARCHAR(128),
+    timeout                   INT,
+    begin_time                BIGINT,
+    application_data          VARCHAR(2000),
+    gmt_create                TIMESTAMP(3),
+    gmt_modified              TIMESTAMP(3),
+    CONSTRAINT pk_global_table PRIMARY KEY (xid)
+);
+CREATE INDEX idx_global_table_gmt_modified_status ON global_table (gmt_modified, status);
+CREATE INDEX idx_global_table_transaction_id ON global_table (transaction_id);
 COMMENT
-ON COLUMN t_saga_instance.biz_no IS '业务单号：orderNo';
+ON TABLE global_table IS 'Seata TC 全局事务';
+
+CREATE TABLE branch_table
+(
+    branch_id         BIGINT       NOT NULL,
+    xid               VARCHAR(128) NOT NULL,
+    transaction_id    BIGINT,
+    resource_group_id VARCHAR(32),
+    resource_id       VARCHAR(256),
+    branch_type       VARCHAR(8),
+    status            TINYINT,
+    client_id         VARCHAR(64),
+    application_data  VARCHAR(2000),
+    gmt_create        TIMESTAMP(3),
+    gmt_modified      TIMESTAMP(3),
+    CONSTRAINT pk_branch_table PRIMARY KEY (branch_id)
+);
+CREATE INDEX idx_branch_table_xid ON branch_table (xid);
 COMMENT
-ON COLUMN t_saga_instance.status IS '状态：PROCESSING-处理中，SUCCEEDED-已完成，FAILED-已失败并完成补偿';
+ON TABLE branch_table IS 'Seata TC 分支事务';
+
+CREATE TABLE lock_table
+(
+    row_key        VARCHAR(128) NOT NULL,
+    xid            VARCHAR(96),
+    transaction_id BIGINT,
+    branch_id      BIGINT       NOT NULL,
+    resource_id    VARCHAR(256),
+    table_name     VARCHAR(32),
+    pk             VARCHAR(36),
+    status         TINYINT,
+    gmt_create     TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+    gmt_modified   TIMESTAMP(3) DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_lock_table PRIMARY KEY (row_key)
+);
 COMMENT
-ON COLUMN t_saga_instance.current_step IS '当前步骤：CREATE_ORDER/RESERVE_INVENTORY';
+ON TABLE lock_table IS 'Seata TC 全局锁';
+
+CREATE TABLE distributed_lock
+(
+    lock_key   VARCHAR(20) NOT NULL,
+    lock_value VARCHAR(20) NOT NULL,
+    expire     BIGINT,
+    CONSTRAINT pk_distributed_lock PRIMARY KEY (lock_key)
+);
 COMMENT
-ON COLUMN t_saga_instance.payload IS '请求摘要JSON（审计与恢复定位，不含敏感信息）';
-COMMENT
-ON COLUMN t_saga_instance.next_retry_time IS '恢复调度下次扫描时间';
+ON TABLE distributed_lock IS 'Seata TC 集群分布式锁';
+
+-- TC 启动时会抢占以下分布式锁，缺失会导致锁初始化失败。
+INSERT INTO distributed_lock (lock_key, lock_value, expire) VALUES ('AsyncCommitting', ' ', 0);
+INSERT INTO distributed_lock (lock_key, lock_value, expire) VALUES ('RetryCommitting', ' ', 0);
+INSERT INTO distributed_lock (lock_key, lock_value, expire) VALUES ('RetryRollbacking', ' ', 0);
+INSERT INTO distributed_lock (lock_key, lock_value, expire) VALUES ('TxTimeoutCheck', ' ', 0);
 
 COMMIT;
 

@@ -23,6 +23,13 @@ public interface DistributedLockTemplate {
     <T> T execute(String lockKey, long waitTimeMillis, Supplier<T> supplier);
 
     /**
+     * 加锁并执行业务，同时指定持有告警阈值。
+     *
+     * @param holdWarnMillis 持有超过该毫秒数时记录 WARN 并写入审计；{@code <= 0} 表示关闭
+     */
+    <T> T execute(String lockKey, long waitTimeMillis, long holdWarnMillis, Supplier<T> supplier);
+
+    /**
      * 加锁并执行无返回值业务。
      */
     default void execute(String lockKey, long waitTimeMillis, Runnable runnable) {

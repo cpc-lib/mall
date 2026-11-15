@@ -44,6 +44,8 @@
     <redisson.version>3.52.0</redisson.version>
     <springdoc.version>2.10.0</springdoc.version>
     <archunit.version>1.5.1</archunit.version>
+    <seata.version>2.6.0</seata.version>
+    <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
   </properties>
 
   <dependencyManagement>

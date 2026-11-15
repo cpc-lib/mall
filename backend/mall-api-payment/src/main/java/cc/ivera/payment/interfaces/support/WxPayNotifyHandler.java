@@ -1,6 +1,6 @@
 package cc.ivera.payment.interfaces.support;
 
-import cc.ivera.payment.application.impl.wxpay.WxPayPrivateKeyUtil;
+import cc.ivera.payment.infrastructure.util.WxPayPrivateKeyUtil;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.shared.domain.exception.BizException;

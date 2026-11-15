@@ -2,9 +2,7 @@ package cc.ivera.order.interfaces;
 
 import cc.ivera.order.application.CheckoutService;
 import cc.ivera.order.application.ShipmentService;
-import cc.ivera.order.domain.model.OrderShipment;
 import cc.ivera.order.application.vo.ShipmentDetailVO;
-import cc.ivera.order.application.vo.ShipmentTimelineVO;
 import cc.ivera.shared.security.AuthContext;
 import cc.ivera.shared.web.R;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -35,19 +33,10 @@ public class OrderShipmentController {
     @GetMapping("/{orderNo}/shipment")
     public R<ShipmentDetailVO> getShipment(@PathVariable String orderNo) {
         requireOwnership(orderNo);
-        OrderShipment shipment = shipmentService.getShipment(orderNo);
-        ShipmentDetailVO data = new ShipmentDetailVO();
-        data.setOrderNo(orderNo);
-        if (shipment == null) {
-            data.setShipped(false);
+        ShipmentDetailVO data = shipmentService.getShipmentDetail(orderNo);
+        if (Boolean.FALSE.equals(data.getShipped())) {
             return R.ok(data).setMessage("订单尚未发货");
         }
-        data.setShipped(true);
-        data.setShipmentNo(shipment.getShipmentNo());
-        data.setLogisticsCompany(shipment.getLogisticsCompany());
-        data.setTrackingNo(shipment.getTrackingNo());
-        data.setStatus(shipment.getStatus());
-        data.setTimeline(buildTimeline(shipment));
         return R.ok(data);
     }
 
@@ -57,15 +46,6 @@ public class OrderShipmentController {
         requireOwnership(orderNo);
         shipmentService.confirmReceipt(orderNo);
         return R.ok("确认收货成功").setMessage("感谢您的确认，交易完成");
-    }
-
-    private ShipmentTimelineVO buildTimeline(OrderShipment s) {
-        ShipmentTimelineVO timeline = new ShipmentTimelineVO();
-        timeline.setSHIPPED(s.getShippedTime());
-        timeline.setIN_TRANSIT(s.getInTransitTime());
-        timeline.setDELIVERED(s.getDeliveredTime());
-        timeline.setRECEIVED(s.getReceivedTime());
-        return timeline;
     }
 
     /**

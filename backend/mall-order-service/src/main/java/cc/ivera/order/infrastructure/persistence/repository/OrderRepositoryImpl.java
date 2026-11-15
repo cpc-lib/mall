@@ -193,6 +193,20 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
+    public int cancelIfUnpaid(String orderNo) {
+        LambdaUpdateWrapper<OrderInfoPO> wrapper = new LambdaUpdateWrapper<OrderInfoPO>()
+            .eq(OrderInfoPO::getOrderNo, orderNo)
+            .eq(OrderInfoPO::getOrderStatus, OrderLifecycleStatus.WAIT_PAY.getType())
+            .eq(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType())
+            .set(OrderInfoPO::getLegacyStatus, OrderStatus.CANCEL.getType())
+            .set(OrderInfoPO::getOrderStatus, OrderLifecycleStatus.CLOSED.getType())
+            .set(OrderInfoPO::getFulfillmentStatus, FulfillmentStatus.CANCELLED.getType())
+            .set(OrderInfoPO::getUpdateTime, new Date());
+        applyFence(wrapper);
+        return orderInfoMapper.update(null, wrapper);
+    }
+
+    @Override
     public int freezeOrderRefund(String orderNo, Integer amount) {
         return orderInfoMapper.freezeOrderRefund(orderNo, amount, FenceTokenHolder.get());
     }

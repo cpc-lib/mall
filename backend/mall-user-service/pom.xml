@@ -94,7 +94,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.userservice.UserServiceApplication</mainClass>
+          <mainClass>cc.ivera.UserServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

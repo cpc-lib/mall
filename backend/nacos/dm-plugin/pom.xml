@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+      Nacos 3.x 的达梦数据源插件：Nacos 官方只提供 MySQL/Derby 的 Mapper 实现，
+      DM8 需要自带一套 Mapper 并通过 ServiceLoader 注册到 /home/nacos/plugins。
+      本工程独立构建，不属于 backend 聚合工程（避免影响业务构建）。
+      构建：mvn -f backend/nacos/dm-plugin/pom.xml package
+    -->
+    <groupId>cc.ivera.mall</groupId>
+    <artifactId>nacos-dm-mapper</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!--
+          构建用 JDK 21（与后端一致），但产物必须是 Java 17 字节码：
+          nacos/nacos-server:v3.0.3 镜像自带 JDK 17.0.16，用 21 编译会在容器内
+          启动时报 UnsupportedClassVersionError。
+        -->
+        <maven.compiler.release>17</maven.compiler.release>
+        <nacos.version>3.0.3</nacos.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.alibaba.nacos</groupId>
+            <artifactId>nacos-datasource-plugin</artifactId>
+            <version>${nacos.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

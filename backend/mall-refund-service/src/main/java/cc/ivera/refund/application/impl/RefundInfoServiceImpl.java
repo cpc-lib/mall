@@ -14,7 +14,7 @@ import cc.ivera.refund.domain.enums.RefundStatus;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.shared.domain.lock.DistributedLockTemplate;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -55,7 +55,6 @@ public class RefundInfoServiceImpl implements RefundInfoService {
     private final OrderQueryApi orderQueryApi;
     private final OrderRefundStatusService orderRefundStatusService;
     private final ApplicationEventPublisher eventPublisher;
-    private final DistributedLockTemplate distributedLockTemplate;
     private final TransactionTemplate transactionTemplate;
     private final Map<RefundStatus, Consumer<String>> statusEventDispatch;
 
@@ -64,14 +63,12 @@ public class RefundInfoServiceImpl implements RefundInfoService {
         OrderQueryApi orderQueryApi,
         OrderRefundStatusService orderRefundStatusService,
         ApplicationEventPublisher eventPublisher,
-        DistributedLockTemplate distributedLockTemplate,
         TransactionTemplate transactionTemplate
     ) {
         this.refundInfoRepository = refundInfoRepository;
         this.orderQueryApi = orderQueryApi;
         this.orderRefundStatusService = orderRefundStatusService;
         this.eventPublisher = eventPublisher;
-        this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
         Map<RefundStatus, Consumer<String>> dispatch = new EnumMap<>(RefundStatus.class);
         dispatch.put(RefundStatus.SUCCESS, refundNo -> eventPublisher.publishEvent(new RefundSucceededEvent(refundNo)));
@@ -82,16 +79,12 @@ public class RefundInfoServiceImpl implements RefundInfoService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DistributedLock(key = "'payment:refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public RefundInfo createRefundApplication(String orderNo, Integer refundAmount, String reason) {
         if (orderNo == null || orderNo.trim().isEmpty()) {
             throw new BizException("订单号不能为空");
         }
-        // 退款申请并发互斥靠 Redis 分布式锁（按订单号串行化），事务在锁内开启，
-        // 移除底层 FOR UPDATE 后并发安全由「锁 + DuplicateKeyException 兜底」保障。
-        String lockKey = "payment:refund:create:" + orderNo;
-        return distributedLockTemplate.execute(lockKey, 5000L, () ->
-            transactionTemplate.execute(status -> doCreateRefundApplication(orderNo, refundAmount, reason))
-        );
+        return transactionTemplate.execute(status -> doCreateRefundApplication(orderNo, refundAmount, reason));
     }
 
     private RefundInfo doCreateRefundApplication(String orderNo, Integer refundAmount, String reason) {

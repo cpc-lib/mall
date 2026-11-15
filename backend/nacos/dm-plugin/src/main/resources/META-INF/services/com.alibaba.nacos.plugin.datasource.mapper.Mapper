@@ -1,0 +1,10 @@
+cc.ivera.mall.nacos.dm.ConfigInfoMapperByDm
+cc.ivera.mall.nacos.dm.ConfigInfoBetaMapperByDm
+cc.ivera.mall.nacos.dm.ConfigInfoGrayMapperByDm
+cc.ivera.mall.nacos.dm.ConfigInfoTagMapperByDm
+cc.ivera.mall.nacos.dm.ConfigTagsRelationMapperByDm
+cc.ivera.mall.nacos.dm.ConfigMigrateMapperByDm
+cc.ivera.mall.nacos.dm.HistoryConfigInfoMapperByDm
+cc.ivera.mall.nacos.dm.TenantInfoMapperByDm
+cc.ivera.mall.nacos.dm.TenantCapacityMapperByDm
+cc.ivera.mall.nacos.dm.GroupCapacityMapperByDm

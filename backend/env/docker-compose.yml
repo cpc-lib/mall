@@ -69,6 +69,33 @@ services:
     networks:
       - payment-demo-net
 
+  seata:
+    image: ${SEATA_IMAGE:-apache/seata-server:2.6.0}
+    container_name: payment-demo-seata
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+
+    ports:
+      - "${SEATA_HOST_PORT:-8091}:8091"
+
+    volumes:
+      # TC 引导配置：config.type=nacos + registry.type=nacos（store 等存储配置在 Nacos 的 seataServer.properties）
+      - ./seata/application.yml:/seata-server/resources/application.yml:ro
+      # 官方镜像不含 DM8 JDBC 驱动，需把驱动 jar 放到 ./seata/lib 后挂载
+      - ${DM_JDBC_JAR:-./seata/lib/DmJdbcDriver18-8.1.2.192.jar}:/seata-server/libs/DmJdbcDriver18-8.1.2.192.jar:ro
+
+    depends_on:
+      dm8:
+        condition: service_healthy
+      nacos:
+        # TC 的配置中心与注册中心都在 Nacos，必须等 Nacos 就绪
+        condition: service_healthy
+
+    networks:
+      - payment-demo-net
+
   redis:
     image: ${REDIS_IMAGE:-redis:7-alpine}
     container_name: payment-demo-redis
@@ -135,9 +162,17 @@ services:
 
     environment:
       TZ: Asia/Shanghai
-      # 单机模式，使用内嵌 Derby 存储
+      # 单机模式；配置存储切换为 DB 模式（复用 compose 内的 DM8，表见 env/sql/dm8/nacos-schema.sql）
       MODE: standalone
       PREFER_HOST_MODE: hostname
+      # DB 模式：platform 决定 Mapper 选择，dm 对应 env/nacos/plugins 下的达梦 Mapper 插件
+      SPRING_DATASOURCE_PLATFORM: dm
+      DB_NUM: "1"
+      DB_URL_0: "jdbc:dm://dm8:5236?schema=SYSDBA"
+      DB_USER_0: "SYSDBA"
+      DB_PASSWORD_0: "${DM_PASSWORD:-Cpc2026#@Dm}"
+      # Nacos 未配置驱动时默认注入 MySQL 驱动，这里显式指定达梦驱动
+      DB_POOL_CONFIG_DRIVERCLASSNAME: dm.jdbc.driver.DmDriver
       # 开启鉴权，与 Spring 配置中的 nacos/nacos 凭据匹配
       NACOS_AUTH_ENABLE: "true"
       # token 密钥（base64，长度需 >= 32 字节），仅本地开发使用
@@ -157,6 +192,13 @@ services:
     volumes:
       - nacos-data:/home/nacos/data
       - nacos-logs:/home/nacos/logs
+      # 达梦 Mapper 插件与 DM JDBC 驱动（构建方式见 README，不能打进镜像）
+      - ./nacos/plugins:/home/nacos/plugins
+
+    depends_on:
+      dm8:
+        # DB 模式下配置存储依赖 DM8，必须等其就绪
+        condition: service_healthy
 
     healthcheck:
       test: [ "CMD-SHELL", "curl -fs http://127.0.0.1:8080/v3/console/health/readiness >/dev/null && ([ -f /tmp/.nacos-admin-init ] || (curl -fs -X POST http://127.0.0.1:8080/v3/auth/user/admin -d \"password=${NACOS_ADMIN_PASSWORD:-nacos}\" >/dev/null && touch /tmp/.nacos-admin-init)) || exit 1" ]
@@ -164,6 +206,96 @@ services:
       timeout: 5s
       retries: 18
       start_period: 30s
+
+    networks:
+      - payment-demo-net
+
+  zipkin:
+    image: ${ZIPKIN_IMAGE:-openzipkin/zipkin:3}
+    container_name: payment-demo-zipkin
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+
+    ports:
+      - "${ZIPKIN_PORT:-9411}:9411"
+
+    networks:
+      - payment-demo-net
+
+  elasticsearch:
+    image: ${ELASTICSEARCH_IMAGE:-docker.elastic.co/elasticsearch/elasticsearch:8.19.0}
+    container_name: payment-demo-elasticsearch
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      # 单节点本地开发；关闭安全认证，Kibana/Logstash 无需证书与口令即可接入
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      xpack.security.http.ssl.enabled: "false"
+      ES_JAVA_OPTS: "${ES_JAVA_OPTS:--Xms512m -Xmx512m}"
+
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+
+    ports:
+      - "${ELASTICSEARCH_PORT:-9200}:9200"
+
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+
+    networks:
+      - payment-demo-net
+
+  logstash:
+    image: ${LOGSTASH_IMAGE:-docker.elastic.co/logstash/logstash:8.19.0}
+    container_name: payment-demo-logstash
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      LS_JAVA_OPTS: "${LS_JAVA_OPTS:--Xms256m -Xmx256m}"
+      XPACK_MONITORING_ENABLED: "false"
+
+    ports:
+      # 应用 Logback TCP appender 把 JSON 日志发到这里
+      - "${LOGSTASH_TCP_PORT:-5000}:5000"
+
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+
+    depends_on:
+      elasticsearch:
+        condition: service_started
+
+    networks:
+      - payment-demo-net
+
+  kibana:
+    image: ${KIBANA_IMAGE:-docker.elastic.co/kibana/kibana:8.19.0}
+    container_name: payment-demo-kibana
+    restart: unless-stopped
+
+    environment:
+      TZ: Asia/Shanghai
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      XPACK_SECURITY_ENABLED: "false"
+      # 已保存对象加密密钥，本地开发固定值，长度需 >= 32
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: "${KIBANA_ENCRYPTION_KEY:-malllocaldev0123456789abcdefghij}"
+
+    ports:
+      - "${KIBANA_PORT:-5601}:5601"
+
+    depends_on:
+      elasticsearch:
+        condition: service_started
 
     networks:
       - payment-demo-net
@@ -178,6 +310,8 @@ volumes:
   nacos-data:
     driver: local
   nacos-logs:
+    driver: local
+  elasticsearch-data:
     driver: local
 
 networks:

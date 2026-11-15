@@ -46,7 +46,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.userbff.UserBffApplication</mainClass>
+          <mainClass>cc.ivera.UserBffApplication</mainClass>
         </configuration>
         <executions>
           <execution>

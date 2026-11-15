@@ -20,3 +20,9 @@ upload/
 
 # Logs
 *.log
+
+# Seata DM8 JDBC driver (copied locally, never committed)
+backend/env/seata/lib/*.jar
+
+# Nacos DM mapper plugin & DM8 JDBC driver (built/copied locally, never committed)
+backend/env/nacos/plugins/*.jar

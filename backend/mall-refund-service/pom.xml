@@ -110,7 +110,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.refundservice.RefundServiceApplication</mainClass>
+          <mainClass>cc.ivera.RefundServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

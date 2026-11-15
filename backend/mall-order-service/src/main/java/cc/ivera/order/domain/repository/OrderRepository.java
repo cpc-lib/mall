@@ -97,6 +97,13 @@ public interface OrderRepository {
      */
     int casFulfillment(String orderNo, String from, String to);
 
+    /**
+     * 下单补偿关单：仅“待支付 + 未支付”订单置为已取消（条件 UPDATE，可重复执行）。
+     *
+     * @return 受影响行数，0 表示订单不存在或已不在可取消状态
+     */
+    int cancelIfUnpaid(String orderNo);
+
     // ===== 退款联动 CAS（退款上下文批次4 经订单应用服务调用，闸门为条件 UPDATE）=====
 
     /**

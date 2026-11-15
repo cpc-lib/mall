@@ -14,6 +14,7 @@ import cc.ivera.refund.domain.enums.RefundApprovalStatus;
 import cc.ivera.refund.domain.enums.RefundStatus;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import org.springframework.stereotype.Service;
@@ -66,52 +67,46 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DistributedLock(key = "'payment:refund:approve:' + #refundNo", waitTimeMillis = 5000L)
     public void approve(String refundNo, String approveRemark) {
-        String lockKey = "payment:refund:approve:" + refundNo;
-        distributedLockTemplate.execute(lockKey, 5000L, () -> {
-            RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
-            if (refundInfo == null) {
-                throw new BizException("退款申请单不存在");
-            }
-            if (RefundApprovalStatus.REJECTED.getType().equals(refundInfo.getApprovalStatus())) {
-                throw new BizException("退款申请单已拒绝，不能审核通过");
-            }
-            if (RefundStatus.SUCCESS.getType().equals(refundInfo.getRefundStatus())) {
-                throw new BizException("该退款申请单已退款成功，请勿重复处理");
-            }
-            if (RefundStatus.PROCESSING.getType().equals(refundInfo.getRefundStatus())) {
-                throw new BizException("该退款申请单已在退款处理中，请勿重复处理");
-            }
+        RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
+        if (refundInfo == null) {
+            throw new BizException("退款申请单不存在");
+        }
+        if (RefundApprovalStatus.REJECTED.getType().equals(refundInfo.getApprovalStatus())) {
+            throw new BizException("退款申请单已拒绝，不能审核通过");
+        }
+        if (RefundStatus.SUCCESS.getType().equals(refundInfo.getRefundStatus())) {
+            throw new BizException("该退款申请单已退款成功，请勿重复处理");
+        }
+        if (RefundStatus.PROCESSING.getType().equals(refundInfo.getRefundStatus())) {
+            throw new BizException("该退款申请单已在退款处理中，请勿重复处理");
+        }
 
-            OrderInfo orderInfo = orderQueryApi.findByOrderNo(refundInfo.getOrderNo());
-            if (orderInfo == null) {
-                throw new BizException("订单不存在");
-            }
-            validateSupportedPayType(orderInfo.getPaymentType());
+        OrderInfo orderInfo = orderQueryApi.findByOrderNo(refundInfo.getOrderNo());
+        if (orderInfo == null) {
+            throw new BizException("订单不存在");
+        }
+        validateSupportedPayType(orderInfo.getPaymentType());
 
-            refundInfoService.markApprovalPassed(refundNo, approveRemark);
-            claimRefundForExecution(refundNo);
-            RefundInfo latestRefundInfo = refundInfoService.getByRefundNo(refundNo);
+        refundInfoService.markApprovalPassed(refundNo, approveRemark);
+        claimRefundForExecution(refundNo);
+        RefundInfo latestRefundInfo = refundInfoService.getByRefundNo(refundNo);
 
-            try {
-                executeRefund(orderInfo.getPaymentType(), latestRefundInfo);
-            } catch (RuntimeException e) {
-                markRefundSubmitFailed(refundNo, e);
-                throw e;
-            }
-            refundStatusSyncMessageService.sendRefundStatusSyncMessage(refundNo);
-            return null;
-        });
+        try {
+            executeRefund(orderInfo.getPaymentType(), latestRefundInfo);
+        } catch (RuntimeException e) {
+            markRefundSubmitFailed(refundNo, e);
+            throw e;
+        }
+        refundStatusSyncMessageService.sendRefundStatusSyncMessage(refundNo);
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
+    @DistributedLock(key = "'payment:refund:reject:' + #refundNo", waitTimeMillis = 5000L)
     public void reject(String refundNo, String approveRemark) {
-        String lockKey = "payment:refund:reject:" + refundNo;
-        distributedLockTemplate.execute(lockKey, 5000L, () -> {
-            refundInfoService.markApprovalRejected(refundNo, approveRemark);
-            return null;
-        });
+        refundInfoService.markApprovalRejected(refundNo, approveRemark);
     }
 
     @Override
@@ -126,45 +121,41 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DistributedLock(key = "'payment:refund:query:' + #refundNo", waitTimeMillis = 5000L)
     public RefundInfo queryRefundStatus(String refundNo) {
-        String lockKey = "payment:refund:query:" + refundNo;
-        return distributedLockTemplate.execute(lockKey, 5000L, () -> {
-            RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
-            if (refundInfo == null) {
-                throw new BizException("退款申请单不存在");
-            }
-            if (!RefundApprovalStatus.APPROVED.getType().equals(refundInfo.getApprovalStatus())) {
-                throw new BizException("退款申请尚未提交支付渠道，不能主动查询渠道状态");
-            }
+        RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
+        if (refundInfo == null) {
+            throw new BizException("退款申请单不存在");
+        }
+        if (!RefundApprovalStatus.APPROVED.getType().equals(refundInfo.getApprovalStatus())) {
+            throw new BizException("退款申请尚未提交支付渠道，不能主动查询渠道状态");
+        }
 
-            OrderInfo orderInfo = orderQueryApi.findByOrderNo(refundInfo.getOrderNo());
-            if (orderInfo == null) {
-                throw new BizException("订单不存在");
-            }
-            validateSupportedPayType(orderInfo.getPaymentType());
+        OrderInfo orderInfo = orderQueryApi.findByOrderNo(refundInfo.getOrderNo());
+        if (orderInfo == null) {
+            throw new BizException("订单不存在");
+        }
+        validateSupportedPayType(orderInfo.getPaymentType());
 
-            syncRefundByChannel(orderInfo.getPaymentType(), refundInfo);
+        syncRefundByChannel(orderInfo.getPaymentType(), refundInfo);
 
-            return refundInfoService.getByRefundNo(refundNo);
-        });
+        return refundInfoService.getByRefundNo(refundNo);
     }
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    @DistributedLock(key = "'payment:refund:reconcile:' + #orderNo", waitTimeMillis = 5000L)
     public List<RefundInfo> reconcileOrderRefundStatus(String orderNo) {
-        String lockKey = "payment:refund:reconcile:" + orderNo;
-        return distributedLockTemplate.execute(lockKey, 5000L, () -> {
-            OrderInfo orderInfo = orderQueryApi.findByOrderNo(orderNo);
-            if (orderInfo == null) {
-                throw new BizException("订单不存在");
-            }
-            validateSupportedPayType(orderInfo.getPaymentType());
+        OrderInfo orderInfo = orderQueryApi.findByOrderNo(orderNo);
+        if (orderInfo == null) {
+            throw new BizException("订单不存在");
+        }
+        validateSupportedPayType(orderInfo.getPaymentType());
 
-            Set<String> channelRefundNos = reconcileWxOrderRefundsIfNeeded(orderInfo);
-            syncLocalRefundsForOrder(orderInfo, channelRefundNos);
-            orderRefundStatusService.refreshOrderRefundStatus(orderNo);
-            return refundInfoService.listByOrderNo(orderNo);
-        });
+        Set<String> channelRefundNos = reconcileWxOrderRefundsIfNeeded(orderInfo);
+        syncLocalRefundsForOrder(orderInfo, channelRefundNos);
+        orderRefundStatusService.refreshOrderRefundStatus(orderNo);
+        return refundInfoService.listByOrderNo(orderNo);
     }
 
     private void claimRefundForExecution(String refundNo) {

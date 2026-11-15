@@ -34,6 +34,7 @@ import cc.ivera.refund.application.dto.RefundApplyRequest;
 import cc.ivera.refund.application.dto.RefundApplyUpdateRequest;
 import cc.ivera.refund.application.dto.RefundApplyVO;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -120,18 +121,16 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
+    @DistributedLock(key = "'refund:edit:' + #refundNo", waitTimeMillis = 5000L)
     public RefundApplyVO update(Long userId, String refundNo, RefundApplyUpdateRequest request) {
-        return lockTemplate.execute("refund:edit:" + refundNo, 5000L, () ->
-            tx.execute(s -> doUpdate(userId, refundNo, request)));
+        return tx.execute(s -> doUpdate(userId, refundNo, request));
     }
 
     @Override
+    @DistributedLock(key = "'refund:cancel:' + #refundNo", waitTimeMillis = 5000L)
     public void cancel(Long userId, String refundNo) {
-        lockTemplate.execute("refund:cancel:" + refundNo, 5000L, () -> {
-            tx.execute(s -> {
-                doCancelOrReject(userId, refundNo, null, true);
-                return null;
-            });
+        tx.execute(s -> {
+            doCancelOrReject(userId, refundNo, null, true);
             return null;
         });
     }
@@ -150,12 +149,10 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
+    @DistributedLock(key = "'refund:cancel:' + #refundNo", waitTimeMillis = 5000L)
     public void reject(String refundNo, String remark) {
-        lockTemplate.execute("refund:cancel:" + refundNo, 5000L, () -> {
-            tx.execute(s -> {
-                doCancelOrReject(null, refundNo, remark, false);
-                return null;
-            });
+        tx.execute(s -> {
+            doCancelOrReject(null, refundNo, remark, false);
             return null;
         });
     }
@@ -189,20 +186,18 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 结转（渠道退款成功，幂等） ====================
 
     @Override
+    @DistributedLock(key = "'refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public RefundApplyVO createPriceAdjustment(String orderNo, Integer amount, String reason) {
-        return lockTemplate.execute("refund:create:" + orderNo, 5000L, () ->
-            tx.execute(s -> doCreatePriceAdjustment(orderNo, amount, reason)));
+        return tx.execute(s -> doCreatePriceAdjustment(orderNo, amount, reason));
     }
 
     // ==================== 查询 ====================
 
     @Override
+    @DistributedLock(key = "'refund:settle:' + #refundNo", waitTimeMillis = 5000L)
     public void settle(String refundNo) {
-        lockTemplate.execute("refund:settle:" + refundNo, 5000L, () -> {
-            tx.execute(s -> {
-                doSettle(refundNo);
-                return null;
-            });
+        tx.execute(s -> {
+            doSettle(refundNo);
             return null;
         });
     }

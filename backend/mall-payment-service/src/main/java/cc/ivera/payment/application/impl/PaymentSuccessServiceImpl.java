@@ -12,7 +12,7 @@ import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.payment.domain.repository.PaymentDealRepository;
 import cc.ivera.payment.domain.repository.PaymentOrderRepository;
 import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.shared.domain.lock.DistributedLockTemplate;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import cc.ivera.shared.domain.mq.DuplicatePaymentMessage;
@@ -45,8 +45,6 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
 
     private final LocalMessageService localMessageService;
 
-    private final DistributedLockTemplate lockTemplate;
-
     private final TransactionTemplate tx;
 
     public PaymentSuccessServiceImpl(OrderPaymentApi orderInfoService,
@@ -54,25 +52,23 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
                                      PaymentOrderService paymentOrderService,
                                      PaymentDealRepository paymentDealRepository,
                                      LocalMessageService localMessageService,
-                                     DistributedLockTemplate lockTemplate,
                                      TransactionTemplate tx) {
         this.orderInfoService = orderInfoService;
         this.paymentOrderRepository = paymentOrderRepository;
         this.paymentOrderService = paymentOrderService;
         this.paymentDealRepository = paymentDealRepository;
         this.localMessageService = localMessageService;
-        this.lockTemplate = lockTemplate;
         this.tx = tx;
     }
 
     @Override
+    @DistributedLock(key = "'payment:offline:mark:' + #orderNo", waitTimeMillis = 5000L)
     public boolean markOfflinePaid(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("标记付款缺少订单号");
         }
-        return lockTemplate.execute("payment:offline:mark:" + orderNo, 5000L,
-            () -> tx.execute(s ->
-                handlePaymentSuccess(orderNo, PaymentConfigGateway.CHANNEL_OFFLINE, null, null)));
+        return tx.execute(s ->
+            handlePaymentSuccess(orderNo, PaymentConfigGateway.CHANNEL_OFFLINE, null, null));
     }
 
     @Override

@@ -1,6 +1,8 @@
 package cc.ivera.order.application.impl;
 
 import cc.ivera.order.application.ShipmentService;
+import cc.ivera.order.application.vo.ShipmentDetailVO;
+import cc.ivera.order.application.vo.ShipmentTimelineVO;
 import cc.ivera.order.domain.enums.FulfillmentStatus;
 import cc.ivera.order.domain.enums.ShipmentStatus;
 import cc.ivera.order.domain.gateway.LogisticsGateway;
@@ -12,7 +14,7 @@ import cc.ivera.order.domain.repository.OrderShipmentRepository;
 import cc.ivera.product.application.InventoryService;
 import cc.ivera.product.domain.model.OrderItemStockLine;
 import cc.ivera.shared.domain.exception.BizException;
-import cc.ivera.shared.domain.lock.DistributedLockTemplate;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,7 +36,6 @@ public class ShipmentServiceImpl implements ShipmentService {
     private final OrderRepository orderRepository;
     private final OrderShipmentRepository orderShipmentRepository;
     private final LogisticsGateway logisticsGateway;
-    private final DistributedLockTemplate distributedLockTemplate;
     private final TransactionTemplate transactionTemplate;
     private final InventoryService inventoryService;
     /**
@@ -51,25 +52,22 @@ public class ShipmentServiceImpl implements ShipmentService {
     public ShipmentServiceImpl(OrderRepository orderRepository,
                                OrderShipmentRepository orderShipmentRepository,
                                LogisticsGateway logisticsGateway,
-                               DistributedLockTemplate distributedLockTemplate,
                                TransactionTemplate transactionTemplate,
                                InventoryService inventoryService) {
         this.orderRepository = orderRepository;
         this.orderShipmentRepository = orderShipmentRepository;
         this.logisticsGateway = logisticsGateway;
-        this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
         this.inventoryService = inventoryService;
     }
 
     @Override
+    @DistributedLock(key = "'shipment:ship:' + #orderNo", waitTimeMillis = 5000L)
     public OrderShipment ship(String orderNo) {
         if (orderNo == null || orderNo.trim().isEmpty()) {
             throw new BizException("订单号不能为空");
         }
-        return distributedLockTemplate.execute("shipment:ship:" + orderNo, 5000L, () ->
-            transactionTemplate.execute(status -> doShip(orderNo))
-        );
+        return transactionTemplate.execute(status -> doShip(orderNo));
     }
 
     private OrderShipment doShip(String orderNo) {
@@ -98,16 +96,15 @@ public class ShipmentServiceImpl implements ShipmentService {
     }
 
     @Override
+    @DistributedLock(key = "'shipment:receipt:' + #orderNo", waitTimeMillis = 5000L)
     public void confirmReceipt(String orderNo) {
         if (orderNo == null || orderNo.trim().isEmpty()) {
             throw new BizException("订单号不能为空");
         }
-        distributedLockTemplate.execute("shipment:receipt:" + orderNo, 5000L, () ->
-            transactionTemplate.execute(status -> {
-                doConfirmReceipt(orderNo);
-                return null;
-            })
-        );
+        transactionTemplate.execute(status -> {
+            doConfirmReceipt(orderNo);
+            return null;
+        });
     }
 
     private void doConfirmReceipt(String orderNo) {
@@ -158,6 +155,29 @@ public class ShipmentServiceImpl implements ShipmentService {
             return null;
         }
         return orderShipmentRepository.findLatestByOrderNo(orderNo);
+    }
+
+    @Override
+    public ShipmentDetailVO getShipmentDetail(String orderNo) {
+        ShipmentDetailVO data = new ShipmentDetailVO();
+        data.setOrderNo(orderNo);
+        OrderShipment shipment = getShipment(orderNo);
+        if (shipment == null) {
+            data.setShipped(false);
+            return data;
+        }
+        data.setShipped(true);
+        data.setShipmentNo(shipment.getShipmentNo());
+        data.setLogisticsCompany(shipment.getLogisticsCompany());
+        data.setTrackingNo(shipment.getTrackingNo());
+        data.setStatus(shipment.getStatus());
+        ShipmentTimelineVO timeline = new ShipmentTimelineVO();
+        timeline.setSHIPPED(shipment.getShippedTime());
+        timeline.setIN_TRANSIT(shipment.getInTransitTime());
+        timeline.setDELIVERED(shipment.getDeliveredTime());
+        timeline.setRECEIVED(shipment.getReceivedTime());
+        data.setTimeline(timeline);
+        return data;
     }
 
     @Override

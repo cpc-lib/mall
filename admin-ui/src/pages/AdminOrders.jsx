@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Card, DatePicker, Descriptions, Drawer, Input, InputNumber, message, Modal, Select, Space, Table, Tag, Typography } from 'antd'
 import shipmentApi from '@/api/shipment'
 import refundApi from '@/api/refundApply'
-import { PAY_LABEL, FULFILLMENT_LABEL, PAY_COLOR, PAYMENT_STATUS_COLOR, ORDER_REFUND_COLOR, ORDER_REFUND_LABEL } from '@/utils/statusLabels'
+import { PAY_LABEL, FULFILLMENT_LABEL, PAY_COLOR, PAYMENT_STATUS_COLOR, ORDER_REFUND_COLOR, ORDER_REFUND_LABEL, SHIPMENT_LABEL } from '@/utils/statusLabels'
 
 export default function AdminOrders() {
   const [allOrders, setAllOrders] = useState([])
@@ -18,6 +18,8 @@ export default function AdminOrders() {
   const [payAttempts, setPayAttempts] = useState([])
   const [detailPayAttempts, setDetailPayAttempts] = useState([])
   const [detailRefundOrders, setDetailRefundOrders] = useState([])
+  const [detailShipment, setDetailShipment] = useState(null)
+  const [shipmentLoading, setShipmentLoading] = useState(false)
   const loadAllOrders = () => {
     const params = {}
     if (orderFilter.payStatus) params.payStatus = orderFilter.payStatus
@@ -83,8 +85,19 @@ export default function AdminOrders() {
   ]
   const openDetail = d => {
     setDetailRow(d); setPaAmount(0); setPaReason('差价补偿')
+    setDetailShipment(null)
     shipmentApi.paymentOrders(d.order.orderNo).then(r => setDetailPayAttempts(r.data || []))
     shipmentApi.refundOrders(d.order.orderNo).then(r => setDetailRefundOrders(r.data || []))
+  }
+  const loadShipment = async orderNo => {
+    if (shipmentLoading) return
+    setShipmentLoading(true)
+    try {
+      const r = await shipmentApi.getAdminShipment(orderNo)
+      setDetailShipment(r.data || { shipped: false })
+    } finally {
+      setShipmentLoading(false)
+    }
   }
   const submitPriceAdjust = async () => {
     if (!detailRow || !Number(paAmount)) { message.error('请填写退款金额（分）'); return }
@@ -174,6 +187,22 @@ export default function AdminOrders() {
         </Descriptions>
         <h4>订单明细</h4>
         <Table rowKey="id" dataSource={detailRow.items || []} columns={itemCols} pagination={false} size="small" style={{ marginBottom: 20 }} />
+        <h4>物流信息</h4>
+        {!detailShipment && <Button size="small" loading={shipmentLoading} onClick={() => loadShipment(o.orderNo)}>查看物流信息</Button>}
+        {detailShipment && !detailShipment.shipped && <p style={{ fontSize: 12, color: '#8c8c8c', margin: 0 }}>订单尚未发货</p>}
+        {detailShipment?.shipped && <div style={{ marginBottom: 20 }}>
+          <Descriptions column={2} bordered size="small" style={{ marginBottom: 12 }}>
+            <Descriptions.Item label="物流单号">{detailShipment.shipmentNo || '-'}</Descriptions.Item>
+            <Descriptions.Item label="物流状态"><Tag color="blue">{SHIPMENT_LABEL[detailShipment.status] || detailShipment.status || '-'}</Tag></Descriptions.Item>
+            <Descriptions.Item label="物流公司">{detailShipment.logisticsCompany || '-'}</Descriptions.Item>
+            <Descriptions.Item label="运单号">{detailShipment.trackingNo || '-'}</Descriptions.Item>
+          </Descriptions>
+          <div style={{ fontSize: 12, lineHeight: '22px' }}>
+            {Object.entries(detailShipment.timeline || {}).filter(([, v]) => v).map(([k, v]) => (
+              <div key={k}>{SHIPMENT_LABEL[k.toUpperCase()] || k}：{new Date(v).toLocaleString()}</div>
+            ))}
+          </div>
+        </div>}
         <h4>差价退款</h4>
         <p style={{ fontSize: 12, color: '#8c8c8c' }}>管理员手填金额，受订单可退额度约束；提交后创建退款单并冻结额度。</p>
         <Space wrap>

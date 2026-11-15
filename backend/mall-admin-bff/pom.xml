@@ -42,7 +42,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.adminbff.AdminBffApplication</mainClass>
+          <mainClass>cc.ivera.AdminBffApplication</mainClass>
         </configuration>
         <executions>
           <execution>

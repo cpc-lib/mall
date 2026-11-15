@@ -68,7 +68,7 @@
 
 - 抢购与结果查询必须登录；结果查询只能访问本人 `requestId`。
 - 管理端接口沿用现有管理员鉴权；普通用户调用返回 HTTP 403。
-- `/internal/seckill/**` 只接受 `X-Internal-Service-Token`，空配置或不匹配拒绝。
+- `/internal/seckill/**` 不经过网关，仅供服务间调用。
 
 ## 4. 业务规则
 

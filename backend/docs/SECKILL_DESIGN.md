@@ -479,7 +479,7 @@ stateDiagram-v2
 - `POST/PUT /api/admin/seckill/skus`
 - `POST /api/admin/seckill/sessions/{id}/warmup`
 
-内部契约（不经过网关，`X-Internal-Service-Token`）：
+内部契约（不经过网关，仅供服务间调用）：
 
 - `GET /internal/seckill/skus/{skuId}`：SKU 快照（价格、限购、状态）。
 - `POST /internal/seckill/quota/lock`：落单锁配额。

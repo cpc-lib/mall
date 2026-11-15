@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  统一日志配置：控制台保留可读文本，同时把 JSON 日志推送到 Logstash（→ Elasticsearch → Kibana）。
+  traceId / spanId 由 Micrometer Tracing 写入 MDC，JSON 编码器会自动落成独立字段，便于按链路检索。
+  该文件位于 mall-infra 依赖 jar 中，所有依赖 mall-infra 的进程自动生效；
+  mall-product-service 与 mall-gateway 不依赖 mall-infra，各自保留一份同名配置。
+-->
+<configuration>
+  <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="mall"/>
+  <!-- Logstash TCP 接收端，对应 docker-compose 中 logstash 的 5000 端口 -->
+  <springProperty scope="context" name="LOGSTASH_DESTINATION" source="logging.logstash.destination" defaultValue="127.0.0.1:5000"/>
+
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] [%X{traceId:-},%X{spanId:-}] %logger{40} - %msg%n</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+
+  <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+    <destination>${LOGSTASH_DESTINATION}</destination>
+    <reconnectionDelay>10 second</reconnectionDelay>
+    <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+      <customFields>{"app":"${APP_NAME}"}</customFields>
+      <timeZone>Asia/Shanghai</timeZone>
+    </encoder>
+  </appender>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+    <appender-ref ref="LOGSTASH"/>
+  </root>
+</configuration>

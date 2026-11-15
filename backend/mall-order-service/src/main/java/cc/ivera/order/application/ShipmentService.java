@@ -1,5 +1,6 @@
 package cc.ivera.order.application;
 
+import cc.ivera.order.application.vo.ShipmentDetailVO;
 import cc.ivera.order.domain.model.OrderShipment;
 
 /**
@@ -24,6 +25,11 @@ public interface ShipmentService {
      * 查询订单物流详情（无物流单返回 null）。
      */
     OrderShipment getShipment(String orderNo);
+
+    /**
+     * 查询订单物流详情（含时间线；无物流单时 shipped=false）。
+     */
+    ShipmentDetailVO getShipmentDetail(String orderNo);
 
     /**
      * 模拟物流推进（定时任务调用，幂等）：

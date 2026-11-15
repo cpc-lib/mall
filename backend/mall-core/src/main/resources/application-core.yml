@@ -57,11 +57,6 @@ product:
   service:
     base-url: ${PRODUCT_SERVICE_BASE_URL:}
 
-internal:
-  service:
-    # BFF 调用户/商品服务的内部凭据；无默认密钥，生产必须由环境变量注入。
-    token: ${INTERNAL_SERVICE_TOKEN:}
-
 payment:
   auth:
     access-ttl-seconds: 1800

@@ -5,17 +5,15 @@ import cc.ivera.shared.domain.exception.ErrorCode;
 import cc.ivera.shared.web.R;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import feign.RequestInterceptor;
 import feign.Response;
 import feign.codec.ErrorDecoder;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 
 import java.io.IOException;
 import java.io.InputStream;
 
 /**
- * 内部服务 Feign 公共配置：透传内部令牌与 R 信封错误解码。
+ * 内部服务 Feign 公共配置：R 信封错误解码。
  * 连接/读超时统一由 {@code spring.cloud.openfeign.client.config} 配置，便于按目标服务覆盖。
  * 只通过 {@code @FeignClient(configuration = ...)} 引用，不加 @Configuration，
  * 避免被主上下文扫描成全局配置而影响微信/支付宝等外部渠道客户端。
@@ -24,16 +22,6 @@ public class InternalFeignConfiguration {
 
     private static final ObjectMapper ERROR_MAPPER = new ObjectMapper()
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
-    @Bean
-    public RequestInterceptor internalServiceTokenInterceptor(
-        @Value("${internal.service.token:}") String internalToken) {
-        return template -> {
-            if (internalToken != null && !internalToken.isBlank()) {
-                template.header("X-Internal-Service-Token", internalToken);
-            }
-        };
-    }
 
     @Bean
     public ErrorDecoder internalServiceErrorDecoder() {

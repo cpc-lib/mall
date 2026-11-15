@@ -160,7 +160,11 @@ public class InventoryServiceImpl implements InventoryService {
         for (InventoryReservation reservation : reservations) {
             int released = productRepository.releaseReservedStock(reservation.getProductId(), reservation.getQuantity());
             if (released == 0) {
-                throw new BizException("库存预占释放失败，productId=" + reservation.getProductId());
+                // 预占状态已由 casTransition 转为 RELEASED，库存桶若已被释放（可能是补偿重入或并发关单）
+                // 则无需阻塞关单；记录告警便于排查桶与预占状态的瞬时不一致。
+                log.warn("库存预占释放时桶 CAS 未命中（locked_stock 可能已释放），orderNo={}, productId={}, qty={}",
+                    orderNo, reservation.getProductId(), reservation.getQuantity());
+                continue;
             }
             insertTransaction(InventoryBizType.ORDER_RELEASE, orderNo, reservation.getOrderItemId(), null,
                 reservation.getProductId(), reservation.getQuantity(), -reservation.getQuantity(), 0);

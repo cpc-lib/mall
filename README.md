@@ -314,6 +314,8 @@ REFUND_CHANNEL_DUPLICATE
 | 微信 V2 | wxpay-sdk | 0.0.3 |
 | 支付宝 | alipay-sdk-java | 4.22.57.ALL |
 | API 文档 | springdoc-openapi（Swagger UI） | 2.10.0 |
+| 调用追踪 | Micrometer Tracing（Brave）+ Zipkin | Spring Boot 3.5 官方链路，网关与 Feign 自动透传 trace |
+| 日志采集 | logstash-logback-encoder + Logstash + Elasticsearch + Kibana | Logback 输出 JSON → Logstash TCP → ES 8.19 → Kibana 8.19 |
 | 用户前端 | React + Vite + Ant Design | React 18 / Vite 5 / antd 5 |
 | 管理前端 | React + Vite + Ant Design + xlsx + Luckysheet | React 18 |
 
@@ -342,7 +344,7 @@ mall/
 │   ├── mall-bill-service/            # 账单服务（8088）：微信账单上传、账账核对、差异查询与处理
 │   ├── mall-payment-service/         # 支付服务（8086）：支付单/成交事实、微信 V2/V3、支付宝、渠道与应用配置
 │   ├── mall-refund-service/          # 退款服务（8087）：退款申请/单/明细、渠道退款、状态同步与退款 MQ 消费
-│   ├── mall-order-service/           # 订单服务（8085）：订单/明细/物流、下单 Saga、请求幂等、订单关单与支付事件消费
+│   ├── mall-order-service/           # 订单服务（8085）：订单/明细/物流、下单 Saga（Seata）、请求幂等、订单关单与支付事件消费
 │   ├── mall-product-service/         # 商品与库存服务（8084）：商品、库存四桶、预占、流水、Excel 导入
 │   ├── mall-user-service/            # 用户领域服务（8083）：认证、会话、地址、区划、用户管理
 │   ├── mall-cart-service/            # 购物车领域服务（8089）：购物车条目持久化与商品快照聚合
@@ -355,9 +357,13 @@ mall/
 │   ├── env/
 │   │   ├── docker-compose.yml
 │   │   ├── scripts/dm8/              # start-dm8.sh / init-dm8-sql.sh
-│   │   └── sql/dm8/schema.sql
+│   │   ├── nacos/
+│   │   │   ├── plugins/              # Nacos 达梦 Mapper 插件 + DM8 JDBC 驱动（挂载到容器 /home/nacos/plugins）
+│   │   │   └── schema/nacos-schema.sql  # Nacos 配置库表（DB 模式专用，与业务表同库）
+│   │   └── sql/dm8/schema.sql        # 业务表（唯一权威脚本）
 │   └── nacos/
-│       └── config/                   # Nacos 配置源文件（mall-common.yaml + 各进程 yaml），需发布到 Nacos
+│       ├── config/                   # Nacos 配置源文件（各进程 yaml），需发布到 Nacos
+│       └── dm-plugin/                # Nacos 达梦数据源 Mapper 插件源码（独立 Maven 工程）
 ├── user-ui/
 │   ├── src/
 │   └── tests/refresh-single-flight.test.mjs
@@ -415,22 +421,87 @@ t_cart_item
 - JDK 21（后端编译与运行；`maven-compiler-plugin` 使用 `release 21`）。
 - Maven 3.6+，且 `JAVA_HOME` 指向 JDK 21（否则 `release 21` 编译失败）。
 - Node.js 18+。
-- Docker / Docker Compose（DM8 容器）。
+- Docker / Docker Compose（DM8、Seata 容器）。
 - Nacos 3.x（服务注册与配置中心，默认 `127.0.0.1:8848`，需同时开放 gRPC 端口 `9848`）。
 - Redis 5.0+。
 - RabbitMQ 3.7+。
+- Seata Server 2.6.0（TC，默认 `127.0.0.1:8091`）；以 DB 存储模式运行，配置中心与注册中心都用 Nacos（Data ID `seataServer.properties`，分组 `SEATA_GROUP`），元数据落在 DM8 的 `global_table` / `branch_table` / `lock_table` / `distributed_lock`；启动 `mall-order-service` 前需先启动。
+- Zipkin 3（调用追踪收集与 UI，默认 `127.0.0.1:9411`）。
+- Elasticsearch 8.x / Logstash 8.x / Kibana 8.x（日志采集与检索，默认 `9200` / `5000` / `5601`；三个容器合计约 2.5-3 GB 内存）。
 - MinIO：仅当 `stock.import.storage=minio` 时需要。
 
 ## 10. 快速启动
 
-### 10.1 启动基础设施（DM8 / Redis / RabbitMQ）与 Nacos
+### 10.1 启动基础设施（DM8 / Redis / RabbitMQ / Nacos / Seata TC / Zipkin / ELK）
+
+首次启动前把 DM8 JDBC 驱动放进 Seata 配置目录（官方镜像不含该驱动，仓库不提交二进制 jar）：
 
 ```powershell
 cd backend\env
+New-Item -ItemType Directory -Force seata\lib | Out-Null
+Copy-Item "$env:USERPROFILE\.m2\repository\com\dameng\DmJdbcDriver18\8.1.2.192\DmJdbcDriver18-8.1.2.192.jar" seata\lib\
+```
+
+然后启动全部容器：
+
+```powershell
 docker compose -f docker-compose.yml up -d
 ```
 
-四个容器端口：DM8 `5236`、Redis `6379`、RabbitMQ `5672`（管理台 `15672`）、Nacos `8848`（gRPC `9848`、控制台 `8880`）。
+五个容器端口：DM8 `5236`、Redis `6379`、RabbitMQ `5672`（管理台 `15672`）、Nacos `8848`（gRPC `9848`、控制台 `8880`）、
+Seata TC `8091`（该镜像不含 Web 控制台）。
+
+可观测性容器端口：Zipkin `9411`、Elasticsearch `9200`、Logstash TCP `5000`（应用日志入口）、Kibana `5601`。
+
+追踪与日志链路：
+
+```text
+调用追踪：浏览器/前端 → mall-gateway → BFF → 领域服务（Feign）
+          Micrometer Tracing（Brave）自动埋点，span 上报 Zipkin http://localhost:9411
+
+日志采集：各进程 Logback → JSON 行 → Logstash TCP 5000 → Elasticsearch 索引 mall-logs-YYYY.MM.DD → Kibana
+```
+
+各进程的追踪与日志配置都在各自 `application.yml`（见 10.2），默认指向本机 `127.0.0.1`：
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `ZIPKIN_ENDPOINT` | `http://127.0.0.1:9411/api/v2/spans` | Zipkin 上报地址；指向不可达地址不会阻塞业务请求 |
+| `TRACING_SAMPLING_PROBABILITY` | `1.0` | 采样率，本地全量采集；生产按需调低 |
+| `LOGSTASH_DESTINATION` | `127.0.0.1:5000` | Logstash TCP 地址；Logstash 未启动时应用只打印重连告警，不影响业务 |
+
+Kibana（`http://localhost:5601`）已预置日志可视化：Data View `mall-logs-*`（名称「商城应用日志」，时间字段 `@timestamp`，
+已设为默认）与仪表板 **商城日志概览**（`http://localhost:5601/app/dashboards#/view/mall-log-overview`），面板为
+「日志级别分布」饼图、「应用日志量」表格、「日志时间趋势（按级别）」堆叠柱状图。Kibana 全局设置已调整为
+`dateFormat:tz = Asia/Shanghai`（时间按东八区显示）与 `timepicker:timeDefaults = now-24h → now`（Discover 默认看最近 24 小时），
+避免默认 15 分钟窗口看不到历史日志。进入 **Discover** 可直接按时间浏览日志。
+
+这些对象存放在 ES 的 `.kibana` 索引中，随 `elasticsearch-data` 卷持久化；ES 数据卷被清空后，用仓库内的导出文件一次性恢复：
+
+```powershell
+curl.exe -s -X POST "http://127.0.0.1:5601/api/saved_objects/_import?overwrite=true" -H "kbn-xsrf: true" `
+  --form file=@backend\env\kibana\mall-logs-dashboard.ndjson
+```
+
+每个日志文档都带 `app`（应用名）、`level`、`logger_name`、`message`、`thread_name` 与 `traceId` / `spanId`。
+常见检索：`app: "mall-order-service"` 过滤单个应用，`level: "ERROR"` 只看错误，`traceId: "<traceId>"` 定位一次调用的全链路日志，
+再到 Zipkin 用同一 traceId 看调用链。
+ES/Kibana/Logstash 镜像、端口与 JVM 堆可用 `ELASTICSEARCH_IMAGE`、`ELASTICSEARCH_PORT`、`ES_JAVA_OPTS`、
+`LOGSTASH_IMAGE`、`LOGSTASH_TCP_PORT`、`LS_JAVA_OPTS`、`KIBANA_IMAGE`、`KIBANA_PORT`、`ZIPKIN_IMAGE`、`ZIPKIN_PORT` 覆盖。
+日志索引数据保存在 `elasticsearch-data` 卷中；ES 以单节点、关闭安全认证的方式运行，仅适用于本地开发。
+
+Seata Server 以 **DB 存储模式**运行（`store.mode=db`），配置中心与注册中心都是 Nacos：`backend/env/seata/application.yml`
+只保留引导配置（`config.type=nacos` / `registry.type=nacos`、Data ID `seataServer.properties`、分组 `SEATA_GROUP`、
+集群 `default`），实际存储配置以 Nacos 中的 `seataServer.properties` 为准，仓库镜像为
+`backend/nacos/config/seataServer.properties`（`store.db.dbType=dm`，连接 compose 内 DM8）。元数据落在 `global_table` /
+`branch_table` / `lock_table` / `distributed_lock`，建表语句在 `backend/env/sql/dm8/schema.sql`。修改存储配置时在 Nacos
+控制台（`http://localhost:8880`）编辑该 Data ID 后重启 TC 即可；`mall-order-service` 通过 Nacos 发现 `seata-server`
+（集群 `default`），无需直连地址。驱动路径可用 `DM_JDBC_JAR` 覆盖，镜像与端口可用 `SEATA_IMAGE` / `SEATA_HOST_PORT`
+覆盖。
+
+> Docker Desktop for Windows 不路由宿主机到容器 IP：TC 在 Nacos 注册的是容器地址（如 `172.19.0.6:8091`），宿主机直接运行
+> `mall-order-service` 时会出现 `can not connect to [172.x.x.x:8091]`。这是本地容器网络限制，不是 Seata 配置问题——Linux
+> 宿主机或客户端与 TC 处于同一容器网络时正常；本地验证请改用已发布端口 `127.0.0.1:8091`。
 
 > Nacos 3.x 的控制台已拆到独立端口：浏览器访问 `http://localhost:8880/`，默认账号 `nacos / nacos`。
 > `8848` 只提供 HTTP API（上下文 `/nacos`）与 gRPC `9848`；直接打开 `http://localhost:8848/nacos/` 只会返回
@@ -439,14 +510,35 @@ docker compose -f docker-compose.yml up -d
 
 RabbitMQ 管理台默认账号 `mall / Cpc2026#@Mq`；Redis 密码 `cpc!23#@`；Nacos 默认账号 `nacos / nacos`（与 `application.yml` 中 `NACOS_USERNAME` / `NACOS_PASSWORD` 一致）。
 
-Nacos 镜像使用 `nacos/nacos-server:v3.0.3`，单机模式 + 内嵌 Derby，已开启鉴权。可用 `NACOS_IMAGE`、`NACOS_PORT`、`NACOS_GRPC_PORT`、
-`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE` 等环境变量覆盖。服务注册/配置中心默认地址为
-`127.0.0.1:8848`，连接信息由 `NACOS_SERVER_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` / `NACOS_NAMESPACE` / `NACOS_GROUP` 控制。
+Nacos 镜像使用 `nacos/nacos-server:v3.0.3`，单机模式，配置以 **DB 模式**存储在 compose 内的 DM8（`SYSDBA` 库），已开启鉴权。
+可用 `NACOS_IMAGE`、`NACOS_PORT`、`NACOS_GRPC_PORT`、`NACOS_AUTH_TOKEN`、`NACOS_AUTH_IDENTITY_KEY`、`NACOS_AUTH_IDENTITY_VALUE`
+等环境变量覆盖。服务注册/配置中心默认地址为 `127.0.0.1:8848`，连接信息由 `NACOS_SERVER_ADDR` / `NACOS_USERNAME` /
+`NACOS_PASSWORD` / `NACOS_NAMESPACE` / `NACOS_GROUP` 控制。
 
-首次启动后把 `backend/nacos/config/` 下的 `mall-common.yaml` 与各进程 `<应用名>.yaml` 按同名 Data ID、`yaml` 格式发布到同一 namespace / group：
+DB 模式依赖两项额外准备（缺一 Nacos 无法启动）：
+
+1. **达梦 Mapper 插件**：官方镜像只内置 MySQL 方言，需构建 `backend/nacos/dm-plugin` 并把产物和 DM8 JDBC 驱动放进
+   `backend/env/nacos/plugins/`（该目录挂载到容器 `/home/nacos/plugins`）：
+
+   ```powershell
+   mvn -f backend/nacos/dm-plugin/pom.xml package
+   Copy-Item backend/nacos/dm-plugin/target/nacos-dm-mapper-1.0.0.jar backend/env/nacos/plugins/
+   Copy-Item "$env:USERPROFILE\.m2\repository\com\dameng\DmJdbcDriver18\8.1.2.192\DmJdbcDriver18-8.1.2.192.jar" backend/env/nacos/plugins/
+   ```
+
+   compose 中通过 `SPRING_DATASOURCE_PLATFORM=dm`、`DB_URL_0=jdbc:dm://dm8:5236?schema=SYSDBA`、
+   `DB_POOL_CONFIG_DRIVERCLASSNAME=dm.jdbc.driver.DmDriver` 指向达梦。构建用 JDK 21（与后端一致），
+   但插件产物固定为 Java 17 字节码：`nacos/nacos-server:v3.0.3` 镜像自带 JDK 17.0.16，用 21 编译会在容器内报
+   `UnsupportedClassVersionError`。
+
+2. **Nacos 配置库表**：Nacos 不会自动建表，首次启动前执行 `backend/env/nacos/schema/nacos-schema.sql`（可重复执行，等同
+   重置 Nacos 配置库）。它刻意不放在 `env/sql/dm8/` 下，避免被 `init-dm8-sql.sh` 的 `*.sql` 通配连带执行；
+   `env/sql/dm8/schema.sql` 仍是业务表的唯一权威脚本。
+
+配置本身仍需手动发布，首次启动后把 `backend/nacos/config/` 下的各进程 `<应用名>.yaml` 按同名
+Data ID、`yaml` 格式发布到同一 namespace / group：
 
 ```text
-backend/nacos/config/mall-common.yaml          # 所有进程共享（内部令牌）
 backend/nacos/config/mall-gateway.yaml         # 网关路由、CORS 与 actuator
 backend/nacos/config/mall-user-bff.yaml
 backend/nacos/config/mall-admin-bff.yaml
@@ -457,6 +549,7 @@ backend/nacos/config/mall-order-service.yaml
 backend/nacos/config/mall-payment-service.yaml
 backend/nacos/config/mall-refund-service.yaml
 backend/nacos/config/mall-bill-service.yaml
+backend/nacos/config/seataServer.properties    # Seata TC 存储配置：Data ID 同名、group=SEATA_GROUP、properties 格式
 ```
 
 各进程通过 `spring.config.import: optional:nacos:...` 导入；`optional:` 保证 Nacos 不可达时仍能用本地
@@ -473,7 +566,8 @@ bash env/scripts/dm8/start-dm8.sh
 
 脚本会等待 DM8 健康检查通过，并只在 6 张必需业务表缺失时才按文件名顺序执行 `env/sql/dm8/*.sql`
 （表齐全时跳过，不触碰已有数据）。等价的手工入口是 `bash env/scripts/dm8/init-dm8-sql.sh`，加 `--if-missing` 即为
-`start-dm8.sh` 的调用方式；不加参数则强制破坏性重建。
+`start-dm8.sh` 的调用方式；不加参数则强制破坏性重建。Nacos 配置库表不在该脚本范围内，需单独执行
+`env/nacos/schema/nacos-schema.sql`（见下文 Nacos 段落）。
 
 开发脚本中包含初始化管理员种子账号，生产部署前必须替换默认凭据。
 
@@ -509,13 +603,16 @@ ON t_refund_order(status, success_time);
 ```text
 backend/mall-core/src/main/resources/application-core.yml         # 两个 BFF 的共享配置与用户/商品/支付/退款远程客户端配置
 backend/mall-user-service/src/main/resources/application.yml      # 端口 8083、用户服务自有 DM8/Redis/JWT 配置
-backend/mall-product-service/src/main/resources/application.yml   # 端口 8084、商品服务自有 DM8、库存导入存储与内部令牌配置
-backend/mall-order-service/src/main/resources/application.yml     # 端口 8085、订单服务自有 DM8/Redis/RabbitMQ、用户/商品/支付远程地址、Saga 与幂等参数
+backend/mall-product-service/src/main/resources/application.yml   # 端口 8084、商品服务自有 DM8 与库存导入存储配置
+backend/mall-order-service/src/main/resources/application.yml     # 端口 8085、订单服务自有 DM8/Redis/RabbitMQ、用户/商品/支付远程地址、Seata Saga 客户端与下单幂等参数
 backend/mall-payment-service/src/main/resources/application.yml   # 端口 8086、支付服务自有 DM8/Redis/RabbitMQ、支付渠道与订单服务远程地址配置
 backend/mall-refund-service/src/main/resources/application.yml    # 端口 8087、退款服务自有 DM8/Redis/RabbitMQ、订单/支付/商品服务远程地址配置
 backend/mall-bill-service/src/main/resources/application.yml      # 端口 8088、账单服务自有 DM8/Redis、用户/支付/退款服务远程地址配置
 backend/mall-user-bff/src/main/resources/application.yml          # 端口 8081、应用名
 backend/mall-admin-bff/src/main/resources/application.yml         # 端口 8082、应用名、关闭 MQ 监听
+backend/mall-infra/src/main/resources/logback-spring.xml          # 公共日志配置（控制台 + Logstash JSON），依赖 mall-infra 的进程自动生效
+backend/mall-product-service/src/main/resources/logback-spring.xml # 商品服务日志配置（不依赖 mall-infra，内容与上面一致）
+backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日志配置（独立工程，内容与上面一致）
 ```
 
 重点配置：
@@ -525,23 +622,28 @@ backend/mall-admin-bff/src/main/resources/application.yml         # 端口 8082�
 | `spring.datasource.*` | DM8 连接；支持 `DM_HOST/DM_PORT/DM_SCHEMA/DM_USERNAME/DM_PASSWORD` |
 | `spring.data.redis.*` | Redis |
 | `spring.cloud.nacos.discovery.*` / `spring.cloud.nacos.config.*` | 服务注册与配置中心连接，默认 `127.0.0.1:8848`；`NACOS_ENABLED=false` 时同时关闭注册与配置导入 |
-| `spring.config.import` | `optional:nacos:mall-common.yaml,optional:nacos:<应用名>.yaml`；BFF 额外先导入 `classpath:application-core.yml` |
+| `spring.config.import` | `optional:nacos:<应用名>.yaml`；BFF 额外先导入 `classpath:application-core.yml` |
 | `spring.cloud.openfeign.client.config.default.*` | 内部 Feign 调用默认连接/读取超时 3000/10000ms；`mall-product-service` 读超时覆盖为 30000ms |
 | `user.service.base-url` / `product.service.base-url` / `payment.service.base-url` / `order.service.base-url` / `refund.service.base-url` | Feign 直连地址覆盖项，对应 `USER_SERVICE_BASE_URL` / `PRODUCT_SERVICE_BASE_URL` / `PAYMENT_SERVICE_BASE_URL` / `ORDER_SERVICE_BASE_URL` / `REFUND_SERVICE_BASE_URL`；默认留空，走 Nacos 服务发现 + LoadBalancer |
-| `internal.service.token` | 服务间令牌，由 `INTERNAL_SERVICE_TOKEN` 注入；用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与两个 BFF 必须一致，空值或不匹配均拒绝 `/internal/**` |
 | JVM 时区 | 由 `cc.ivera.shared.infrastructure.config.TimeZoneConfig` 在各服务启动时统一设置为 `Asia/Shanghai`，与 DM8 会话时区、账务日切口径一致；不依赖宿主机时区，也无需额外启动参数 |
 | `spring.rabbitmq.*` | RabbitMQ、publisher confirm/returns、listener retry/MANUAL ACK |
 | `payment.auth.*` | Access/Refresh TTL、JWT Secret |
 | `payment.order.expire-minutes` | 未支付订单超时与 Order Close 延迟队列 TTL |
 | `payment.order.timeout-scan-ms` | 订单服务 `TimeoutOrderCloseScheduler` DB 兜底扫描周期，默认 60000ms |
-| `order.saga.recovery-delay-ms` | 订单服务判定 Saga 卡住的阈值，默认 300000ms |
-| `order.saga.recovery-scan-ms` | 订单服务 `OrderSagaRecoveryScheduler` 扫描周期，默认 60000ms |
+| `SEATA_ENABLED` | 是否启用 Seata 客户端，默认 `true` |
+| `SEATA_TX_GROUP` | Seata 事务分组，默认 `mall_tx_group`；由 `seata.service.vgroup-mapping` 映射到集群 `default` |
+| `seata.registry.nacos.*` | 订单服务通过 Nacos 发现 TC（服务名 `seata-server`、分组 `SEATA_GROUP`、集群 `default`），连接信息复用 `NACOS_SERVER_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` |
+| `SEATA_SAGA_ENABLED` | 是否启用 Saga 状态机，默认 `true` |
+| `order.request.clean-scan-ms` | 过期下单幂等记录清理周期，默认 `60000ms` |
 | `order.request.ttl-hours` | 下单幂等记录 `t_order_request` 保留时长，默认 24 小时 |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | `RefundStatusSyncScheduler` DB 兜底扫描周期，默认 60000ms |
 | `stock.import.storage` | 商品服务 Excel 导入存储：`local` / `minio` |
 | `stock.import.dir` | 商品服务本地 Excel 存储目录 |
 | `stock.import.minio.*` | 商品服务 MinIO endpoint/凭据/bucket |
+| `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`，由 `ZIPKIN_ENDPOINT` 覆盖 |
+| `management.tracing.sampling.probability` | 链路采样率，默认 `1.0`，由 `TRACING_SAMPLING_PROBABILITY` 覆盖 |
+| `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`，由 `LOGSTASH_DESTINATION` 覆盖；由 `logback-spring.xml` 读取 |
 
 生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。
 
@@ -554,7 +656,7 @@ backend/mall-admin-bff/src/main/resources/application.yml         # 端口 8082�
 | `mall-user-service` | 8083 | 用户注册登录、双 Token 会话、地址、区划、用户管理、密码重置；用户表和用户会话唯一写者 |
 | `mall-cart-service` | 8089 | 购物车条目增删改查、勾选、已选清理与商品快照聚合；购物车表唯一写者 |
 | `mall-product-service` | 8084 | 商品 CRUD、库存四桶、预占/提交/释放/结转已售、退款回补与货损核销、库存流水与 Excel 导入；商品与库存表唯一写者 |
-| `mall-order-service` | 8085 | 订单/明细/物流、下单 Saga 与 `Idempotency-Key` 幂等、订单关单与支付事件消费、超时扫描与物流模拟；订单表、`t_order_request`、`t_saga_instance` 唯一写者 |
+| `mall-order-service` | 8085 | 订单/明细/物流、下单 Saga（Seata）与 `Idempotency-Key` 幂等、订单关单与支付事件消费、超时扫描与物流模拟；订单表与 `t_order_request` 唯一写者；`seata_state_machine_*` / `seata_state_inst` 由 Seata 状态机引擎维护 |
 | `mall-payment-service` | 8086 | 支付单与成交事实、微信 V2/V3、支付宝、支付渠道/应用配置；支付表唯一写者，不消费 MQ、不扫描 Outbox |
 | `mall-refund-service` | 8087 | 退款申请/单/明细、渠道退款编排、退款状态同步；退款表唯一写者，消费退款 MQ 并执行退款扫描 |
 | `mall-bill-service` | 8088 | 微信交易账单导入、渠道账与平台支付/退款账逐笔核对、差异查询与人工处理；账单表唯一写者，不消费 MQ、不执行定时任务 |
@@ -566,9 +668,6 @@ backend/mall-admin-bff/src/main/resources/application.yml         # 端口 8082�
 # 先安装多模块依赖，再分别启动九个进程（各开一个终端）
 cd backend
 mvn -DskipTests install
-
-# 用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与两个 BFF 的终端必须设置同一个随机内部令牌；以下为占位符，不要直接用于生产
-$env:INTERNAL_SERVICE_TOKEN='<替换为本地随机令牌>'
 
 # Nacos 服务注册与配置中心（默认 127.0.0.1:8848）；完全脱离 Nacos 时改为 $env:NACOS_ENABLED='false'
 $env:NACOS_SERVER_ADDR='127.0.0.1:8848'
@@ -600,7 +699,7 @@ mvn -pl mall-user-bff spring-boot:run
 # 9) 管理端 BFF（8082）
 mvn -pl mall-admin-bff spring-boot:run
 
-# 10) 网关（8080，不需要内部令牌）
+# 10) 网关（8080，统一入口与 CORS）
 mvn -pl mall-gateway spring-boot:run
 ```
 
@@ -610,6 +709,8 @@ mvn -pl mall-gateway spring-boot:run
 API:          http://localhost:8080          （经网关按前缀转发）
 Swagger:      http://localhost:8080/swagger-ui.html
 OpenAPI:      http://localhost:8080/v3/api-docs
+Zipkin:       http://localhost:9411          （调用链查询，按服务名/耗时筛选）
+Kibana:       http://localhost:5601          （日志检索，默认 Data View：商城应用日志 mall-logs-*）
 用户端 BFF:    http://localhost:8081          （仅供本地排障，前端不要直连）
 管理端 BFF:    http://localhost:8082          （仅供本地排障，前端不要直连）
 用户领域服务:  http://localhost:8083          （仅供服务间调用与本地排障）

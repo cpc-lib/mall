@@ -15,6 +15,7 @@
     <spring-boot.version>3.5.16</spring-boot.version>
     <spring-cloud.version>2025.0.0</spring-cloud.version>
     <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
+    <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
   </properties>
 
   <dependencies>
@@ -40,6 +41,22 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
+    </dependency>
+
+    <!--可观测性：Micrometer Tracing(Brave) + Zipkin 上报（网关为 WebFlux 栈，独立引入）-->
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-tracing-bridge-brave</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.zipkin.reporter2</groupId>
+      <artifactId>zipkin-reporter-brave</artifactId>
+    </dependency>
+    <!--日志采集：Logback 输出 JSON 到 Logstash TCP-->
+    <dependency>
+      <groupId>net.logstash.logback</groupId>
+      <artifactId>logstash-logback-encoder</artifactId>
+      <version>${logstash-logback-encoder.version}</version>
     </dependency>
 
     <dependency>
@@ -91,7 +108,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.gateway.GatewayApplication</mainClass>
+          <mainClass>cc.ivera.GatewayApplication</mainClass>
         </configuration>
         <executions>
           <execution>

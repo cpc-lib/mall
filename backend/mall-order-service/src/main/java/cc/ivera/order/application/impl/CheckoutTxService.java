@@ -12,9 +12,7 @@ import cc.ivera.order.domain.repository.OrderRepository;
 import cc.ivera.payment.domain.enums.PayType;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
-import cc.ivera.product.application.InventoryService;
 import cc.ivera.product.domain.model.Product;
-import cc.ivera.product.domain.model.ReserveLine;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.user.application.ShippingAddressService;
@@ -22,18 +20,18 @@ import cc.ivera.user.domain.model.ShippingAddress;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationAdapter;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.stream.Collectors;
+import java.util.Map;
+import java.util.Objects;
 
 /**
- * 下单本地事务：落单、库存预占、延迟关单消息与清空购物车补偿。
- * 远程预占仍在本地事务内执行，失败时整体回滚并通过 afterRollback 释放预占（AGENTS 5.1）。
+ * 下单本地事务：商品校验、落单、明细与延迟关单消息（Outbox）。
+ * 库存预占与清空购物车已拆为 Saga 步骤，由 CheckoutSagaAction 在本地事务之外调用；
+ * 本类只负责单步本地事务，补偿由状态机驱动。
  */
 @Service
 public class CheckoutTxService {
@@ -43,7 +41,6 @@ public class CheckoutTxService {
     private final OrderRepository orderRepository;
     private final PaymentConfigGateway paymentConfigLoader;
     private final OrderCloseMessageService orderCloseMessageService;
-    private final InventoryService inventoryService;
     private final ShippingAddressService addressService;
 
     @Value("${payment.order.expire-minutes:3}")
@@ -51,19 +48,26 @@ public class CheckoutTxService {
 
     public CheckoutTxService(CartService cartService, ProductQueryApi productRepository,
                              OrderRepository orderRepository, PaymentConfigGateway paymentConfigLoader,
-                             OrderCloseMessageService orderCloseMessageService, InventoryService inventoryService,
+                             OrderCloseMessageService orderCloseMessageService,
                              ShippingAddressService addressService) {
         this.cartService = cartService;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderCloseMessageService = orderCloseMessageService;
-        this.inventoryService = inventoryService;
         this.addressService = addressService;
     }
 
+    /**
+     * 落单本地事务，返回 Saga 后续步骤与补偿所需的上下文（只含可 JSON 序列化的基础类型）。
+     * 同一 orderNo 重复执行时直接返回既有订单上下文，保证状态机重试幂等。
+     */
     @Transactional(rollbackFor = Exception.class)
-    public OrderDetailVO create(Long userId, CheckoutRequest request, String orderNo) {
+    public Map<String, Object> prepare(Long userId, CheckoutRequest request, String orderNo) {
+        OrderInfo existing = orderRepository.findByOrderNo(orderNo);
+        if (existing != null && Objects.equals(existing.getUserId(), userId)) {
+            return context(existing, orderRepository.listItemsByOrderNo(orderNo));
+        }
         List<CartItemVO> selected = cartService.selected(userId);
         if (selected.isEmpty()) throw new BizException("请选择需要结算的购物车商品");
         String channelCode = channelCode(request.getPaymentType());
@@ -124,17 +128,44 @@ public class CheckoutTxService {
             orderRepository.saveItem(item);
             items.add(item);
         }
-        // V2：下单同步预占库存（远程库存服务），库存不足整体回滚；
-        // 预占成功后本地事务若回滚，afterCompletion 补偿释放，避免库存长期滞留锁定桶。
-        List<ReserveLine> reserveLines = items.stream()
-            .map(item -> new ReserveLine(item.getId(), item.getProductId(), item.getQuantity()))
-            .collect(Collectors.toList());
-        inventoryService.reserveForOrder(order.getOrderNo(), order.getExpireTime(), reserveLines);
-        afterRollback(() -> inventoryService.releaseReservation(order.getOrderNo()));
         // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
         orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
-        afterCommit(() -> cartService.clearSelected(userId));
-        return detail(order, items);
+        return context(order, items);
+    }
+
+    /**
+     * 状态机完成后回读订单详情（只读）。
+     */
+    @Transactional(readOnly = true)
+    public OrderDetailVO loadDetail(String orderNo) {
+        OrderInfo order = orderRepository.findByOrderNo(orderNo);
+        if (order == null) throw new BizException("订单不存在");
+        return detail(order, orderRepository.listItemsByOrderNo(orderNo));
+    }
+
+    /**
+     * 下单补偿：仅未支付订单可关闭，已支付/已关闭订单不受影响（条件 UPDATE，幂等）。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void cancelIfUnpaid(String orderNo) {
+        orderRepository.cancelIfUnpaid(orderNo);
+    }
+
+    private Map<String, Object> context(OrderInfo order, List<OrderItem> items) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("orderNo", order.getOrderNo());
+        context.put("userId", order.getUserId());
+        context.put("expireTime", order.getExpireTime() == null ? 0L : order.getExpireTime().getTime());
+        List<Map<String, Object>> lines = new ArrayList<>();
+        for (OrderItem item : items) {
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("orderItemId", item.getId());
+            line.put("productId", item.getProductId());
+            line.put("quantity", item.getQuantity());
+            lines.add(line);
+        }
+        context.put("items", lines);
+        return context;
     }
 
     private OrderDetailVO detail(OrderInfo o, List<OrderItem> i) {
@@ -153,31 +184,5 @@ public class CheckoutTxService {
 
     private String trimOrDefault(String v, String def) {
         return (v == null || v.trim().isEmpty()) ? def : v.trim();
-    }
-
-    private void afterCommit(Runnable r) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            r.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-            @Override
-            public void afterCommit() {
-                r.run();
-            }
-        });
-    }
-
-    /**
-     * 本地事务未提交（回滚或异常）时执行补偿；无事务上下文时无事可回滚。
-     */
-    private void afterRollback(Runnable r) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) return;
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != TransactionSynchronization.STATUS_COMMITTED) r.run();
-            }
-        });
     }
 }

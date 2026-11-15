@@ -89,7 +89,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.cartservice.CartServiceApplication</mainClass>
+          <mainClass>cc.ivera.CartServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

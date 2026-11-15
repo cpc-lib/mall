@@ -50,7 +50,7 @@ user-ui / admin-ui
                                                   mall-core（jar 库，无独立进程）
                                                   BFF 远程适配器 + 共享配置
                                                                              │
-                                     OpenFeign /internal/**（Nacos 服务发现）+ X-Internal-Service-Token
+                                     OpenFeign /internal/**（Nacos 服务发现）
         ┌──────────────┬─────────────────┬─────────────────┬──────────────────────┬──────────────────────┬──────────────────────┬──────────────────┐
 mall-user-service :8083  mall-cart-service :8089  mall-product-service :8084  mall-order-service :8085  mall-payment-service :8086  mall-refund-service :8087  mall-bill-service :8088
 用户领域实现 + 用户表/会话唯一写者  购物车领域实现 + 购物车表唯一写者  商品/库存领域实现 + 商品/库存表唯一写者  订单/物流领域实现 + 订单表唯一写者  支付领域实现 + 支付表唯一写者  退款领域实现 + 退款表唯一写者  账单核对实现 + 账单表唯一写者
@@ -78,7 +78,7 @@ flowchart TB
         USVC["mall-user-service :8083<br/>用户 / 认证 / 收货地址"]
         CSVC["mall-cart-service :8089<br/>购物车 t_cart_item"]
         PSVC["mall-product-service :8084<br/>商品 / 库存四桶"]
-        OSVC["mall-order-service :8085<br/>订单 / 物流 / 下单 Saga<br/>关单 + 支付事件消费"]
+        OSVC["mall-order-service :8085<br/>订单 / 物流 / 下单 Saga(Seata)<br/>关单 + 支付事件消费"]
         PAYSVC["mall-payment-service :8086<br/>支付单 / 成交事实 / 渠道适配"]
         RSVC["mall-refund-service :8087<br/>退款 / 防超退 / 冲正"]
         BSVC["mall-bill-service :8088<br/>账单导入 / 账账核对"]
@@ -115,7 +115,7 @@ flowchart TB
     GWY -->|"/api/reconciliation/**"| BSVC
     GWY -->|"支付回调 / 配置 / 收银台"| PAYSVC
 
-    UBFF -.->|"OpenFeign /internal/**<br/>X-Internal-Service-Token"| USVC
+    UBFF -.->|"OpenFeign /internal/**"| USVC
     UBFF -.-> CSVC
     UBFF -.-> PSVC
     UBFF -.-> OSVC
@@ -146,7 +146,7 @@ flowchart TB
 
 读图要点：
 
-- 实线是外部 HTTP 入口（客户端 → 网关 → BFF / 领域服务），虚线是进程间 `OpenFeign /internal/**` 调用，全部经 Nacos 服务发现并携带内部令牌。
+- 实线是外部 HTTP 入口（客户端 → 网关 → BFF / 领域服务），虚线是进程间 `OpenFeign /internal/**` 调用，全部经 Nacos 服务发现。
 - 网关是唯一公网入口，按前缀分流到 BFF 或领域服务，不转发 `/internal/**`；BFF 不持有独立写权限，只做入口聚合与远程适配。
 - 每张表只有一个写者：用户/购物车/商品库存/订单/支付/退款/账单分别只由对应领域服务写入。
 - `mall-common`、`mall-infra`、`mall-core`、`mall-api-*` 是编译期 jar 依赖，运行时不产生独立进程，因此图中不与运行节点连线。
@@ -159,7 +159,7 @@ flowchart TB
 `ProductRemoteAdapter`、`PaymentOrderRemoteAdapter` 等远程适配器），支付领域实现独立在 `mall-payment-service`
 （`PaymentOrderRemoteAdapter` 等），退款领域实现独立在 `mall-refund-service`（`OrderRefundRemoteAdapter` 等），
 账单核对独立在 `mall-bill-service`（`PaymentLedgerRemoteAdapter`、`RefundLedgerRemoteAdapter` 读取平台账本）。
-后台任务（`@Scheduled` / `@RabbitListener`）按领域归属执行：订单关单消费、支付事件消费、超时扫描、物流模拟与 Saga 恢复在
+后台任务（`@Scheduled` / `@RabbitListener`）按领域归属执行：订单关单消费、支付事件消费、超时扫描、物流模拟与下单幂等记录清理在
 `mall-order-service`，Outbox 中继只在 `mall-user-bff`，退款冲正与退款状态同步在 `mall-refund-service`；用户服务、商品服务、
 账单服务不引入 AMQP、不开启 Scheduling，支付服务配置 `spring.rabbitmq.listener.simple.auto-startup=false` 与
 `local-message.relay-enabled=false`，退款服务与订单服务消费各自队列但不执行 Outbox 扫描。P3–P7 阶段同库同 schema，
@@ -207,7 +207,7 @@ mall/
 │   ├── mall-bill-service/        # 账单领域服务（8088），账单导入、账账核对、差异处理与数据访问
 │   ├── mall-payment-service/     # 支付领域服务（8086），独立支付实现、渠道适配与数据访问
 │   ├── mall-refund-service/      # 退款领域服务（8087），独立退款实现、渠道退款编排与数据访问
-│   ├── mall-order-service/       # 订单领域服务（8085），订单/物流实现、下单 Saga、请求幂等与订单 MQ 消费
+│   ├── mall-order-service/       # 订单领域服务（8085），订单/物流实现、Seata 下单 Saga、请求幂等与订单 MQ 消费
 │   ├── mall-product-service/     # 商品/库存领域服务（8084），独立商品实现与数据访问
 │   ├── mall-user-service/        # 用户领域服务（8083），独立用户实现及数据访问
 │   ├── mall-cart-service/        # 购物车领域服务（8089），独立购物车实现及数据访问
@@ -215,9 +215,14 @@ mall/
 │   ├── mall-admin-bff/           # 管理端 BFF（8082），不启动 MQ/定时任务
 │   ├── mall-gateway/             # 网关（8080）
 │   ├── docs/
-│   └── env/
-│       ├── docker-compose.yml
-│       └── sql/dm8/schema.sql
+│   ├── env/
+│   │   ├── docker-compose.yml
+│   │   ├── nacos/plugins/        # Nacos 达梦 Mapper 插件 + DM8 JDBC 驱动（容器 /home/nacos/plugins）
+│   │   ├── nacos/schema/nacos-schema.sql  # Nacos 配置库表（DB 模式，不参与业务初始化）
+│   │   └── sql/dm8/schema.sql    # 业务表唯一权威脚本
+│   └── nacos/
+│       ├── config/               # 需发布到 Nacos 的 Data ID 源文件
+│       └── dm-plugin/            # Nacos 达梦数据源 Mapper 插件（独立 Maven 工程）
 ├── user-ui/
 ├── admin-ui/
 ├── AGENTS.md
@@ -256,6 +261,8 @@ cc.ivera.<context>/
     ├── gateway
     └── 外部渠道/存储适配
 ```
+
+各可运行进程的启动类统一放在 `cc.ivera` 根包（如 `cc.ivera.OrderServiceApplication`、`cc.ivera.UserBffApplication`），不再占用独立子包；上下文专属的 Token/密码/登录守卫等适配器落在对应上下文的 `infrastructure.security`，微信支付 HTTP 客户端与通知解密落在 `payment.infrastructure.gateway`。
 
 ### 3.1 上下文职责
 
@@ -588,9 +595,8 @@ flowchart TD
 
 ### 6.7 服务注册与 Feign 远程调用
 
-九个可运行进程全部接入 Nacos：`spring.cloud.nacos.discovery` 注册自身，`spring.config.import: optional:nacos:mall-common.yaml,optional:nacos:<应用名>.yaml` 拉取集中配置。进程间内部调用统一由 `cc.ivera.infra.feign.InternalFeignConfiguration` 提供公共能力：
+九个可运行进程全部接入 Nacos：`spring.cloud.nacos.discovery` 注册自身，`spring.config.import: optional:nacos:<应用名>.yaml` 拉取集中配置。进程间内部调用统一由 `cc.ivera.infra.feign.InternalFeignConfiguration` 提供公共能力：
 
-- `RequestInterceptor` 注入 `X-Internal-Service-Token`；令牌为空时服务端仍按失败关闭处理。
 - `ErrorDecoder` 把非 2xx 的 `R` 信封解析为 `BizException`，保留原 `ErrorCode`；无法解析时回落 `SYSTEM_ERROR`。
 - 客户端声明为 `@FeignClient(name = "mall-xxx-service", url = "${x.service.base-url:}")`：`url` 默认空，走 Nacos 服务发现 + LoadBalancer；需要离线直连时用 `USER_SERVICE_BASE_URL` 等环境变量填入 base-url。
 - 超时统一走 `spring.cloud.openfeign.client.config.default`（3000/10000ms），并按服务名覆盖商品服务读超时 30000ms。
@@ -603,10 +609,19 @@ flowchart TD
 
 ### 7.1 下单
 
-`CheckoutServiceImpl` 只做幂等编排：校验 `Idempotency-Key` → Redis 锁 + `t_order_request` 状态机 → 调用 `OrderSagaOrchestrator`；
-`OrderSagaOrchestrator` 先在独立短事务写入 `t_saga_instance(PROCESSING)`，再由 `CheckoutTxService` 在本地事务创建订单/明细并调用
-`reserveForOrder`；库存预占发生在下单业务事务范围内。购物车已选项清理由 `afterCommit` 执行，避免业务回滚却先清购物车；
-事务回滚时 `afterCompletion` 补偿释放预占。
+`CheckoutServiceImpl` 只做幂等编排：校验 `Idempotency-Key` → Redis 锁 + `t_order_request` 状态机 → 调用 `CheckoutSagaService`。
+`CheckoutSagaService` 生成 `orderNo` 并以它作为业务键驱动 Seata Saga 状态机 `order-checkout`
+（定义见 `mall-order-service/src/main/resources/statelang/order-checkout.json`）：
+
+```text
+CreateOrder       本地事务：写 t_order_info / t_order_item + 延迟关单 Outbox   ──补偿──▶ CancelOrder
+ReserveInventory  商品服务 reserveForOrder：available → locked               ──补偿──▶ ReleaseInventory
+ClearCart         清理购物车已选项
+```
+
+任一步失败由状态机反向补偿；补偿完成后接口返回业务失败，幂等记录置 `FAILED` 可重试。三个正向动作都可重放：
+同 `orderNo` 已落单时 `prepare` 直接返回既有上下文，库存预占以 `uk_reservation_order_item(order_item_id)` 为幂等闸门，
+关单为条件 UPDATE（只关闭 `WAIT_PAY + UNPAID` 订单），因此重复执行不会产生第二张订单、第二份预占或误关已支付订单。
 
 下单主流程：
 
@@ -617,37 +632,41 @@ flowchart TD
     C --> D{"t_order_request<br/>同键请求判定"}
     D -->|"同键同请求"| D1["回放首次结果"]
     D -->|"同键不同请求"| D2["拒绝：幂等冲突"]
-    D -->|"FAILED 可重试 / 首次"| E["Redis 分布式锁 + 请求状态机"]
-    E --> F["OrderSagaOrchestrator<br/>生成 orderNo<br/>start(PROCESSING, CREATE_ORDER) [REQUIRES_NEW]"]
-    F --> G["CheckoutTxService 本地事务"]
-    G --> G1["写 t_order_info / t_order_item"]
-    G1 --> G2["商品服务 reserveForOrder<br/>available → locked，条件 UPDATE 防超卖"]
-    G2 --> G3["写 Outbox"]
-    G3 --> H{"事务结果"}
-    H -->|"成功"| I["succeed(SAGA-orderNo)"]
-    I --> J["afterCommit 清理购物车已选项"]
-    J --> K["返回订单信息与支付入口"]
-    H -->|"失败"| L["回滚 + afterCompletion 补偿释放预占"]
-    L --> M["fail(SAGA-orderNo, CREATE_ORDER)<br/>FAILED 可重试"]
-    N["OrderSagaRecoveryScheduler 兜底"] --> N1{"本地订单是否已落库"}
-    N1 -->|"存在"| I
-    N1 -->|"缺失"| L
+    D -->|"FAILED 可重试 / 首次"| E["CheckoutSagaService<br/>生成 orderNo<br/>engine.start(order-checkout, businessKey=orderNo)"]
+    E --> F["CreateOrder<br/>CheckoutTxService.prepare：写 t_order_info / t_order_item / Outbox"]
+    F --> G["ReserveInventory<br/>商品服务 reserveForOrder：available → locked"]
+    G --> H["ClearCart<br/>清理购物车已选项"]
+    H --> I["状态机 SUCCEEDED<br/>回读订单详情，返回支付入口"]
+    F -->|"失败"| X["补偿 CancelOrder<br/>未支付订单置 CLOSED / CANCELLED"]
+    G -->|"失败"| Y["补偿 ReleaseInventory → CancelOrder"]
+    H -->|"失败"| Y
+    X --> Z["返回业务失败，幂等记录 FAILED 可重试"]
+    Y --> Z
 ```
 
-### 7.2 下单 Saga
+### 7.2 下单 Saga（Seata）
 
 ```text
 POST /api/checkout/orders（Idempotency-Key 必填）
   → OrderIdempotencyService：同键同请求回放 / 同键不同请求拒绝 / FAILED 可重试
-  → OrderSagaOrchestrator：生成 orderNo → start(PROCESSING, CREATE_ORDER)   [REQUIRES_NEW]
-  → CheckoutTxService.create(...)                                            [本地事务：落单 + 远程预占 + Outbox]
-  → succeed(SAGA-<orderNo>) 或 fail(SAGA-<orderNo>, CREATE_ORDER)
+  → CheckoutSagaService：生成 orderNo，作为 Saga businessKey
+  → StateMachineEngine.startWithBusinessKey("order-checkout", null, orderNo, {"checkout": ...})
+      CreateOrder      [本地事务：落单 + 明细 + 延迟关单 Outbox]   ──补偿──▶ CancelOrder
+      ReserveInventory [远程：商品服务 reserveForOrder]             ──补偿──▶ ReleaseInventory
+      ClearCart        [远程：购物车清空已选项]
+  → SUCCEEDED：回读订单详情返回；失败：反向补偿完成后抛 BizException
 ```
 
-`t_saga_instance` 状态：`PROCESSING → SUCCEEDED | FAILED`。主事务失败时立即标记失败并抛出原异常；
-若进程在标记前中断，`OrderSagaRecoveryScheduler` 在超过 `order.saga.recovery-delay-ms` 后兜底：本地订单已落库则置
-`SUCCEEDED`，缺失则释放该 `orderNo` 的预占并置 `FAILED`；单条失败按指数退避 `scheduleRetry`，不阻塞同批次，同时清理过期
-`t_order_request`。
+状态机定义持久化在 `seata_state_machine_def`，实例与状态明细持久化在 `seata_state_machine_inst` / `seata_state_inst`；
+引擎复用订单服务主数据源（DM8），`enableAsync=false` 表示接口在状态机返回后同步读取结果。Seata Server（TC）的配置中心与注册中心
+都是 Nacos：TC 通过 `config.type=nacos` 读取 Data ID `seataServer.properties`（group `SEATA_GROUP`，仓库镜像
+`backend/nacos/config/seataServer.properties`），通过 `registry.type=nacos` 以服务名 `seata-server`、集群 `default`
+注册；订单服务用 `seata.registry.type=nacos` 发现 TC，并用 `seata.service.vgroup-mapping.mall_tx_group=default` 映射集群，
+不再使用 `SEATA_SERVER_ADDR` 直连地址（2.6.0 镜像不含 Web 控制台，端口 `8091`）。TC 以 **DB 存储模式**运行
+（`store.mode=db`，`store.db.dbType=dm`；键名必须是 Seata 2.x 的 camelCase），元数据落在 DM8 的
+`global_table` / `branch_table` / `lock_table` / `distributed_lock`；由于 `sagaBranchRegisterEnable=false`，
+下单 Saga 只做客户端补偿、不向 TC 注册分支，这四张表主要用于满足 TC 启动与全局事务存储要求。`t_order_request` 的过期记录由
+`OrderRequestCleanupScheduler` 按 `order.request.clean-scan-ms` 清理，与交易状态推进无关。
 
 ### 7.3 订单状态成功/关闭后的库存终态
 
@@ -675,6 +694,28 @@ CLOSED/CANCEL → releaseReservationAfterCommit(orderNo)
 统一入口是 `mall-infra` 的 `DistributedLockTemplate.execute(lockKey, waitTimeMillis, supplier)`，实现为
 `cc.ivera.shared.infrastructure.lock.RedissonDistributedLockTemplate`。锁只负责把临界区串行化，最终一致性仍由
 fence 围栏 CAS、`biz_no` 幂等与数据库唯一键兜底。
+
+同时提供声明式用法：在方法上标注 `@cc.ivera.shared.domain.lock.DistributedLock(key = "'payment:wx:notify:pay:' + #orderNo")`，
+由 `cc.ivera.shared.infrastructure.lock.DistributedLockConfiguration` 注册的 `DistributedLockInterceptor` 复用同一模板加锁
+（使用 `StaticMethodMatcherPointcut` 直接匹配方法注解，不经过 AspectJ 表达式解析）。`key` 支持 SpEL（参数名与 `#p0/#a0`），
+`waitTimeMillis` 默认 3000，`holdWarnMillis` 默认 5000（持有超过该值记录 WARN，`<= 0` 关闭）；拦截器优先级高于事务通知，
+保证事务在锁持有期间开始并提交。注解方式与编程式入口共享 watchdog 与围栏令牌语义。
+启动期由 `DistributedLockAnnotationValidator` 校验每个注解方法确实会被代理，出现「当前进程无 `DistributedLockTemplate`、
+方法为 static/private/final、所在 Bean 未被 AOP 代理」任一情况直接启动失败，避免注解在、锁不在。
+
+锁上下文由 `cc.ivera.shared.domain.lock.LockContext` 的线程栈承载：记录 `lockKey`、围栏令牌、加锁时刻与状态，
+`FenceTokenHolder` 退化为门面（`get()` 语义不变）。嵌套加锁时取栈顶令牌——围栏令牌由 Redis 全局自增生成，
+内层一定更大，因此栈顶即嵌套期间最大值且单调不减；仅最外层释放时清理 ThreadLocal，内层退出不会让外层丢令牌或回退。
+不同锁键交叉嵌套仍有争锁等待超时风险，应尽量保持单一入口加锁。
+
+锁审计由 `LockAuditRecorder` 端口 + `RedisLockAuditRecorder` 实现：每次 `ACQUIRED` / `RELEASED` / `ACQUIRE_FAILED`
+追加到 Redis Stream `lock:audit`（字段 `ts/event/lockKey/fenceToken/heldMs/thread`），用近似 `MAXLEN ~ 1000`
+加 7 天 TTL 限制体积，不落库、不参与业务判断；审计写入异常只记 WARN，不影响临界区与锁释放。
+锁不建持久化实例表、不做后台强放锁：锁是瞬态互斥资源，崩溃后由 Redisson 租约到期释放，强制释放会破坏互斥。
+
+以下场景仍保留编程式 `execute`：锁键依赖方法体内解析结果（微信/支付宝异步通知、账单文件解析）、锁只覆盖方法内某个分支
+（渠道查单后的状态同步）、锁外必须保留远程渠道调用（退款创建、关单查单）、以及被同类方法内部调用的共享加锁入口
+（`OrderRefundStatusService`、`OrderIdempotencyService`、多重重载互调）。这些位置若改为方法级注解会改变锁边界或丢锁。
 
 ```mermaid
 flowchart TD
@@ -1016,7 +1057,7 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 | `RefundStatusSyncScheduler` | `mall-refund-service` | DB 最终一致性兜底：按 `payment.refund.status-sync-scan-ms` 周期扫描 `APPROVED + PROCESSING` 退款，复用 `queryRefundStatus`；单笔失败不阻塞同批其它退款 |
 | `LocalMessageSendJob` | `mall-user-bff` | 每 30 秒扫描 PENDING Outbox 并重投 |
 | `MockLogisticsSimulationJob` | `mall-order-service` | 模拟物流状态推进 |
-| `OrderSagaRecoveryScheduler` | `mall-order-service` | 按 `order.saga.recovery-scan-ms` 扫描滞留 `PROCESSING` 的 Saga：本地订单已落库则置成功，缺失则释放预占并置失败；失败退避重试；顺带清理过期 `t_order_request` |
+| `OrderRequestCleanupScheduler` | `mall-order-service` | 按 `order.request.clean-scan-ms` 周期清理过期 `t_order_request` 幂等记录（每批最多 500 条）；单批失败只记录日志 |
 
 注意：
 
@@ -1028,7 +1069,7 @@ DB Scheduler = 最终一致性兜底
 两者不是互相替代。
 
 这些后台任务按领域归属启用：`mall-order-service` 带 `@EnableScheduling` / `@EnableRabbit`，执行订单关单消费、支付事件消费、
-超时关单扫描、物流模拟与下单 Saga 恢复；`mall-user-bff` 只保留 `LocalMessageSendJob` 执行 Outbox 中继；
+超时关单扫描、物流模拟与下单幂等记录清理；`mall-user-bff` 只保留 `LocalMessageSendJob` 执行 Outbox 中继；
 `mall-refund-service` 同样开启 Scheduling 与 Rabbit 监听，执行退款冲正消费、退款状态同步消费与
 `RefundStatusSyncScheduler`，但配置 `local-message.relay-enabled=false`，退款状态同步消息仍由 `mall-user-bff` 中继发布。
 `mall-admin-bff` 刻意不开启这两个注解，并通过 `spring.rabbitmq.listener.simple.auto-startup=false` 关闭 MQ 监听，
@@ -1223,7 +1264,7 @@ GET /api/reconciliation/discrepancies/{id}/drilldown
 
 ## 15. 用户与认证
 
-主要组件位于 `user` 与 `shared.security`。
+主要组件位于 `user`（认证编排在 `user.application`，Token/密码/登录守卫在 `user.infrastructure.security`）与 `shared.security`（跨服务共享的 `AuthPrincipal` / `AccessTokenVerifier` 契约）。
 
 能力：
 
@@ -1297,7 +1338,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `CheckoutController` | `/api/checkout` | 下单（必填 `Idempotency-Key`）、订单详情/列表、支付入口、用户查单 |
 | `OrderInfoController` | `/api/order-info` | 订单列表/渠道状态查询 |
 | `OrderShipmentController` | `/api/order` | 物流、确认收货 |
-| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单、待发货、发货、线下收款、强制关单、渠道查单 |
+| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单、待发货、发货、线下收款、强制关单、渠道查单、订单物流信息（`/{orderNo}/shipment`，管理端订单详情按需加载） |
 
 `OrderInternalController` 暴露 `/internal/order/**`，供支付/退款服务读取订单、冻结/释放退款额度、补库存守卫与关单。
 
@@ -1389,7 +1430,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 共享配置位于 `mall-core/src/main/resources/application-core.yml`，两个 BFF 通过 `spring.config.import: classpath:application-core.yml`
 引入；各自的 `server.port`、`spring.application.name` 与进程级开关留在 BFF 自己的 `application.yml`。
 `mall-user-service` 使用独立的 `application.yml` 配置 DM8、Redis、Jackson、MyBatis、JWT 与商品服务远程地址；
-`mall-product-service` 使用独立的 `application.yml` 配置 DM8、Jackson、MyBatis、库存导入存储与内部令牌；
+`mall-product-service` 使用独立的 `application.yml` 配置 DM8、Jackson、MyBatis 与库存导入存储；
 `mall-payment-service` 使用独立的 `application.yml` 配置 DM8、Redis、RabbitMQ、支付渠道/认证与订单服务远程地址；
 `mall-refund-service` 使用独立的 `application.yml` 配置 DM8、Redis、RabbitMQ、退款 MQ/扫描周期与订单/支付/商品服务远程地址。
 这些领域服务都不导入 `application-core.yml`。
@@ -1398,13 +1439,13 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 |---|---|
 | `server.port` | `mall-user-service` 默认 8083、`mall-cart-service` 默认 8089、`mall-product-service` 默认 8084、`mall-order-service` 默认 8085、`mall-payment-service` 默认 8086、`mall-refund-service` 默认 8087、`mall-bill-service` 默认 8088、`mall-user-bff` 默认 8081、`mall-admin-bff` 默认 8082（均可用 `SERVER_PORT` 覆盖）；`mall-gateway` 占用 8080 |
 | `spring.cloud.nacos.discovery.*` / `spring.cloud.nacos.config.*` | 服务注册与配置中心连接（默认 `127.0.0.1:8848`）；`NACOS_ENABLED=false` 时同时关闭注册与配置导入 |
-| `spring.config.import` | `optional:nacos:mall-common.yaml,optional:nacos:<应用名>.yaml`；`optional:` 保证 Nacos 不可达时回落到本地同值配置 |
+| Nacos 配置存储 | DB 模式落在 DM8（`SPRING_DATASOURCE_PLATFORM=dm`）：官方镜像只内置 MySQL 方言，达梦方言由 `backend/nacos/dm-plugin` 编译出的 Mapper 插件提供（挂载到 `/home/nacos/plugins`），表由 `env/nacos/schema/nacos-schema.sql` 创建；Nacos 3.x 会把 `tenant_id=''` 与 `'public'` 各写一份做兼容，属预期 |
+| `spring.config.import` | `optional:nacos:<应用名>.yaml`；`optional:` 保证 Nacos 不可达时回落到本地同值配置 |
 | `spring.cloud.openfeign.client.config.default.*` | 内部 Feign 调用默认连接/读取超时 3000/10000ms |
 | `user.service.base-url` / `product.service.base-url` / `payment.service.base-url` / `order.service.base-url` / `refund.service.base-url` | Feign 直连地址覆盖项（`USER_SERVICE_BASE_URL` 等）；默认留空，走 Nacos 服务发现 + LoadBalancer |
 | `spring.cloud.openfeign.client.config.mall-product-service.*` | 商品服务按服务名覆盖超时：连接 3000ms、读取 30000ms（库存导入请求体较大） |
 | `spring.application.name` | 决定 Nacos 注册服务名（`mall-user-service`、`mall-order-service` 等）与配置 Data ID 前缀 |
 | `spring.cloud.nacos.discovery.namespace` / `group` | 注册与配置使用的 namespace / group，默认空 / `DEFAULT_GROUP` |
-| `internal.service.token` | `/internal/**` 服务间令牌，由 `INTERNAL_SERVICE_TOKEN` 注入；用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与两个 BFF 必须一致，空值失败关闭 |
 | `spring.rabbitmq.listener.simple.auto-startup` | `mall-admin-bff`、`mall-payment-service` 与 `mall-bill-service` 设为 `false`，关闭该进程的 MQ 监听；退款服务保持开启以消费退款队列；用户服务、商品服务与账单服务不消费 MQ |
 | `local-message.relay-enabled` | `mall-payment-service`、`mall-refund-service` 与 `mall-bill-service` 设为 `false`，关闭各自进程的 Outbox 扫描；默认 `true`，投递任务只在 user-bff 实际执行 |
 | `spring.datasource.*` | DM8 |
@@ -1420,6 +1461,34 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `stock.import.storage` | 商品服务 Excel 导入存储：local / minio |
 | `stock.import.dir` | 商品服务本地文件目录 |
 | `stock.import.minio.*` | 商品服务 MinIO 配置 |
+| `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`（`ZIPKIN_ENDPOINT` 覆盖） |
+| `management.tracing.sampling.probability` | 链路采样率，默认 `1.0`（`TRACING_SAMPLING_PROBABILITY` 覆盖） |
+| `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`（`LOGSTASH_DESTINATION` 覆盖），由 `logback-spring.xml` 的 `springProperty` 读取 |
+
+### 18.1 可观测性：Zipkin 调用追踪与 ELK 日志采集
+
+追踪与日志都只是旁路观测，不参与任何业务事务，也不改变领域行为：
+
+```text
+调用追踪：前端 → mall-gateway(WebFlux) → BFF → 领域服务（Feign / LoadBalancer）
+          Micrometer Tracing(Brave) 自动埋点，span 上报 Zipkin
+
+日志采集：各进程 Logback → LogstashTcpSocketAppender（JSON 行）→ Logstash TCP 5000
+          → Elasticsearch 索引 mall-logs-YYYY.MM.DD → Kibana Data View mall-logs-*（时间字段 @timestamp，已设为默认）
+          → 仪表板「商城日志概览」：日志级别分布（饼图）、应用日志量（表格）、日志时间趋势（按级别堆叠柱状图）
+```
+
+依赖落点：`mall-infra` 统一引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、
+`zipkin-reporter-brave`、`feign-micrometer` 与 `logstash-logback-encoder`，依赖它的进程自动具备追踪与 JSON 日志能力；
+`mall-product-service`（不依赖 `mall-infra`）与 `mall-gateway`（独立工程、WebFlux 栈）各自声明同样的依赖。
+
+日志配置：公共 `logback-spring.xml` 位于 `mall-infra/src/main/resources/`，classpath 中存在即被 Spring Boot 加载；
+控制台保留可读文本（含 `traceId/spanId`），同时通过 `LogstashTcpSocketAppender` 输出 JSON（`app` 字段取
+`spring.application.name`）。`mall-product-service` 与 `mall-gateway` 各保留一份内容一致的文件。
+
+Logstash 管道：`backend/env/logstash/pipeline/mall-logstash.conf`（`json_lines` 输入 → Elasticsearch 输出），
+容器编排在 `backend/env/docker-compose.yml`（zipkin / elasticsearch / logstash / kibana）。
+Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ## 19. 测试基线
 
@@ -1448,6 +1517,7 @@ npm run test:logic
 ```text
 NOTPAY 不能被无条件更新
 超时关单前必须查渠道
+关单（超时/取消/强制）必须同步回收 V2 状态：order_status=CLOSED、pay_status=UNPAID、fulfillment_status=CANCELLED
 ```
 
 ### 支付

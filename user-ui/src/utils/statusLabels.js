@@ -16,7 +16,11 @@ export const REFUND_STATUS_COLOR = {
   REFUNDING: 'orange', SUCCESS: 'green', FAILED: 'red'
 }
 
+const CLOSED_ORDER_STATUS = ['超时已关闭', '用户已取消']
+
 export function statusTags(order) {
+  // 已关闭/已取消订单以交易终态为准，避免继续展示“支付中/待支付”。
+  if (CLOSED_ORDER_STATUS.includes(order.orderStatus)) return [order.orderStatus]
   if (order.payStatus || order.fulfillmentStatus || order.refundStatus) {
     return [
       PAY_LABEL[order.payStatus] || order.payStatus,

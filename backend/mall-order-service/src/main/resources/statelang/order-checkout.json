@@ -1,0 +1,49 @@
+{
+  "Name": "order-checkout",
+  "Comment": "下单 Saga：落单 -> 预占库存 -> 清空购物车，失败反向补偿",
+  "Version": "0.0.1",
+  "StartState": "CreateOrder",
+  "States": {
+    "CreateOrder": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "createOrder",
+      "Input": ["$.[checkout]"],
+      "Output": {
+        "createOrderResult": "$.#root"
+      },
+      "CompensateState": "CancelOrder",
+      "Next": "ReserveInventory"
+    },
+    "CancelOrder": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "cancelOrder",
+      "Input": ["$.[createOrderResult]"]
+    },
+    "ReserveInventory": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "reserveInventory",
+      "Input": ["$.[createOrderResult]"],
+      "CompensateState": "ReleaseInventory",
+      "Next": "ClearCart"
+    },
+    "ReleaseInventory": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "releaseInventory",
+      "Input": ["$.[createOrderResult]"]
+    },
+    "ClearCart": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "clearCart",
+      "Input": ["$.[createOrderResult]"],
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}

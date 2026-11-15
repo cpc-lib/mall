@@ -1,6 +1,6 @@
 package cc.ivera.payment.application;
 
-import cc.ivera.payment.application.impl.wxpay.WxChannelPaymentQueryHandler;
+import cc.ivera.payment.infrastructure.gateway.WxChannelPaymentQueryHandler;
 import cc.ivera.payment.domain.enums.PayType;
 import cc.ivera.payment.application.dto.ChannelOrderQueryVO;
 import cc.ivera.shared.domain.exception.BizException;

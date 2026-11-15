@@ -38,6 +38,11 @@
       <artifactId>mall-infra</artifactId>
     </dependency>
     <dependency>
+      <groupId>org.apache.seata</groupId>
+      <artifactId>seata-spring-boot-starter</artifactId>
+      <version>${seata.version}</version>
+    </dependency>
+    <dependency>
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
     </dependency>
@@ -114,7 +119,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.orderservice.OrderServiceApplication</mainClass>
+          <mainClass>cc.ivera.OrderServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

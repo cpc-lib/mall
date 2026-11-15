@@ -3,13 +3,11 @@ package cc.ivera.order.application.impl;
 import cc.ivera.order.application.CheckoutService;
 import cc.ivera.order.application.dto.CheckoutRequest;
 import cc.ivera.order.application.idempotency.OrderIdempotencyService;
-import cc.ivera.order.application.saga.OrderSagaOrchestrator;
+import cc.ivera.order.application.saga.CheckoutSagaService;
 import cc.ivera.order.application.vo.OrderDetailVO;
 import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.order.domain.model.OrderItem;
-import cc.ivera.order.domain.model.OrderShipment;
 import cc.ivera.order.domain.repository.OrderRepository;
-import cc.ivera.order.domain.repository.OrderShipmentRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
 import org.springframework.stereotype.Service;
@@ -27,17 +25,15 @@ public class CheckoutServiceImpl implements CheckoutService {
     static final String API_CREATE_ORDER = "POST:/api/checkout/orders";
 
     private final OrderRepository orderRepository;
-    private final OrderShipmentRepository orderShipmentRepository;
     private final OrderIdempotencyService orderIdempotencyService;
-    private final OrderSagaOrchestrator orderSagaOrchestrator;
+    private final CheckoutSagaService checkoutSagaService;
 
-    public CheckoutServiceImpl(OrderRepository orderRepository, OrderShipmentRepository orderShipmentRepository,
+    public CheckoutServiceImpl(OrderRepository orderRepository,
                                OrderIdempotencyService orderIdempotencyService,
-                               OrderSagaOrchestrator orderSagaOrchestrator) {
+                               CheckoutSagaService checkoutSagaService) {
         this.orderRepository = orderRepository;
-        this.orderShipmentRepository = orderShipmentRepository;
         this.orderIdempotencyService = orderIdempotencyService;
-        this.orderSagaOrchestrator = orderSagaOrchestrator;
+        this.checkoutSagaService = checkoutSagaService;
     }
 
     /**
@@ -61,7 +57,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     @Override
     public OrderDetailVO createOrder(Long userId, String idempotencyKey, CheckoutRequest request) {
         return orderIdempotencyService.execute(userId, API_CREATE_ORDER, idempotencyKey, request,
-            () -> orderSagaOrchestrator.checkout(userId, request));
+            () -> checkoutSagaService.checkout(userId, request));
     }
 
     @Override
@@ -70,7 +66,6 @@ public class CheckoutServiceImpl implements CheckoutService {
         for (OrderInfo order : orderRepository.listByUserIdCreateTimeDesc(userId)) {
             list.add(detail(order, items(order.getOrderNo())));
         }
-        fillShipmentStatus(list);
         return list;
     }
 
@@ -94,7 +89,6 @@ public class CheckoutServiceImpl implements CheckoutService {
             payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end)) {
             list.add(detail(order, items(order.getOrderNo())));
         }
-        fillShipmentStatus(list);
         return list;
     }
 
@@ -102,9 +96,7 @@ public class CheckoutServiceImpl implements CheckoutService {
     public OrderDetailVO getOrder(Long userId, String orderNo) {
         OrderInfo order = orderRepository.findByOrderNoAndUserId(orderNo, userId);
         if (order == null) throw new BizException("订单不存在或无权访问");
-        OrderDetailVO vo = detail(order, items(orderNo));
-        fillShipmentStatus(java.util.Collections.singletonList(vo));
-        return vo;
+        return detail(order, items(orderNo));
     }
 
     @Override
@@ -117,26 +109,6 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     private List<OrderItem> items(String orderNo) {
         return orderRepository.listItemsByOrderNo(orderNo);
-    }
-
-    /**
-     * 批量填充物流单最新状态（每单取 id 最大的运单），供前端按 DELIVERED 控制确认收货按钮。
-     */
-    private void fillShipmentStatus(List<OrderDetailVO> list) {
-        if (list == null || list.isEmpty()) return;
-        List<String> orderNos = new ArrayList<>();
-        for (OrderDetailVO vo : list) {
-            if (vo.getOrder() != null) orderNos.add(vo.getOrder().getOrderNo());
-        }
-        if (orderNos.isEmpty()) return;
-        List<OrderShipment> shipments = orderShipmentRepository.listByOrderNos(orderNos);
-        Map<String, String> latest = new HashMap<>();
-        for (OrderShipment s : shipments) {
-            latest.putIfAbsent(s.getOrderNo(), s.getStatus());
-        }
-        for (OrderDetailVO vo : list) {
-            vo.setShipmentStatus(latest.get(vo.getOrder().getOrderNo()));
-        }
     }
 
     private OrderDetailVO detail(OrderInfo o, List<OrderItem> i) {

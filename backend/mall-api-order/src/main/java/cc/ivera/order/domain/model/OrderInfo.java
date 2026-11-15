@@ -107,7 +107,9 @@ public class OrderInfo {
     /**
      * legacy 状态条件更新补丁工厂：按目标 legacy 状态同步 V2 四维字段。
      * SUCCESS → 交易 ACTIVE + 支付 PAID + 支付时间（仓储 CAS 同时落 paid_amount=total_fee）；
-     * CLOSED/CANCEL → 交易 CLOSED。
+     * CLOSED/CANCEL → 交易 CLOSED + 支付回退 UNPAID + 履约 CANCELLED。
+     * 关单只允许发生在未支付阶段，但渠道下单成功可能已把 pay_status 推进到 PAYING，
+     * 必须随关单一起回收，否则订单会长期停留在“支付中”。
      */
     public static OrderInfo legacyStatusPatch(OrderStatus target, Date now) {
         OrderInfo patch = new OrderInfo();
@@ -119,6 +121,8 @@ public class OrderInfo {
             patch.applyPaidAmountFromTotalFee = true;
         } else if (target == OrderStatus.CLOSED || target == OrderStatus.CANCEL) {
             patch.setOrderStatus(OrderLifecycleStatus.CLOSED.getType());
+            patch.setPayStatus(PayStatus.UNPAID.getType());
+            patch.setFulfillmentStatus(FulfillmentStatus.CANCELLED.getType());
         }
         return patch;
     }

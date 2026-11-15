@@ -6,7 +6,7 @@ spring:
   application:
     name: mall-admin-bff
   config:
-    import: classpath:application-core.yml,optional:nacos:mall-common.yaml,optional:nacos:mall-admin-bff.yaml
+    import: classpath:application-core.yml,optional:nacos:mall-admin-bff.yaml
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -37,3 +37,17 @@ spring:
       simple:
         # 后台 MQ 消费只在 user-bff 进程执行，管理端 BFF 不启动监听容器
         auto-startup: false
+
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
+
+logging:
+  level:
+    root: info
+  logstash:
+    destination: ${LOGSTASH_DESTINATION:127.0.0.1:5000}

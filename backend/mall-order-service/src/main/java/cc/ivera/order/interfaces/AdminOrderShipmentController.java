@@ -3,10 +3,12 @@ package cc.ivera.order.interfaces;
 import cc.ivera.order.application.CheckoutService;
 import cc.ivera.order.application.OrderInfoService;
 import cc.ivera.order.application.ShipmentService;
+import cc.ivera.order.domain.enums.OrderLifecycleStatus;
 import cc.ivera.order.domain.enums.OrderStatus;
 import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.order.domain.model.OrderShipment;
 import cc.ivera.order.application.vo.OrderDetailVO;
+import cc.ivera.order.application.vo.ShipmentDetailVO;
 import cc.ivera.payment.application.ChannelPaymentQueryApi;
 import cc.ivera.payment.application.PaymentSuccessService;
 import cc.ivera.payment.domain.enums.PayStatus;
@@ -83,8 +85,9 @@ public class AdminOrderShipmentController {
         String ps = order.getPayStatus();
         if (!PayStatus.UNPAID.getType().equals(ps) && !PayStatus.PAYING.getType().equals(ps))
             throw new BizException("仅未支付/支付中订单可强制关单，当前支付状态：" + ps);
-        // 幂等：已被超时调度器或前次操作关闭的订单直接返回成功
-        if (OrderStatus.CLOSED.getType().equals(order.getOrderStatus())) {
+        // 幂等：已被超时调度器或前次操作关闭的订单直接返回成功。
+        // order_status 存 V2 生命周期码（CLOSED），不能拿 legacy 中文标签比较。
+        if (OrderLifecycleStatus.CLOSED.getType().equals(order.getOrderStatus())) {
             return R.ok().setMessage("订单已关闭（幂等），无需重复操作");
         }
         boolean ok = orderInfoService.updateStatusByOrderNoIfStatus(orderNo, OrderStatus.NOTPAY, OrderStatus.CLOSED);
@@ -103,6 +106,20 @@ public class AdminOrderShipmentController {
         boolean ok = paymentSuccessService.markOfflinePaid(orderNo);
         if (!ok) throw new BizException("标记失败：订单状态可能已被并发修改，请刷新后重试");
         return R.ok().setMessage("订单已标记为支付成功，预占库存已提交");
+    }
+
+    @Operation(summary = "订单物流信息（管理端按需查询，含时间线）")
+    @GetMapping("/{orderNo}/shipment")
+    public R<ShipmentDetailVO> shipment(@PathVariable String orderNo) {
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException("订单不存在");
+        }
+        ShipmentDetailVO data = shipmentService.getShipmentDetail(orderNo);
+        if (Boolean.FALSE.equals(data.getShipped())) {
+            return R.ok(data).setMessage("订单尚未发货");
+        }
+        return R.ok(data);
     }
 
     @Operation(summary = "模拟发货（对接模拟物流商创建运单）")

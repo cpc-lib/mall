@@ -5,7 +5,7 @@ spring:
   application:
     name: mall-product-service
   config:
-    import: optional:nacos:mall-common.yaml,optional:nacos:mall-product-service.yaml
+    import: optional:nacos:mall-product-service.yaml
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -47,11 +47,16 @@ stock:
       secret-key: ${STOCK_IMPORT_MINIO_SECRET_KEY:hjm029796}
       bucket: ${STOCK_IMPORT_MINIO_BUCKET:payment-demo}
 
-internal:
-  service:
-    # 不提供默认内部凭据；未配置时所有 internal 请求均失败关闭。
-    token: ${INTERNAL_SERVICE_TOKEN:}
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
 
 logging:
   level:
     root: info
+  logstash:
+    destination: ${LOGSTASH_DESTINATION:127.0.0.1:5000}

@@ -5,7 +5,7 @@ spring:
   application:
     name: mall-refund-service
   config:
-    import: optional:nacos:mall-common.yaml,optional:nacos:mall-refund-service.yaml
+    import: optional:nacos:mall-refund-service.yaml
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -46,6 +46,12 @@ spring:
         auto-startup: true
         acknowledge-mode: manual
         default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1000
+          multiplier: 2.0
+          max-interval: 10000
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -63,10 +69,6 @@ mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   mapper-locations: classpath:mapper/*.xml
-
-internal:
-  service:
-    token: ${INTERNAL_SERVICE_TOKEN:}
 
 user:
   service:
@@ -90,6 +92,16 @@ product:
 local-message:
   relay-enabled: false # 同库阶段由 user-bff 统一中继 Outbox，避免双发布
 
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
+
 logging:
   level:
     root: info
+  logstash:
+    destination: ${LOGSTASH_DESTINATION:127.0.0.1:5000}

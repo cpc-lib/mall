@@ -127,7 +127,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.paymentservice.PaymentServiceApplication</mainClass>
+          <mainClass>cc.ivera.PaymentServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

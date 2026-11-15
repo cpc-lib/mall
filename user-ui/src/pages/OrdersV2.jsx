@@ -14,6 +14,9 @@ export default function OrdersV2() {
   const [reason, setReason] = useState('用户申请退款')
   const [qty, setQty] = useState({})
   const [logistics, setLogistics] = useState(null)
+  const [logisticsOpen, setLogisticsOpen] = useState(false)
+  const [logisticsLoading, setLogisticsLoading] = useState(false)
+  const [logisticsOrder, setLogisticsOrder] = useState(null)
   const [wxCode, setWxCode] = useState(null)
   const [payQuerying, setPayQuerying] = useState(false)
   const load = async () => {
@@ -80,8 +83,11 @@ export default function OrdersV2() {
     })
   }
   const showLogistics = async d => {
-    const r = await shipmentApi.getShipment(d.order.orderNo)
-    setLogistics(r.data || { shipped: false })
+    setLogisticsOrder(d); setLogistics(null); setLogisticsOpen(true); setLogisticsLoading(true)
+    try {
+      const r = await shipmentApi.getShipment(d.order.orderNo)
+      setLogistics(r.data || { shipped: false })
+    } finally { setLogisticsLoading(false) }
   }
   const confirmReceipt = async d => {
     await shipmentApi.confirmReceipt(d.order.orderNo)
@@ -123,14 +129,13 @@ export default function OrdersV2() {
           const noRefund = o.refundStatus == null || o.refundStatus === 'NONE'
           const canPay = (o.payStatus === 'UNPAID' || o.payStatus === 'PAYING') && o.orderStatus !== '已关闭' && o.fulfillmentStatus !== 'CANCELLED' && (o.orderStatus === '未支付' || o.orderStatus === 'WAIT_PAY')
           const canCancel = o.payStatus === 'PAID' && o.fulfillmentStatus === 'WAIT_SHIP' && noRefund
-          const canConfirm = o.fulfillmentStatus === 'SHIPPED' && d.shipmentStatus === 'DELIVERED' && noRefund
           const canLogistics = ['SHIPPED', 'RECEIVED'].includes(o.fulfillmentStatus) && noRefund
           // 未发货已付款只走「取消订单」（整单取消、补库存），不显示「申请退款」；发货/收货后才走仅退款/退货退款
           const canRefund = o.payStatus === 'PAID' && noRefund && o.fulfillmentStatus !== 'WAIT_SHIP' && d.items.some(i => availableRefundQuantity(i) > 0)
           return <div className="m-list-card" key={o.orderNo}>
             <div className="m-list-head">
               <div className="m-list-no">订单号 {o.orderNo}</div>
-              <div className="m-list-tags">{[...statusTags(o), (d.shipmentStatus === 'IN_TRANSIT' || d.shipmentStatus === 'DELIVERED') ? SHIPMENT_LABEL[d.shipmentStatus] : null].filter(Boolean).map(t => <Tag key={t}>{t}</Tag>)}</div>
+              <div className="m-list-tags">{statusTags(o).map(t => <Tag key={t}>{t}</Tag>)}</div>
             </div>
             <div className="m-list-sub">
               <span className="m-list-sub-label">{o.paymentType}</span>
@@ -143,7 +148,6 @@ export default function OrdersV2() {
               {canPay && <Button type="primary" onClick={() => pay(d)}>支付</Button>}
               {canCancel && <Button onClick={() => cancelOrder(d)}>取消订单</Button>}
               {canLogistics && <Button onClick={() => showLogistics(d)}>物流详情</Button>}
-              {canConfirm && <Button type="primary" onClick={() => confirmReceipt(d)}>确认收货</Button>}
               {canRefund && <Button onClick={() => beginRefund(d)}>申请退款</Button>}
             </div>
           </div>
@@ -168,15 +172,25 @@ export default function OrdersV2() {
       <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="退款原因" maxLength={255} />
       <div style={{ marginTop: 12 }}>预估退款：<b>¥{(estimateTotal / 100).toFixed(2)}</b>（以服务端核算为准）</div>
     </Modal>
-    <Modal open={!!logistics} title="物流详情" footer={null} onCancel={() => setLogistics(null)}>
-      {logistics?.shipped
-        ? <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label="快递公司">{logistics.logisticsCompany}</Descriptions.Item>
-          <Descriptions.Item label="运单号">{logistics.trackingNo}</Descriptions.Item>
-          <Descriptions.Item label="物流状态">{SHIPMENT_LABEL[logistics.status] || logistics.status}</Descriptions.Item>
-          {timelineRows.map(([k, v]) => <Descriptions.Item key={k} label={SHIPMENT_LABEL[k] || k}>{new Date(v).toLocaleString()}</Descriptions.Item>)}
-        </Descriptions>
-        : <p>订单尚未发货</p>}
+    <Modal open={logisticsOpen} title="物流详情" footer={null} onCancel={() => { setLogisticsOpen(false); setLogistics(null); setLogisticsOrder(null) }}>
+      {logisticsLoading
+        ? <p style={{ color: '#999' }}>加载中…</p>
+        : logistics?.shipped
+          ? <>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="快递公司">{logistics.logisticsCompany}</Descriptions.Item>
+              <Descriptions.Item label="运单号">{logistics.trackingNo}</Descriptions.Item>
+              <Descriptions.Item label="物流状态">{SHIPMENT_LABEL[logistics.status] || logistics.status}</Descriptions.Item>
+              {timelineRows.map(([k, v]) => <Descriptions.Item key={k} label={SHIPMENT_LABEL[k.toUpperCase()] || k}>{new Date(v).toLocaleString()}</Descriptions.Item>)}
+            </Descriptions>
+            {logistics.status === 'DELIVERED' && logisticsOrder?.order.fulfillmentStatus === 'SHIPPED'
+              && (logisticsOrder.order.refundStatus == null || logisticsOrder.order.refundStatus === 'NONE')
+              && <Button type="primary" style={{ marginTop: 12 }} onClick={async () => {
+                await confirmReceipt(logisticsOrder)
+                setLogisticsOpen(false); setLogistics(null); setLogisticsOrder(null)
+              }}>确认收货</Button>}
+          </>
+          : <p>订单尚未发货</p>}
     </Modal>
     <Modal open={!!wxCode} title="微信扫码支付" footer={null} width={380} centered onCancel={() => setWxCode(null)}>
       <div style={{ textAlign: 'center' }}>

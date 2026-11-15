@@ -4,6 +4,7 @@ import cc.ivera.payment.application.wxpay.WxPayBillFacade;
 import cc.ivera.payment.domain.enums.wxpay.WxApiType;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
+import cc.ivera.payment.infrastructure.gateway.WxPayHttpClient;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
 import cc.ivera.shared.infrastructure.util.JsonUtils;

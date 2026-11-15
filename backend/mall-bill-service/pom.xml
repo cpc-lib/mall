@@ -112,7 +112,7 @@
         <artifactId>spring-boot-maven-plugin</artifactId>
         <version>${spring-boot.version}</version>
         <configuration>
-          <mainClass>cc.ivera.billservice.BillServiceApplication</mainClass>
+          <mainClass>cc.ivera.BillServiceApplication</mainClass>
         </configuration>
         <executions>
           <execution>

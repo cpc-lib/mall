@@ -17,9 +17,13 @@ import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.payment.application.vo.WxPayJsapiVO;
 import cc.ivera.payment.application.dto.WxPayNativeVO;
 import cc.ivera.payment.application.vo.WxPayStatusVO;
+import cc.ivera.payment.infrastructure.gateway.WxPayHttpClient;
+import cc.ivera.payment.infrastructure.gateway.WxPayNotificationDecoder;
+import cc.ivera.payment.infrastructure.util.HttpClientUtils;
+import cc.ivera.payment.infrastructure.util.WxPayPrivateKeyUtil;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
-import cc.ivera.shared.infrastructure.util.HttpClientUtils;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -85,17 +89,16 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
+    @DistributedLock(key = "'payment:wx:native:v3:' + #productId + ':default'", waitTimeMillis = 3000L)
     public WxPayNativeVO nativePay(Long productId) {
         return nativePay(productId, null);
     }
 
     @Override
+    @DistributedLock(key = "'payment:wx:native:v3:' + #productId + ':' + (#paymentAppId == null ? 'default' : #paymentAppId)",
+        waitTimeMillis = 3000L)
     public WxPayNativeVO nativePay(Long productId, Long paymentAppId) {
-        return distributedLockTemplate.execute(
-            "payment:wx:native:v3:" + productId + ":" + (paymentAppId == null ? "default" : paymentAppId),
-            3000L,
-            () -> doNativePay(productId, paymentAppId)
-        );
+        return doNativePay(productId, paymentAppId);
     }
 
     private WxPayNativeVO doNativePay(Long productId, Long paymentAppId) {
@@ -150,53 +153,52 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
+    @DistributedLock(key = "'payment:wx:native:v3:order:' + #orderNo", waitTimeMillis = 3000L)
     public WxPayNativeVO nativePayByOrderNo(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
         }
-        return distributedLockTemplate.execute("payment:wx:native:v3:order:" + orderNo, 3000L, () -> {
-            OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
-            if (orderInfo == null) {
-                throw new BizException("订单不存在，orderNo=" + orderNo);
+        OrderInfo orderInfo = orderInfoService.getOrderByOrderNo(orderNo);
+        if (orderInfo == null) {
+            throw new BizException("订单不存在，orderNo=" + orderNo);
+        }
+        if (!PayType.WXPAY.getType().equals(orderInfo.getPaymentType())) {
+            throw new BizException("订单支付方式不是微信，orderNo=" + orderNo);
+        }
+        if (!OrderStatus.NOTPAY.getType().equals(orderInfo.getLegacyStatus())) {
+            throw new BizException("订单当前状态不可支付：" + orderInfo.getLegacyStatus());
+        }
+        // V2：确保存在活跃支付单（临近过期在此拒绝）。
+        cc.ivera.payment.domain.model.PaymentOrder paymentOrder = paymentOrderService.startPayment(orderInfo, PaymentConfigGateway.CHANNEL_WXPAY);
+        if (StringUtils.hasText(orderInfo.getCodeUrl())) {
+            return buildNativePayResult(orderInfo.getOrderNo(), orderInfo.getCodeUrl());
+        }
+        PaymentAppConfig payConfig = resolveWxPayConfigByOrderNo(orderNo);
+        Map<String, Object> paramsMap = new HashMap<>();
+        paramsMap.put("appid", required(payConfig.getAppid(), "微信appid未配置"));
+        paramsMap.put("mchid", required(payConfig.getMchId(), "微信商户号未配置"));
+        paramsMap.put("description", orderInfo.getTitle());
+        paramsMap.put("out_trade_no", orderInfo.getOrderNo());
+        paramsMap.put("notify_url", buildNotifyUrl(payConfig, WxNotifyType.NATIVE_NOTIFY));
+        Map<String, Object> amountMap = new HashMap<>();
+        amountMap.put("total", orderInfo.getTotalFee());
+        amountMap.put("currency", "CNY");
+        paramsMap.put("amount", amountMap);
+        String jsonParams = JsonUtils.toJson(paramsMap);
+        String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY.getType());
+        try {
+            String bodyAsString = wxPayHttpClient.postJson(payConfig, url, jsonParams, "Native下单失败");
+            Map<String, Object> resultMap = JsonUtils.toObjectMap(bodyAsString);
+            String codeUrl = getString(resultMap, "code_url");
+            if (!StringUtils.hasText(codeUrl)) {
+                throw new BizException("微信Native下单响应缺少code_url");
             }
-            if (!PayType.WXPAY.getType().equals(orderInfo.getPaymentType())) {
-                throw new BizException("订单支付方式不是微信，orderNo=" + orderNo);
-            }
-            if (!OrderStatus.NOTPAY.getType().equals(orderInfo.getLegacyStatus())) {
-                throw new BizException("订单当前状态不可支付：" + orderInfo.getLegacyStatus());
-            }
-            // V2：确保存在活跃支付单（临近过期在此拒绝）。
-            cc.ivera.payment.domain.model.PaymentOrder paymentOrder = paymentOrderService.startPayment(orderInfo, PaymentConfigGateway.CHANNEL_WXPAY);
-            if (StringUtils.hasText(orderInfo.getCodeUrl())) {
-                return buildNativePayResult(orderInfo.getOrderNo(), orderInfo.getCodeUrl());
-            }
-            PaymentAppConfig payConfig = resolveWxPayConfigByOrderNo(orderNo);
-            Map<String, Object> paramsMap = new HashMap<>();
-            paramsMap.put("appid", required(payConfig.getAppid(), "微信appid未配置"));
-            paramsMap.put("mchid", required(payConfig.getMchId(), "微信商户号未配置"));
-            paramsMap.put("description", orderInfo.getTitle());
-            paramsMap.put("out_trade_no", orderInfo.getOrderNo());
-            paramsMap.put("notify_url", buildNotifyUrl(payConfig, WxNotifyType.NATIVE_NOTIFY));
-            Map<String, Object> amountMap = new HashMap<>();
-            amountMap.put("total", orderInfo.getTotalFee());
-            amountMap.put("currency", "CNY");
-            paramsMap.put("amount", amountMap);
-            String jsonParams = JsonUtils.toJson(paramsMap);
-            String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY.getType());
-            try {
-                String bodyAsString = wxPayHttpClient.postJson(payConfig, url, jsonParams, "Native下单失败");
-                Map<String, Object> resultMap = JsonUtils.toObjectMap(bodyAsString);
-                String codeUrl = getString(resultMap, "code_url");
-                if (!StringUtils.hasText(codeUrl)) {
-                    throw new BizException("微信Native下单响应缺少code_url");
-                }
-                orderInfoService.saveCodeUrl(orderInfo.getOrderNo(), codeUrl);
-                paymentOrderService.markPaying(paymentOrder.getPaymentNo(), codeUrl);
-                return buildNativePayResult(orderInfo.getOrderNo(), codeUrl);
-            } catch (IOException e) {
-                throw new BizException("Native下单失败", e);
-            }
-        });
+            orderInfoService.saveCodeUrl(orderInfo.getOrderNo(), codeUrl);
+            paymentOrderService.markPaying(paymentOrder.getPaymentNo(), codeUrl);
+            return buildNativePayResult(orderInfo.getOrderNo(), codeUrl);
+        } catch (IOException e) {
+            throw new BizException("Native下单失败", e);
+        }
     }
 
     @Override
@@ -251,25 +253,24 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
+    @DistributedLock(key = "'payment:order:cancel:' + #orderNo", waitTimeMillis = 3000L)
     public void cancelOrder(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
         }
-        distributedLockTemplate.execute("payment:order:cancel:" + orderNo, 3000L, () ->
-            transactionTemplate.execute(status -> {
-                OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
-                if (lockedOrder == null) {
-                    throw new BizException("订单不存在，orderNo=" + orderNo);
-                }
-                if (!OrderStatus.NOTPAY.getType().equals(lockedOrder.getLegacyStatus())) {
-                    log.info("订单当前状态不允许取消，orderNo={}, currentStatus={}", orderNo, lockedOrder.getLegacyStatus());
-                    return null;
-                }
-                closeOrder(orderNo);
-                orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
+        transactionTemplate.execute(status -> {
+            OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
+            if (lockedOrder == null) {
+                throw new BizException("订单不存在，orderNo=" + orderNo);
+            }
+            if (!OrderStatus.NOTPAY.getType().equals(lockedOrder.getLegacyStatus())) {
+                log.info("订单当前状态不允许取消，orderNo={}, currentStatus={}", orderNo, lockedOrder.getLegacyStatus());
                 return null;
-            })
-        );
+            }
+            closeOrder(orderNo);
+            orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
+            return null;
+        });
     }
 
     @Override
@@ -431,17 +432,16 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
+    @DistributedLock(key = "'payment:wx:native:v2:' + #productId + ':default'", waitTimeMillis = 3000L)
     public WxPayNativeVO nativePayV2(Long productId, String remoteAddr) {
         return nativePayV2(productId, remoteAddr, null);
     }
 
     @Override
+    @DistributedLock(key = "'payment:wx:native:v2:' + #productId + ':' + (#paymentAppId == null ? 'default' : #paymentAppId)",
+        waitTimeMillis = 3000L)
     public WxPayNativeVO nativePayV2(Long productId, String remoteAddr, Long paymentAppId) {
-        return distributedLockTemplate.execute(
-            "payment:wx:native:v2:" + productId + ":" + (paymentAppId == null ? "default" : paymentAppId),
-            3000L,
-            () -> doNativePayV2(productId, remoteAddr, paymentAppId)
-        );
+        return doNativePayV2(productId, remoteAddr, paymentAppId);
     }
 
     private WxPayNativeVO doNativePayV2(Long productId, String remoteAddr, Long paymentAppId) {

@@ -5,7 +5,7 @@ spring:
   application:
     name: mall-cart-service
   config:
-    import: optional:nacos:mall-common.yaml,optional:nacos:mall-cart-service.yaml
+    import: optional:nacos:mall-cart-service.yaml
   cloud:
     nacos:
       server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -44,14 +44,20 @@ mybatis-plus:
   configuration:
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-internal:
-  service:
-    token: ${INTERNAL_SERVICE_TOKEN:}
-
 product:
   service:
     base-url: ${PRODUCT_SERVICE_BASE_URL:}
 
+management:
+  tracing:
+    sampling:
+      probability: ${TRACING_SAMPLING_PROBABILITY:1.0}
+  zipkin:
+    tracing:
+      endpoint: ${ZIPKIN_ENDPOINT:http://127.0.0.1:9411/api/v2/spans}
+
 logging:
   level:
     root: info
+  logstash:
+    destination: ${LOGSTASH_DESTINATION:127.0.0.1:5000}
