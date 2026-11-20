@@ -82,7 +82,7 @@ description: "Scan mall backend for leftover SELECT FOR UPDATE / pessimistic DB 
    `payment:refund:create:{orderNo}`、`payment:ali:check:order:{orderNo}`）。
 3. 删除顺序：端口接口方法 → 实现类方法 → Mapper 接口方法 → XML SQL → 调用点改普通读
    （`findByXxx`）。
-4. 同步文档：`AGENTS.md` 领域不变量、`CODE_INTRO.md` 并发机制章节（机制表/流程图节点/
+4. 同步文档：`AGENTS.md` 领域不变量、`README.md` 第 15 章并发机制章节（机制表/流程图节点/
    退款联动表格）、`MyBatisPlusConfig` 乐观锁插件 Javadoc。
 5. 门禁：`mvn clean test`（后端当前无自动化测试，以编译通过为准）；提交信息不含 agent/厂商署名。
 

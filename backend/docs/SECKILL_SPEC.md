@@ -473,7 +473,7 @@ Lua 返回值：
 - [ ] 管理端完成发布校验、预热、下线验证。
 - [ ] AC-05～AC-16 全部通过；AC-20 普通交易回归通过。
 - [ ] `mvn clean test`、`user-ui` 构建、`admin-ui` 构建通过。
-- [ ] `README.md`、`CODE_INTRO.md`、`AGENTS.md`、`RABBITMQ_OPERATIONS.md` 已同步。
+- [ ] `README.md`（含第 15 章代码导览）、`AGENTS.md`、`RABBITMQ_OPERATIONS.md` 已同步。
 - [ ] 回滚开关 `seckill.enabled=false` 验证有效。
 
 ## 14. 需求追踪

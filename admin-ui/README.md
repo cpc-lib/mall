@@ -35,4 +35,4 @@ npm run test:logic   # 逻辑单测（Token 单飞刷新）
 ## 相关文档
 
 - 项目总览与快速启动：[../README.md](../README.md)
-- 架构与代码导览：[../CODE_INTRO.md](../CODE_INTRO.md)
+- 架构与代码导览：[../README.md#15-代码导览](../README.md#15-代码导览)

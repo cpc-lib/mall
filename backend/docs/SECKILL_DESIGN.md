@@ -1,7 +1,7 @@
 # 秒杀设计（SECKILL_DESIGN）
 
 > 状态：设计稿，用于评审，尚未落地代码。
-> 约束来源：[AGENTS.md](../../AGENTS.md)、[CODE_INTRO.md](../../CODE_INTRO.md)。
+> 约束来源：[AGENTS.md](../../AGENTS.md)、[README.md 第 15 章](../../README.md#15-代码导览)。
 
 ## 1. 目标与非目标
 
@@ -31,7 +31,7 @@
 | MQ = MANUAL ACK + Spring Retry + Failure DLQ | AGENTS 6 | 秒杀异步落单复用同一套可靠性语义 |
 | Outbox 中继只由 `mall-user-bff` 执行 | AGENTS 6 | 秒杀服务只写 `t_local_message`，不开启 relay |
 | `schema.sql` 是唯一结构权威 | AGENTS 7 | 新表只加到 `backend/env/sql/dm8/schema.sql` |
-| 同库同 schema、服务化拆分但未分库 | CODE_INTRO | 跨服务调用走 `/internal/**` + Feign，本地事务不跨服务 |
+| 同库同 schema、服务化拆分但未分库 | README 第 15 章 | 跨服务调用走 `/internal/**` + Feign，本地事务不跨服务 |
 
 ## 3. 方案选择
 
@@ -566,7 +566,7 @@ local-message:
 
 每阶段完成后同步：
 
-- `CODE_INTRO.md`：新增上下文、路由、MQ 拓扑、库存联动说明。
+- `README.md` 第 15 章：新增上下文、路由、MQ 拓扑、库存联动说明。
 - `README.md`：启动方式、端口、配置项、功能说明。
 - `AGENTS.md`：限界上下文从 8 个变为 9 个，模块/端口清单，后台任务归属，
   MQ 拓扑与 `LocalMessageBizType` 新增类型。

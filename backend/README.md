@@ -15,7 +15,7 @@ Spring Boot 3.5.16（Java 21，包名 `cc.ivera`）后端，采用 Maven 聚合�
 - **工程保障**：并发控制三层（Redis 通知幂等 → Redisson 分布式锁 → CAS 条件更新；**不使用 `select ... for update`**）、双 Token
   认证、本地消息表（Outbox）、RabbitMQ 消费重试与 DB 兜底任务
 
-完整架构、上下文边界、实体模型、路由与服务清单见 [../CODE_INTRO.md](../CODE_INTRO.md)。
+完整架构、上下文边界、实体模型、路由与服务清单见 [../README.md#15-代码导览](../README.md#15-代码导览)。
 
 ## 技术栈
 

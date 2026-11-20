@@ -79,5 +79,5 @@ description: "mall backend DDD 限界上下文迁移清单：四层搬移、PO/�
 
 问题定性明确；无公共 API/兼容性变化（或已记录迁移/回滚）；领域不变量与跨上下文依赖方向未破坏；
 `mvn clean test` 全绿 + user-ui `test:logic` 全绿；grep 兜底四项零残留；未夹带无关改动。
-CODE_INTRO.md 架构章节已在全部上下文迁完后统一更新（DDD 八上下文四层结构见 CODE_INTRO.md 第 2 节）；
+README.md 第 15 章架构章节已在全部上下文迁完后统一更新（DDD 八上下文四层结构见 README.md 第 15.3 节）；
 后续结构变化按 AGENTS.md 文档同步规则即时更新，不再积压到批次末尾。
