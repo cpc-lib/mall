@@ -629,6 +629,8 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `payment.auth.*` | Access/Refresh TTL、JWT Secret |
 | `payment.order.expire-minutes` | 未支付订单超时与 Order Close 延迟队列 TTL |
 | `payment.order.timeout-scan-ms` | 订单服务 `TimeoutOrderCloseScheduler` DB 兜底扫描周期，默认 60000ms |
+| `payment.order.timeout-close-enabled` | 订单超时关单扫描总开关，默认 `true`；多实例部署时可只在一台开启 |
+| `logistics.mock.enabled` | 模拟物流推进任务开关，默认 `true`；生产或接入真实物流时置为 `false` |
 | `SEATA_ENABLED` | 是否启用 Seata 客户端，默认 `true` |
 | `SEATA_TX_GROUP` | Seata 事务分组，默认 `mall_tx_group`；由 `seata.service.vgroup-mapping` 映射到集群 `default` |
 | `seata.registry.nacos.*` | 订单服务通过 Nacos 发现 TC（服务名 `seata-server`、分组 `SEATA_GROUP`、集群 `default`），连接信息复用 `NACOS_SERVER_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` |
@@ -637,14 +639,16 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `order.request.ttl-hours` | 下单幂等记录 `t_order_request` 保留时长，默认 24 小时 |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | `RefundStatusSyncScheduler` DB 兜底扫描周期，默认 60000ms |
+| `refund.status-sync-enabled` | 退款状态同步兜底扫描总开关，默认 `true`；多实例部署时可只在一台开启 |
 | `stock.import.storage` | 商品服务 Excel 导入存储：`local` / `minio` |
 | `stock.import.dir` | 商品服务本地 Excel 存储目录 |
 | `stock.import.minio.*` | 商品服务 MinIO endpoint/凭据/bucket |
 | `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`，由 `ZIPKIN_ENDPOINT` 覆盖 |
 | `management.tracing.sampling.probability` | 链路采样率，默认 `1.0`，由 `TRACING_SAMPLING_PROBABILITY` 覆盖 |
 | `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`，由 `LOGSTASH_DESTINATION` 覆盖；由 `logback-spring.xml` 读取 |
+| `mybatis-plus.configuration.log-impl` | 统一为 `org.apache.ibatis.logging.slf4j.Slf4jImpl`，SQL 走应用日志体系而不再直写 stdout；默认 `info` 级别不输出 SQL，需要排查时把对应 Mapper 包日志级别调为 `debug` |
 
-生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。
+生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。凭据全部带同名环境变量占位符；当激活 `prod` profile 时，`ProductionSecretGuard` 会在启动阶段校验 DM / RabbitMQ / Redis 口令与 `payment.auth.jwt-secret`，为空或仍等于仓库默认值即启动失败（异常只输出配置键名，不输出口令明文）。
 
 ### 10.3 启动用户服务、商品服务、订单服务、支付服务、退款服务、账单服务、BFF 与网关
 
@@ -661,7 +665,7 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `mall-bill-service` | 8088 | 微信交易账单导入、渠道账与平台支付/退款账逐笔核对、差异查询与人工处理；账单表唯一写者，不消费 MQ、不执行定时任务 |
 | `mall-user-bff` | 8081 | 用户/商品/购物车等剩余 Controller；仅保留 Outbox 中继，不再承载订单与对账 |
 | `mall-admin-bff` | 8082 | 管理侧剩余 Controller；`spring.rabbitmq.listener.simple.auto-startup=false`，不消费 MQ |
-| `mall-gateway` | 8080 | 统一入口与 CORS；退款/取消 → refund-service；`/api/admin/order/**` 与订单前台路径 → order-service；`/api/reconciliation/**` → bill-service；`/api/admin/**` → admin-bff；支付回调/配置/收银台 → payment-service；其余 → user-bff |
+| `mall-gateway` | 8080 | 统一入口与 CORS；退款/取消 → refund-service；`/api/admin/order/**` 与订单前台路径 → order-service；`/api/reconciliation/**` → bill-service；`/api/admin/**` → admin-bff；支付回调/配置/收银台 → payment-service；其余 → user-bff；CORS 允许来源由 `CORS_ALLOWED_ORIGINS` 控制，默认 `http://localhost:3000,http://localhost:3002` |
 
 ```powershell
 # 先安装多模块依赖，再分别启动九个进程（各开一个终端）
@@ -2325,14 +2329,20 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `payment.auth.jwt-secret` | JWT 签名密钥 |
 | `payment.order.expire-minutes` | 订单业务超时 / Order Close delay TTL |
 | `payment.order.timeout-scan-ms` | TimeoutOrderCloseScheduler DB 兜底扫描周期，默认 60000ms |
+| `payment.order.timeout-close-enabled` | 超时关单扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
+| `logistics.mock.enabled` | 模拟物流推进开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | RefundStatusSyncScheduler DB 兜底扫描周期，默认 60000ms |
+| `refund.status-sync-enabled` | 退款状态同步兜底扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
+| `CORS_ALLOWED_ORIGINS` | 网关 CORS 允许来源，默认 `http://localhost:3000,http://localhost:3002`（`"*"` 不再作为默认值） |
+| `prod` profile | 激活后 `ProductionSecretGuard` 校验 DM / RabbitMQ / Redis 口令与 JWT 密钥，命中仓库默认值或为空即启动失败 |
 | `stock.import.storage` | 商品服务 Excel 导入存储：local / minio |
 | `stock.import.dir` | 商品服务本地文件目录 |
 | `stock.import.minio.*` | 商品服务 MinIO 配置 |
 | `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`（`ZIPKIN_ENDPOINT` 覆盖） |
 | `management.tracing.sampling.probability` | 链路采样率，默认 `1.0`（`TRACING_SAMPLING_PROBABILITY` 覆盖） |
 | `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`（`LOGSTASH_DESTINATION` 覆盖），由 `logback-spring.xml` 的 `springProperty` 读取 |
+| `mybatis-plus.configuration.log-impl` | `Slf4jImpl`：SQL 经 slf4j 输出，默认 `info` 级别不打印；排查时临时把 Mapper 包调为 `debug` |
 
 #### 15.18.1 可观测性：Zipkin 调用追踪与 ELK 日志采集
 

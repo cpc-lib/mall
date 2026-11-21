@@ -3,7 +3,7 @@ import { message } from 'antd'
 import { clearAuth, getAccessToken, getRefreshToken, saveAuth } from './authStore'
 import { createRefreshSingleFlight } from './refreshSingleFlight'
 
-const baseURL = 'http://localhost:8080'
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
 const service = axios.create({ baseURL, timeout: 20000 })
 const raw = axios.create({ baseURL, timeout: 20000 })
 

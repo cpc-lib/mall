@@ -4,6 +4,7 @@ import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -21,6 +22,7 @@ import java.util.List;
  */
 @Component
 @Slf4j
+@ConditionalOnProperty(name = "refund.status-sync-enabled", matchIfMissing = true)
 public class RefundStatusSyncScheduler {
 
     private final RefundInfoRepository refundInfoRepository;

@@ -15,7 +15,7 @@ spring:
 
 mybatis-plus:
   configuration:
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   mapper-locations: classpath:mapper/*.xml
 
 # Excel 导入文件存储（V6）：storage=local 落本地 dir 目录；storage=minio 走 MinIO 对象存储

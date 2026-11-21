@@ -7,6 +7,7 @@ import cc.ivera.payment.application.ChannelOrderStatusApi;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -14,6 +15,7 @@ import java.util.Date;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "payment.order.timeout-close-enabled", matchIfMissing = true)
 public class TimeoutOrderCloseScheduler {
     private static final Logger log = LoggerFactory.getLogger(TimeoutOrderCloseScheduler.class);
     private final OrderInfoService orderInfoService;
