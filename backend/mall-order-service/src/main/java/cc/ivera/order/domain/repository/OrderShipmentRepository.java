@@ -36,6 +36,11 @@ public interface OrderShipmentRepository {
     List<OrderShipment> listInTransitBefore(Date cutoff);
 
     /**
+     * 已送达且超过自动收货时限的候选运单，只取订单仍待收货且无退款的记录。
+     */
+    List<OrderShipment> listAutoReceiptCandidates(Date cutoff, int limit);
+
+    /**
      * 物流状态 CAS 迁移（按运单号 + 当前状态），同时落对应时间列为当前时间。
      * timeColumn：shippedTime/inTransitTime/deliveredTime/receivedTime。
      *

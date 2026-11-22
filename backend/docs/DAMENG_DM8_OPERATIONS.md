@@ -112,7 +112,7 @@ DM8 schema 执行完整初始化 SQL。
 
 如果库中已有业务数据，不要直接运行完整初始化脚本清库重建；应先备份或只执行必要的兼容 DDL。
 
-当前版本包含已发货退款商品去向审计与账账核对升级。存量库升级前先检查字段和索引：
+当前版本包含已发货退款商品去向审计、账账核对与送达超时自动确认收货升级。存量库升级前先检查字段和索引：
 
 ```sql
 SELECT COLUMN_NAME
@@ -126,7 +126,7 @@ WHERE TABLE_NAME = 'T_REFUND_INFO' AND COLUMN_NAME = 'FENCE_TOKEN';
 
 SELECT INDEX_NAME
 FROM USER_INDEXES
-WHERE INDEX_NAME IN ('IDX_PAYMENT_ORDER_CHANNEL_STATUS_PAID_TIME', 'IDX_REFUND_ORDER_STATUS_SUCCESS_TIME');
+WHERE INDEX_NAME IN ('IDX_PAYMENT_ORDER_CHANNEL_STATUS_PAID_TIME', 'IDX_REFUND_ORDER_STATUS_SUCCESS_TIME', 'IDX_SHIPMENT_STATUS_DELIVERED_TIME');
 ```
 
 仅对缺失对象执行一次：
@@ -149,6 +149,8 @@ CREATE INDEX idx_payment_order_channel_status_paid_time
 ON t_payment_order(channel, status, paid_time);
 CREATE INDEX idx_refund_order_status_success_time
 ON t_refund_order(status, success_time);
+CREATE INDEX idx_shipment_status_delivered_time
+ON t_order_shipment(status, delivered_time);
 ```
 
-三个 `local_*` 字段用于差异单同时保留渠道侧与平台侧凭证；两个组合索引用于按 `Asia/Shanghai` 账单日扫描支付成功时间/退款成功时间；`t_refund_info.fence_token` 用于渠道退款状态推进的围栏 CAS。已经存在的对象不要重复执行对应 DDL。全新数据库直接执行最新 `backend/env/sql/dm8/schema.sql`。
+三个 `local_*` 字段用于差异单同时保留渠道侧与平台侧凭证；支付/退款组合索引用于按 `Asia/Shanghai` 账单日扫描支付成功时间/退款成功时间；`idx_shipment_status_delivered_time` 用于送达超时自动确认收货候选扫描；`t_refund_info.fence_token` 用于渠道退款状态推进的围栏 CAS。已经存在的对象不要重复执行对应 DDL。全新数据库直接执行最新 `backend/env/sql/dm8/schema.sql`。

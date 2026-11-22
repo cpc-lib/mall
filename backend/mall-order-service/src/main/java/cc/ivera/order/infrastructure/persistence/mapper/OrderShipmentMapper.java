@@ -6,9 +6,12 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.Date;
+import java.util.List;
 
 @Mapper
 public interface OrderShipmentMapper extends BaseMapper<OrderShipmentPO> {
+
+    List<OrderShipmentPO> selectAutoReceiptCandidates(@Param("cutoff") Date cutoff, @Param("limit") int limit);
 
     /**
      * 物流状态 CAS 迁移（按运单号）。

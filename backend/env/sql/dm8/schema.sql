@@ -1013,9 +1013,10 @@ CREATE TABLE t_order_shipment
     CONSTRAINT uk_shipment_tracking_no UNIQUE (tracking_no)
 );
 CREATE INDEX idx_shipment_order_no ON t_order_shipment (order_no);
+CREATE INDEX idx_shipment_status_delivered_time ON t_order_shipment (status, delivered_time);
 
 COMMENT
-ON TABLE t_order_shipment IS '物流单：通过 LogisticsProvider 接口对接（当前为模拟物流商），定时任务模拟运输推进，用户确认收货后履约完成';
+ON TABLE t_order_shipment IS '物流单：通过 LogisticsProvider 接口对接（当前为模拟物流商），定时任务模拟运输推进，用户确认或送达超时自动确认收货后履约完成';
 COMMENT
 ON COLUMN t_order_shipment.id IS '物流单id';
 COMMENT
@@ -1035,7 +1036,7 @@ ON COLUMN t_order_shipment.in_transit_time IS '进入运输时间（模拟）';
 COMMENT
 ON COLUMN t_order_shipment.delivered_time IS '派送送达时间（模拟）';
 COMMENT
-ON COLUMN t_order_shipment.received_time IS '用户确认收货时间';
+ON COLUMN t_order_shipment.received_time IS '用户确认或系统超时自动确认收货时间';
 COMMENT
 ON COLUMN t_order_shipment.remark IS '备注';
 

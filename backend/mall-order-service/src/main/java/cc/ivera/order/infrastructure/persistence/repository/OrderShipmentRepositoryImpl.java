@@ -67,6 +67,13 @@ public class OrderShipmentRepositoryImpl implements OrderShipmentRepository {
     }
 
     @Override
+    public List<OrderShipment> listAutoReceiptCandidates(Date cutoff, int limit) {
+        return orderShipmentMapper.selectAutoReceiptCandidates(cutoff, limit).stream()
+            .map(OrderShipmentPOConverter::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
     public int casTransition(String trackingNo, String from, String to, String timeColumn) {
         return orderShipmentMapper.casShipmentStatus(trackingNo, from, to, timeColumn, new Date());
     }

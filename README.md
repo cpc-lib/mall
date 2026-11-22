@@ -40,7 +40,7 @@ interfaces → application → domain ← infrastructure
 - 微信支付 V3 Native 扫码支付、JSAPI 能力、回调、主动查单、退款、账单相关接口。
 - 微信支付 V2 Native 兼容链路。
 - 支付宝支付、通知、查单、关单、退款、账单下载地址。
-- 发货/物流状态查看、送达后确认收货。
+- 发货/物流状态查看、送达后手动确认收货，以及送达超时自动确认收货。
 - 已付款未发货取消订单。
 - 分项退款、仅退款、退货退款、退款申请编辑/撤销；已发货未收货退款由管理员确认商品丢失或已全部回收后再发起渠道退款。
 - 支付成功页和退款申请列表。
@@ -86,7 +86,7 @@ available + locked + sold + lost = 入库总量
 下单：       available → locked
 支付成功：   预占状态 LOCKED → COMMITTED，库存数量不变
 关单/取消：  locked → available
-确认收货：   locked → sold
+确认收货（手动或送达超时自动）：locked → sold
 已发货退款： 管理员判定丢失 → locked → lost
              管理员确认全部回收 → locked → available
 已收货仅退款：sold → lost
@@ -631,6 +631,9 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `payment.order.timeout-scan-ms` | 订单服务 `TimeoutOrderCloseScheduler` DB 兜底扫描周期，默认 60000ms |
 | `payment.order.timeout-close-enabled` | 订单超时关单扫描总开关，默认 `true`；多实例部署时可只在一台开启 |
 | `logistics.mock.enabled` | 模拟物流推进任务开关，默认 `true`；生产或接入真实物流时置为 `false` |
+| `order.auto-receipt.enabled` | 送达超时自动确认收货开关，默认 `true`，独立于模拟物流开关 |
+| `order.auto-receipt.timeout-ms` | 送达后等待用户确认收货的时限，默认 `604800000`（7 天） |
+| `order.auto-receipt.scan-ms` | 自动确认收货 DB 扫描周期，默认 `60000ms` |
 | `SEATA_ENABLED` | 是否启用 Seata 客户端，默认 `true` |
 | `SEATA_TX_GROUP` | Seata 事务分组，默认 `mall_tx_group`；由 `seata.service.vgroup-mapping` 映射到集群 `default` |
 | `seata.registry.nacos.*` | 订单服务通过 Nacos 发现 TC（服务名 `seata-server`、分组 `SEATA_GROUP`、集群 `default`），连接信息复用 `NACOS_SERVER_ADDR` / `NACOS_USERNAME` / `NACOS_PASSWORD` |
@@ -789,7 +792,7 @@ http://localhost:3002
 
 ### 后端
 
-后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现）。测试均为纯域单测，不启动 Spring 上下文、不依赖 DM8。其余模块仍无测试，编译通过是基础门槛：
+后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现），以及 `mall-order-service` 的 `AutoReceiptSchedulerTest`（复用确认收货链路、单批失败隔离）。测试均不启动 Spring 上下文、不依赖 DM8；其余模块仍以编译通过为基础门槛：
 
 ```powershell
 cd backend
@@ -1937,6 +1940,7 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 | `RefundStatusSyncScheduler` | `mall-refund-service` | DB 最终一致性兜底：按 `payment.refund.status-sync-scan-ms` 周期扫描 `APPROVED + PROCESSING` 退款，复用 `queryRefundStatus`；单笔失败不阻塞同批其它退款 |
 | `LocalMessageSendJob` | `mall-user-bff` | 每 30 秒扫描 PENDING Outbox 并重投 |
 | `MockLogisticsSimulationJob` | `mall-order-service` | 模拟物流状态推进 |
+| `AutoReceiptScheduler` | `mall-order-service` | 每批最多 200 条扫描送达超时且仍待收货、无退款的运单，复用手动确认收货的锁/CAS/库存结转链路；单笔失败不阻塞同批其它运单 |
 | `OrderRequestCleanupScheduler` | `mall-order-service` | 按 `order.request.clean-scan-ms` 周期清理过期 `t_order_request` 幂等记录（每批最多 500 条）；单批失败只记录日志 |
 
 注意：
@@ -1949,7 +1953,7 @@ DB Scheduler = 最终一致性兜底
 两者不是互相替代。
 
 这些后台任务按领域归属启用：`mall-order-service` 带 `@EnableScheduling` / `@EnableRabbit`，执行订单关单消费、支付事件消费、
-超时关单扫描、物流模拟与下单幂等记录清理；`mall-user-bff` 只保留 `LocalMessageSendJob` 执行 Outbox 中继；
+超时关单扫描、物流模拟、送达超时自动确认收货与下单幂等记录清理；`mall-user-bff` 只保留 `LocalMessageSendJob` 执行 Outbox 中继；
 `mall-refund-service` 同样开启 Scheduling 与 Rabbit 监听，执行退款冲正消费、退款状态同步消费与
 `RefundStatusSyncScheduler`，但配置 `local-message.relay-enabled=false`，退款状态同步消息仍由 `mall-user-bff` 中继发布。
 `mall-admin-bff` 刻意不开启这两个注解，并通过 `spring.rabbitmq.listener.simple.auto-startup=false` 关闭 MQ 监听，
@@ -2338,6 +2342,9 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `payment.order.timeout-scan-ms` | TimeoutOrderCloseScheduler DB 兜底扫描周期，默认 60000ms |
 | `payment.order.timeout-close-enabled` | 超时关单扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
 | `logistics.mock.enabled` | 模拟物流推进开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
+| `order.auto-receipt.enabled` | 送达超时自动确认收货开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
+| `order.auto-receipt.timeout-ms` | 送达后自动确认收货等待时限，默认 `604800000`（7 天） |
+| `order.auto-receipt.scan-ms` | AutoReceiptScheduler DB 扫描周期，默认 `60000ms` |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | RefundStatusSyncScheduler DB 兜底扫描周期，默认 60000ms |
 | `refund.status-sync-enabled` | 退款状态同步兜底扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
@@ -2378,7 +2385,7 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）。两者均为纯域单测，不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
+后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）；`mall-order-service` 包含 `AutoReceiptSchedulerTest`（2 个用例，覆盖复用确认收货链路与单批失败隔离）。所有测试均不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
 
 命令：
 

@@ -113,6 +113,10 @@ order:
   request:
     ttl-hours: 24 # 下单幂等记录保留时长
     clean-scan-ms: 60000 # 清理下单幂等记录的扫描周期
+  auto-receipt:
+    enabled: true # 送达后超时自动确认收货开关
+    timeout-ms: 604800000 # 送达后等待用户确认收货的时限，默认 7 天
+    scan-ms: 60000 # 自动确认收货 DB 扫描周期
 
 logistics:
   mock:

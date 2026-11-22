@@ -2,6 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.order.infrastructure.persistence.mapper.OrderShipmentMapper">
 
+  <select id="selectAutoReceiptCandidates" resultType="cc.ivera.order.infrastructure.persistence.po.OrderShipmentPO">
+    select s.*
+    from t_order_shipment s
+    join t_order_info o on o.order_no = s.order_no
+    where s.status = 'DELIVERED'
+      and s.delivered_time &lt; #{cutoff}
+      and o.fulfillment_status = 'SHIPPED'
+      and o.refund_status = 'NONE'
+    order by s.delivered_time asc, s.id asc
+    limit #{limit}
+  </select>
+
   <update id="casShipmentStatus">
     update t_order_shipment
     set status = #{to},
