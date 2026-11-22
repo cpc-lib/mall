@@ -25,6 +25,9 @@ public interface ProductServiceClient {
     @GetMapping("/internal/product/products")
     R<List<Product>> list();
 
+    @GetMapping("/internal/product/products/page")
+    R<PageVO<Product>> page(@RequestParam("page") int page, @RequestParam("size") int size);
+
     @GetMapping("/internal/product/products/{id}")
     R<Product> get(@PathVariable("id") Long id);
 

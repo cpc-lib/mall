@@ -6,5 +6,6 @@ export default {
       url: '/api/product/list',
       method: 'get'
     })
-  }
+  },
+  page: (params) => request.get('/api/product/page', { params })
 }

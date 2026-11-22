@@ -6,6 +6,7 @@ import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -24,6 +25,22 @@ public class ProductServiceImpl implements ProductService, ProductQueryApi {
     @Override
     public List<Product> list() {
         return productRepository.findAll();
+    }
+
+    @Override
+    public PageVO<Product> page(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        long total = productRepository.countAll();
+        List<Product> records = total > 0
+            ? productRepository.findPage(safeSize, (long) (safePage - 1) * safeSize)
+            : List.of();
+        PageVO<Product> result = new PageVO<>();
+        result.setTotal(total);
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(records);
+        return result;
     }
 
     @Override

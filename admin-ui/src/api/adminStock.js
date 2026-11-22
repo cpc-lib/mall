@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 export default {
   products: () => request.get('/api/admin/products'),
+  productPage: (params) => request.get('/api/admin/products/page', { params }),
   getProduct: (id) => request.get(`/api/admin/products/${id}`),
   createProduct: (data) => request.post('/api/admin/products', data),
   adjustStock: (id, delta) => request.post(`/api/admin/products/${id}/stock`, { delta }),

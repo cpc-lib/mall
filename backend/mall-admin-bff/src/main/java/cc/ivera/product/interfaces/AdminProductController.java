@@ -13,6 +13,7 @@ import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.application.vo.ProductDetailVO;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -45,6 +46,13 @@ public class AdminProductController {
     @GetMapping
     public R<List<Product>> list() {
         return R.ok(productService.list());
+    }
+
+    @Operation(summary = "商品列表（服务端分页）")
+    @GetMapping("/page")
+    public R<PageVO<Product>> page(@RequestParam(defaultValue = "1") int page,
+                                   @RequestParam(defaultValue = "20") int size) {
+        return R.ok(productService.page(page, size));
     }
 
     @Operation(summary = "商品详情（含最近20条库存流水）")

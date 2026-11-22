@@ -5,6 +5,9 @@ import { PRODUCT_STATUS_COLOR, OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL } 
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
+  const [productPage, setProductPage] = useState(1)
+  const [productSize, setProductSize] = useState(20)
+  const [productTotal, setProductTotal] = useState(0)
   const [stockDelta, setStockDelta] = useState({})
   const [pcVisible, setPcVisible] = useState(false)
   const [pcForm, setPcForm] = useState({ title: '', price: 100, stock: 100 })
@@ -19,8 +22,16 @@ export default function AdminProducts() {
 
   const LOG_PAGE_SIZE = 8
 
-  const loadProducts = () => { stockApi.products().then(r => setProducts(r.data || [])) }
-  useEffect(loadProducts, [])
+  const loadProducts = (nextPage = productPage, nextSize = productSize) => {
+    stockApi.productPage({ page: nextPage, size: nextSize }).then(r => {
+      const data = r.data || {}
+      setProducts(data.records || [])
+      setProductTotal(data.total || 0)
+      setProductPage(data.page || nextPage)
+      setProductSize(data.size || nextSize)
+    })
+  }
+  useEffect(() => { loadProducts(1, 20) }, [])
   const loadDetail = async () => {
     if (!detailId) return
     setDetailLoading(true)
@@ -96,7 +107,16 @@ export default function AdminProducts() {
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>商品库存</Typography.Title>
     <Card>
     <Button type="primary" style={{ marginBottom: 16 }} onClick={() => setPcVisible(true)}>新增商品</Button>
-    <Table rowKey="id" dataSource={products} columns={productCols} />
+    <Table rowKey="id" dataSource={products} columns={productCols}
+      pagination={{
+        current: productPage,
+        pageSize: productSize,
+        total: productTotal,
+        showSizeChanger: true,
+        pageSizeOptions: [10, 20, 50, 100],
+        showTotal: t => `共 ${t} 条`,
+        onChange: (p, s) => loadProducts(p, s)
+      }} />
     <Drawer open={detailId != null} width={720} onClose={() => setDetailId(null)} title={p ? `商品详情 - ${p.title}` : '商品详情'}>
       {detailLoading || !p ? <Spin style={{ display: 'block', margin: '80px auto' }} /> : <div>
         <Descriptions column={2} bordered style={{ marginBottom: 16 }}>

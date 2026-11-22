@@ -33,7 +33,7 @@ interfaces → application → domain ← infrastructure
 - 用户注册、登录、退出、Access/Refresh 双 Token 刷新。
 - 会话治理：一次登录一个会话（`sid`），支持按设备查看、踢单设备、踢全部；退出只下线当前设备。
 - 登录失败保护：同一用户名连续输错密码达到阈值后短时锁定。
-- 商品列表、商品库存展示。
+- 商品列表（服务端分页）、商品库存展示。
 - 购物车（DM8 `t_cart_item`，由购物车服务统一持久化）。
 - 收货地址 CRUD、默认地址、三级行政区划级联。
 - 多商品结算、订单快照价、订单查询。
@@ -51,7 +51,7 @@ interfaces → application → domain ← infrastructure
 - 待发货订单、模拟发货。
 - 强制关单、渠道查单、标记线下已付款。
 - 支付尝试记录查看。
-- 商品 CRUD、上下架、单个/批量库存调整。
+- 商品 CRUD、上下架、单个/批量库存调整，商品列表支持服务端分页。
 - 库存流水分页与审计。
 - Excel 库存导入、编辑、确认入库。
 - Excel 文件支持本地磁盘或 MinIO 存储。
@@ -2208,7 +2208,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `AuthController` | `/api/auth` | 注册、登录、刷新、退出、密码 |
 | `RegionController` | `/api/regions` | 行政区划 |
 | `UserAddressController` | `/api/user/address` | 地址 CRUD |
-| `ProductController` | `/api/product` | 商城商品 |
+| `ProductController` | `/api/product` | 商城商品；`/page` 提供 `page`/`size` 服务端分页 |
 | `CartController` | `/api/cart` | 购物车 |
 
 #### 15.16.2 订单（order-service）
@@ -2255,7 +2255,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | Controller | 前缀 |
 |---|---|
-| `AdminProductController` | `/api/admin/products` |
+| `AdminProductController` | `/api/admin/products` | 商品管理；`/page` 提供 `page`/`size` 服务端分页，原列表接口保留给库存导入/Excel 编辑 |
 | `StockAdminController` | `/api/admin/stock` |
 | `AdminUserController` | `/api/admin/users` |
 | `AdminUserSessionController` | `/api/admin/users/{userId}/sessions` |
@@ -2275,7 +2275,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | 路由 | 页面 |
 |---|---|
-| `/` | 商品首页 |
+| `/` | 商品首页（服务端分页） |
 | `/login` | 登录/注册/找回密码 |
 | `/cart` | 购物车与结算 |
 | `/orders` | 订单、支付、查单、物流、退款入口 |
@@ -2294,7 +2294,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 |---|---|
 | `/admin/orders` | 订单管理 |
 | `/admin/shipping` | 发货管理 |
-| `/admin/products` | 商品/库存 |
+| `/admin/products` | 商品/库存（服务端分页） |
 | `/admin/refunds` | 退款管理 |
 | `/admin/users` | 用户管理 |
 | `/admin/reset-requests` | 密码重置申请 |

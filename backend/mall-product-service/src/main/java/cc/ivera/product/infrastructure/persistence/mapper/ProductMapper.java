@@ -5,8 +5,14 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface ProductMapper extends BaseMapper<ProductPO> {
+
+    Long countAll();
+
+    List<ProductPO> selectProductPage(@Param("limit") int limit, @Param("offset") long offset);
 
     int deductStockIfEnough(@Param("id") Long id, @Param("quantity") Integer quantity);
 

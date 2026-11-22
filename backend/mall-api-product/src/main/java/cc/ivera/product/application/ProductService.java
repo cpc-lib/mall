@@ -1,6 +1,7 @@
 package cc.ivera.product.application;
 
 import cc.ivera.product.domain.model.Product;
+import cc.ivera.shared.web.PageVO;
 
 import java.util.List;
 
@@ -13,6 +14,11 @@ public interface ProductService {
      * 商品列表（按 id 升序）。
      */
     List<Product> list();
+
+    /**
+     * 商品列表服务端分页（按 id 升序）。
+     */
+    PageVO<Product> page(int page, int size);
 
     /**
      * 商品详情，不存在抛 BizException。

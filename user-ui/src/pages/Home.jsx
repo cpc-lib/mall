@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Empty, Spin, message } from 'antd'
+import { Empty, Pagination, Spin, message } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import productApi from '@/api/product'
 import cartApi from '@/api/cart'
@@ -9,12 +9,23 @@ import { mallImg, onMallImgError } from '@/assets/mallImgs'
 export default function Home() {
   const [loading, setLoading] = useState(true)
   const [products, setProducts] = useState([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const size = 12
   const navigate = useNavigate()
   const admin = getUser()?.role === 'ROLE_ADMIN'
 
-  useEffect(() => {
-    productApi.list().then(r => setProducts(r?.data?.productList || [])).finally(() => setLoading(false))
-  }, [])
+  const load = async (nextPage = 1) => {
+    setLoading(true)
+    try {
+      const r = await productApi.page({ page: nextPage, size })
+      const data = r?.data || {}
+      setProducts(data.records || [])
+      setTotal(data.total || 0)
+      setPage(data.page || nextPage)
+    } finally { setLoading(false) }
+  }
+  useEffect(() => { load(1) }, [])
 
   const add = async (product) => {
     if (!getAccessToken()) { navigate('/login'); return }
@@ -44,6 +55,9 @@ export default function Home() {
             </div>
           })}
         </div>}
+      {total > size && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+        <Pagination current={page} pageSize={size} total={total} showSizeChanger={false} onChange={p => load(p)} />
+      </div>}
     </div>
   </div>
 }

@@ -15,6 +15,10 @@ public interface ProductRepository {
 
     List<Product> findAll();
 
+    long countAll();
+
+    List<Product> findPage(int limit, long offset);
+
     void insert(Product product);
 
     void update(Product product);

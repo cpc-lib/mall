@@ -45,6 +45,11 @@ public class ProductInternalController {
         return R.ok(productService.list());
     }
 
+    @GetMapping("/products/page")
+    public R<PageVO<Product>> page(@RequestParam int page, @RequestParam int size) {
+        return R.ok(productService.page(page, size));
+    }
+
     @GetMapping("/products/{id}")
     public R<Product> get(@PathVariable Long id) {
         return R.ok(productService.getById(id));

@@ -34,6 +34,19 @@ public class ProductRepositoryImpl implements ProductRepository {
     }
 
     @Override
+    public long countAll() {
+        Long count = productMapper.countAll();
+        return count == null ? 0L : count;
+    }
+
+    @Override
+    public List<Product> findPage(int limit, long offset) {
+        return productMapper.selectProductPage(limit, offset).stream()
+            .map(ProductPOConverter::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
     public void insert(Product product) {
         ProductPO po = ProductPOConverter.toPO(product);
         productMapper.insert(po);
