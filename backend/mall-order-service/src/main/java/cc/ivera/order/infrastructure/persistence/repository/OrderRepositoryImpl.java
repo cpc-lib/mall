@@ -84,19 +84,32 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public List<OrderInfo> listByUserIdCreateTimeDesc(Long userId) {
-        return orderInfoMapper.selectList(new LambdaQueryWrapper<OrderInfoPO>()
-                .eq(OrderInfoPO::getUserId, userId)
-                .orderByDesc(OrderInfoPO::getCreateTime))
+    public List<OrderInfo> listByUserIdPage(Long userId, int limit, long offset) {
+        return orderInfoMapper.selectUserOrderPage(userId, limit, offset)
             .stream().map(OrderInfoPOConverter::toDomain).collect(Collectors.toList());
     }
 
     @Override
+    public long countByUserId(Long userId) {
+        Long count = orderInfoMapper.countUserOrders(userId);
+        return count == null ? 0L : count;
+    }
+
+    @Override
     public List<OrderInfo> searchAdmin(String payStatus, String orderStatus, String fulfillmentStatus,
-                                       String orderNoLike, Long userId, Date startTime, Date endTime) {
+                                       String orderNoLike, Long userId, Date startTime, Date endTime,
+                                       int limit, long offset) {
         return orderInfoMapper.selectAdminOrderList(payStatus, orderStatus, fulfillmentStatus,
-                orderNoLike, userId, startTime, endTime)
+                orderNoLike, userId, startTime, endTime, limit, offset)
             .stream().map(OrderInfoPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countAdminOrders(String payStatus, String orderStatus, String fulfillmentStatus,
+                                 String orderNoLike, Long userId, Date startTime, Date endTime) {
+        Long count = orderInfoMapper.countAdminOrderList(payStatus, orderStatus, fulfillmentStatus,
+                orderNoLike, userId, startTime, endTime);
+        return count == null ? 0L : count;
     }
 
     @Override
@@ -136,6 +149,17 @@ public class OrderRepositoryImpl implements OrderRepository {
     public List<OrderItem> listItemsByOrderNo(String orderNo) {
         return orderItemMapper.selectList(new LambdaQueryWrapper<OrderItemPO>()
                 .eq(OrderItemPO::getOrderNo, orderNo)
+                .orderByAsc(OrderItemPO::getId))
+            .stream().map(OrderItemPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<OrderItem> listItemsByOrderNos(List<String> orderNos) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return List.of();
+        }
+        return orderItemMapper.selectList(new LambdaQueryWrapper<OrderItemPO>()
+                .in(OrderItemPO::getOrderNo, orderNos)
                 .orderByAsc(OrderItemPO::getId))
             .stream().map(OrderItemPOConverter::toDomain).collect(Collectors.toList());
     }

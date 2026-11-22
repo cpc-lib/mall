@@ -6,6 +6,9 @@ import { PAY_LABEL, FULFILLMENT_LABEL, PAY_COLOR, PAYMENT_STATUS_COLOR, ORDER_RE
 
 export default function AdminOrders() {
   const [allOrders, setAllOrders] = useState([])
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [orderFilter, setOrderFilter] = useState({ payStatus: '', orderStatus: '', fulfillmentStatus: '' })
   const [orderNo, setOrderNo] = useState('')
   const [userId, setUserId] = useState('')
@@ -20,8 +23,8 @@ export default function AdminOrders() {
   const [detailRefundOrders, setDetailRefundOrders] = useState([])
   const [detailShipment, setDetailShipment] = useState(null)
   const [shipmentLoading, setShipmentLoading] = useState(false)
-  const loadAllOrders = () => {
-    const params = {}
+  const loadAllOrders = (nextPage = page, nextSize = size) => {
+    const params = { page: nextPage, size: nextSize }
     if (orderFilter.payStatus) params.payStatus = orderFilter.payStatus
     if (orderFilter.orderStatus) params.orderStatus = orderFilter.orderStatus
     if (orderFilter.fulfillmentStatus) params.fulfillmentStatus = orderFilter.fulfillmentStatus
@@ -32,15 +35,19 @@ export default function AdminOrders() {
       params.endTime = dateRange[1].format('YYYY-MM-DD')
     }
     shipmentApi.allOrders(params).then(r => {
-      const list = r.data || []
+      const data = r.data || {}
+      const list = data.records || []
       setAllOrders(list)
+      setTotal(data.total || 0)
+      setPage(data.page || nextPage)
+      setSize(data.size || nextSize)
       setDetailRow(prev => {
         if (!prev) return null
         return list.find(x => x.order.orderNo === prev.order.orderNo) || prev
       })
-    }).catch(() => setAllOrders([]))
+    }).catch(() => { setAllOrders([]); setTotal(0) })
   }
-  useEffect(loadAllOrders, [])
+  useEffect(() => { loadAllOrders(1, 20) }, [])
   const forceClose = async orderNo => { Modal.confirm({ title: '强制关单', content: '将关闭未支付订单并释放预占库存，确认操作？', onOk: async () => { await shipmentApi.forceClose(orderNo); message.success('订单已强制关闭'); loadAllOrders() } }) }
   const markPaid = async orderNo => { Modal.confirm({ title: '标记支付成功', content: '将手动标记该未支付订单为已支付并提交预占库存，确认操作？', onOk: async () => { await shipmentApi.markPaid(orderNo); message.success('订单已标记为支付成功'); loadAllOrders() } }) }
   const channelQuery = async orderNo => {
@@ -159,9 +166,23 @@ export default function AdminOrders() {
       <Input allowClear placeholder="订单号" style={{ width: 190 }} value={orderNo} onChange={e => setOrderNo(e.target.value)} />
       <Input allowClear placeholder="用户编号" style={{ width: 130 }} value={userId} onChange={e => setUserId(e.target.value)} />
       <DatePicker.RangePicker value={dateRange} onChange={setDateRange} format="YYYY-MM-DD" placeholder={['开始日期', '结束日期']} />
-      <Button type="primary" onClick={loadAllOrders}>查询</Button>
+      <Button type="primary" onClick={() => loadAllOrders(1, size)}>查询</Button>
     </Space>
-    <Table rowKey={d => d.order.orderNo} dataSource={allOrders} columns={allOrderCols} size="small" />
+    <Table
+      rowKey={d => d.order.orderNo}
+      dataSource={allOrders}
+      columns={allOrderCols}
+      size="small"
+      pagination={{
+        current: page,
+        pageSize: size,
+        total,
+        showSizeChanger: true,
+        pageSizeOptions: [10, 20, 50, 100],
+        showTotal: t => `共 ${t} 条`,
+        onChange: (nextPage, nextSize) => loadAllOrders(nextPage, nextSize)
+      }}
+    />
     <Drawer open={!!detailRow} width={760} onClose={() => setDetailRow(null)}
       title={o ? `订单详情 - ${o.orderNo}` : '订单详情'}
       footer={<div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

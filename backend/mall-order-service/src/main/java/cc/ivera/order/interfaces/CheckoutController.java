@@ -13,11 +13,11 @@ import cc.ivera.payment.application.dto.PayQueryVO;
 import cc.ivera.payment.application.dto.WxPayNativeVO;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.security.AuthContext;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/checkout")
@@ -45,8 +45,9 @@ public class CheckoutController {
     }
 
     @GetMapping("/orders")
-    public R<List<OrderDetailVO>> list() {
-        return R.ok(checkoutService.listMyOrders(AuthContext.userId()));
+    public R<PageVO<OrderDetailVO>> list(@RequestParam(defaultValue = "1") int page,
+                                         @RequestParam(defaultValue = "20") int size) {
+        return R.ok(checkoutService.listMyOrders(AuthContext.userId(), page, size));
     }
 
     @GetMapping("/orders/{orderNo}")

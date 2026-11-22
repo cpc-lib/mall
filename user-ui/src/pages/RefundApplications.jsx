@@ -11,7 +11,12 @@ export default function RefundApplications() {
   const [editing, setEditing] = useState(null)
   const [reason, setReason] = useState('')
   const [quantities, setQuantities] = useState({})
-  const load = async () => { const [r, o] = await Promise.all([refundApi.mine(), checkoutApi.list()]); setList(r.data || []); setOrders(o.data || []) }
+  // 退款单只用于补全订单明细快照，取最近一页订单即可覆盖当前可见的退款申请
+  const load = async () => {
+    const [r, o] = await Promise.all([refundApi.mine(), checkoutApi.list({ page: 1, size: 100 })])
+    setList(r.data || [])
+    setOrders(o.data?.records || [])
+  }
   useEffect(() => { load() }, [])
   const orderItemMap = useMemo(() => { const m = new Map(); orders.forEach(o => o.items?.forEach(i => m.set(Number(i.id), i))); return m }, [orders])
   const beginEdit = row => { setEditing(row); setReason(row.apply.reason || ''); const next = {}; row.items.forEach(i => { next[i.orderItemId] = i.refundQty }); setQuantities(next) }

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Alert, Button, Descriptions, Empty, InputNumber, Modal, Radio, Tag, Input, message } from 'antd'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, Descriptions, Empty, InputNumber, Modal, Pagination, Radio, Tag, Input, message } from 'antd'
 import { QRCodeSVG } from 'qrcode.react'
 import checkoutApi from '@/api/checkout'
 import refundApi from '@/api/refundApply'
@@ -9,6 +9,10 @@ import { SHIPMENT_LABEL, statusTags } from '@/utils/statusLabels'
 
 export default function OrdersV2() {
   const [orders, setOrders] = useState([])
+  const [page, setPage] = useState(1)
+  const [size] = useState(10)
+  const [total, setTotal] = useState(0)
+  const pageRef = useRef(1)
   const [target, setTarget] = useState(null)
   const [refundType, setRefundType] = useState('REFUND_ONLY')
   const [reason, setReason] = useState('用户申请退款')
@@ -19,23 +23,28 @@ export default function OrdersV2() {
   const [logisticsOrder, setLogisticsOrder] = useState(null)
   const [wxCode, setWxCode] = useState(null)
   const [payQuerying, setPayQuerying] = useState(false)
-  const load = async () => {
-    const o = await checkoutApi.list()
-    setOrders(o.data || [])
+  const load = async (nextPage = pageRef.current) => {
+    const r = await checkoutApi.list({ page: nextPage, size })
+    const data = r.data || {}
+    const next = data.records || []
+    pageRef.current = data.page || nextPage
+    setOrders(next)
+    setTotal(data.total || 0)
+    setPage(data.page || nextPage)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(1) }, [])
   useEffect(() => {
     const hasShipped = orders.some(d => d.order.fulfillmentStatus === 'SHIPPED')
     if (!hasShipped) return
-    const timer = setInterval(load, 15000)
+    const timer = setInterval(() => load(), 15000)
     return () => clearInterval(timer)
   }, [orders])
   useEffect(() => {
     if (!wxCode) return
     const timer = setInterval(async () => {
       try {
-        const o = await checkoutApi.list()
-        const hit = (o.data || []).find(x => x.order.orderNo === wxCode.orderNo)
+        const o = await checkoutApi.list({ page: 1, size })
+        const hit = (o.data?.records || []).find(x => x.order.orderNo === wxCode.orderNo)
         if (hit?.order?.payStatus === 'PAID') {
           clearInterval(timer)
           setWxCode(null)
@@ -152,6 +161,9 @@ export default function OrdersV2() {
             </div>
           </div>
         })}
+      {total > size && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+        <Pagination current={page} pageSize={size} total={total} showSizeChanger={false} onChange={p => load(p)} />
+      </div>}
     </div>
     <Modal open={!!target} title={isRefundOnly ? '申请仅退款' : '分项退款'} onCancel={() => setTarget(null)} onOk={submitRefund} okButtonProps={{ disabled: estimateTotal <= 0 }}>
       {target && <div style={{ marginBottom: 12 }}>

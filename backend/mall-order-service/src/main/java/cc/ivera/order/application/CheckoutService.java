@@ -2,8 +2,7 @@ package cc.ivera.order.application;
 
 import cc.ivera.order.application.dto.CheckoutRequest;
 import cc.ivera.order.application.vo.OrderDetailVO;
-
-import java.util.List;
+import cc.ivera.shared.web.PageVO;
 
 /**
  * 购物车结算/订单查询应用服务。
@@ -14,7 +13,10 @@ public interface CheckoutService {
      */
     OrderDetailVO createOrder(Long userId, String idempotencyKey, CheckoutRequest request);
 
-    List<OrderDetailVO> listMyOrders(Long userId);
+    /**
+     * 用户订单分页（创建时间倒序）。
+     */
+    PageVO<OrderDetailVO> listMyOrders(Long userId, int page, int size);
 
     OrderDetailVO getOrder(Long userId, String orderNo);
 
@@ -24,8 +26,9 @@ public interface CheckoutService {
     void assertOwnership(Long userId, String orderNo);
 
     /**
-     * 管理员查看全部订单（可选状态/订单号/用户编号/下单时间范围筛选）
+     * 管理员查看全部订单（可选状态/订单号/用户编号/下单时间范围筛选，创建时间倒序分页）
      */
-    List<OrderDetailVO> listAllOrders(String payStatus, String orderStatus, String fulfillmentStatus,
-                                      String orderNo, String userId, String startTime, String endTime);
+    PageVO<OrderDetailVO> listAllOrders(String payStatus, String orderStatus, String fulfillmentStatus,
+                                        String orderNo, String userId, String startTime, String endTime,
+                                        int page, int size);
 }

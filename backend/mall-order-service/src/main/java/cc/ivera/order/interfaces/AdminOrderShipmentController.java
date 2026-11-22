@@ -16,6 +16,7 @@ import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.api.payment.PaymentOrderQueryApi;
 import cc.ivera.payment.application.dto.ChannelOrderQueryVO;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -63,18 +64,20 @@ public class AdminOrderShipmentController {
         return R.ok(orderInfoService.listWaitShipOrders());
     }
 
-    @Operation(summary = "全部订单列表（管理员，可选状态/订单号/用户编号/下单时间范围筛选）")
+    @Operation(summary = "全部订单列表（管理员，可选状态/订单号/用户编号/下单时间范围筛选，分页）")
     @GetMapping("/all")
-    public R<List<OrderDetailVO>> allOrders(
+    public R<PageVO<OrderDetailVO>> allOrders(
         @RequestParam(value = "payStatus", required = false) String payStatus,
         @RequestParam(value = "orderStatus", required = false) String orderStatus,
         @RequestParam(value = "fulfillmentStatus", required = false) String fulfillmentStatus,
         @RequestParam(value = "orderNo", required = false) String orderNo,
         @RequestParam(value = "userId", required = false) String userId,
         @RequestParam(value = "startTime", required = false) String startTime,
-        @RequestParam(value = "endTime", required = false) String endTime) {
+        @RequestParam(value = "endTime", required = false) String endTime,
+        @RequestParam(value = "page", defaultValue = "1") int page,
+        @RequestParam(value = "size", defaultValue = "20") int size) {
         return R.ok(checkoutService.listAllOrders(payStatus, orderStatus, fulfillmentStatus,
-            orderNo, userId, startTime, endTime));
+            orderNo, userId, startTime, endTime, page, size));
     }
 
     @Operation(summary = "强制关单（仅未支付/支付中订单，释放预占库存）")

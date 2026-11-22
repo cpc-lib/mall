@@ -47,7 +47,7 @@ interfaces → application → domain ← infrastructure
 
 ### 2.2 管理后台
 
-- 订单列表、订单详情、状态筛选。
+- 订单列表（服务端分页）、订单详情、状态筛选。
 - 待发货订单、模拟发货。
 - 强制关单、渠道查单、标记线下已付款。
 - 支付尝试记录查看。
@@ -789,7 +789,7 @@ http://localhost:3002
 
 ### 后端
 
-后端当前不包含自动化测试代码（所有模块的 `src/test` 已移除），变更验证以编译通过为准：
+后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现）。测试均为纯域单测，不启动 Spring 上下文、不依赖 DM8。其余模块仍无测试，编译通过是基础门槛：
 
 ```powershell
 cd backend
@@ -814,6 +814,10 @@ npm run build
 ```
 
 当前 `admin-ui` 暂无独立自动化逻辑测试。
+
+### CI
+
+`.github/workflows/ci.yml` 在 push 到 `main` 与 PR 时执行：后端 `mvn -B clean test`（JDK 21），以及 `user-ui` / `admin-ui` 的 `npm ci`、`npm run build`，其中 `user-ui` 额外执行 `npm run test:logic`。流水线不启动 DM8 / Redis / RabbitMQ，因此只覆盖编译与纯域单测。
 
 ## 12. 重要接口分组
 
@@ -1173,7 +1177,7 @@ infrastructure ─────┘
 - 禁止跨上下文依赖对方 `domain.repository`：表的写入权限只属于拥有方。
 - 跨上下文 DTO 放提供方 `application.dto`，不得放 `interfaces` 层。
 
-以上规则由人工与代码评审保证；原 ArchUnit `ContextBoundaryTest` 已随 `src/test` 移除，重新引入测试时应恢复该边界校验。
+以上规则由人工与代码评审保证；`mall-refund-service` 已恢复 ArchUnit 边界校验 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / infrastructure / interfaces / application），其余上下文仍依赖代码评审，后续可按同一模板补充。
 
 禁止：
 
@@ -2208,10 +2212,10 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | Controller | 前缀 | 主要职责 |
 |---|---|---|
-| `CheckoutController` | `/api/checkout` | 下单（必填 `Idempotency-Key`）、订单详情/列表、支付入口、用户查单 |
+| `CheckoutController` | `/api/checkout` | 下单（必填 `Idempotency-Key`）、订单详情/列表（`page`/`size` 服务端分页）、支付入口、用户查单 |
 | `OrderInfoController` | `/api/order-info` | 订单列表/渠道状态查询 |
 | `OrderShipmentController` | `/api/order` | 物流、确认收货 |
-| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单、待发货、发货、线下收款、强制关单、渠道查单、订单物流信息（`/{orderNo}/shipment`，管理端订单详情按需加载） |
+| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单（`page`/`size` 服务端分页，返回 `total`）、待发货、发货、线下收款、强制关单、渠道查单、订单物流信息（`/{orderNo}/shipment`，管理端订单详情按需加载） |
 
 `OrderInternalController` 暴露 `/internal/order/**`，供支付/退款服务读取订单、冻结/释放退款额度、补库存守卫与关单。
 
@@ -2371,7 +2375,7 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端当前不包含自动化测试代码（所有模块的 `src/test` 已移除），变更验证以 `mvn clean test` 编译通过为准。
+后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）。两者均为纯域单测，不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
 
 命令：
 

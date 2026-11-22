@@ -10,11 +10,13 @@ import cc.ivera.order.domain.model.OrderItem;
 import cc.ivera.order.domain.repository.OrderRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
+import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class CheckoutServiceImpl implements CheckoutService {
@@ -61,17 +63,21 @@ public class CheckoutServiceImpl implements CheckoutService {
     }
 
     @Override
-    public List<OrderDetailVO> listMyOrders(Long userId) {
-        List<OrderDetailVO> list = new ArrayList<>();
-        for (OrderInfo order : orderRepository.listByUserIdCreateTimeDesc(userId)) {
-            list.add(detail(order, items(order.getOrderNo())));
+    public PageVO<OrderDetailVO> listMyOrders(Long userId, int page, int size) {
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        long total = orderRepository.countByUserId(userId);
+        List<OrderDetailVO> records = Collections.emptyList();
+        if (total > 0) {
+            records = toDetails(orderRepository.listByUserIdPage(userId, safeSize, (long) (safePage - 1) * safeSize));
         }
-        return list;
+        return page(total, safePage, safeSize, records);
     }
 
     @Override
-    public List<OrderDetailVO> listAllOrders(String payStatus, String orderStatus, String fulfillmentStatus,
-                                             String orderNo, String userId, String startTime, String endTime) {
+    public PageVO<OrderDetailVO> listAllOrders(String payStatus, String orderStatus, String fulfillmentStatus,
+                                               String orderNo, String userId, String startTime, String endTime,
+                                               int page, int size) {
         String orderNoLike = (orderNo != null && !orderNo.trim().isEmpty()) ? "%" + orderNo.trim() + "%" : null;
         Long userIdValue = null;
         if (userId != null && !userId.trim().isEmpty()) {
@@ -84,12 +90,17 @@ public class CheckoutServiceImpl implements CheckoutService {
         Date start = parseFilterTime(startTime, " 00:00:00", "开始时间");
         Date end = parseFilterTime(endTime, " 23:59:59", "结束时间");
         if (start != null && end != null && start.after(end)) throw new BizException("开始时间不能晚于结束时间");
-        List<OrderDetailVO> list = new ArrayList<>();
-        for (OrderInfo order : orderRepository.searchAdmin(
-            payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end)) {
-            list.add(detail(order, items(order.getOrderNo())));
+        int safePage = Math.max(1, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        long total = orderRepository.countAdminOrders(
+            payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end);
+        List<OrderDetailVO> records = Collections.emptyList();
+        if (total > 0) {
+            records = toDetails(orderRepository.searchAdmin(
+                payStatus, orderStatus, fulfillmentStatus, orderNoLike, userIdValue, start, end,
+                safeSize, (long) (safePage - 1) * safeSize));
         }
-        return list;
+        return page(total, safePage, safeSize, records);
     }
 
     @Override
@@ -109,6 +120,32 @@ public class CheckoutServiceImpl implements CheckoutService {
 
     private List<OrderItem> items(String orderNo) {
         return orderRepository.listItemsByOrderNo(orderNo);
+    }
+
+    /**
+     * 整页订单一次批量取明细后按订单号分组，避免逐单查询（N+1）。
+     */
+    private List<OrderDetailVO> toDetails(List<OrderInfo> orders) {
+        if (orders.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> orderNos = orders.stream().map(OrderInfo::getOrderNo).collect(Collectors.toList());
+        Map<String, List<OrderItem>> itemsByOrder = orderRepository.listItemsByOrderNos(orderNos).stream()
+            .collect(Collectors.groupingBy(OrderItem::getOrderNo));
+        List<OrderDetailVO> list = new ArrayList<>(orders.size());
+        for (OrderInfo order : orders) {
+            list.add(detail(order, itemsByOrder.getOrDefault(order.getOrderNo(), Collections.emptyList())));
+        }
+        return list;
+    }
+
+    private PageVO<OrderDetailVO> page(long total, int page, int size, List<OrderDetailVO> records) {
+        PageVO<OrderDetailVO> vo = new PageVO<>();
+        vo.setTotal(total);
+        vo.setPage(page);
+        vo.setSize(size);
+        vo.setRecords(records);
+        return vo;
     }
 
     private OrderDetailVO detail(OrderInfo o, List<OrderItem> i) {

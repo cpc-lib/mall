@@ -41,15 +41,27 @@ public interface OrderRepository {
     List<OrderInfo> listAllByCreateTimeDesc();
 
     /**
-     * 用户订单按创建时间倒序。
+     * 用户订单分页：按创建时间倒序，LIMIT/OFFSET 由调用方换算。
      */
-    List<OrderInfo> listByUserIdCreateTimeDesc(Long userId);
+    List<OrderInfo> listByUserIdPage(Long userId, int limit, long offset);
+
+    /**
+     * 用户订单总数（与 {@link #listByUserIdPage} 口径一致）。
+     */
+    long countByUserId(Long userId);
 
     /**
      * 管理员订单动态条件查询（状态等值/订单号模糊/用户精确/创建时间闭区间，全部可选），创建时间倒序。
      */
     List<OrderInfo> searchAdmin(String payStatus, String orderStatus, String fulfillmentStatus,
-                                String orderNoLike, Long userId, Date startTime, Date endTime);
+                                String orderNoLike, Long userId, Date startTime, Date endTime,
+                                int limit, long offset);
+
+    /**
+     * 管理员订单总数：筛选条件与 {@link #searchAdmin} 完全一致。
+     */
+    long countAdminOrders(String payStatus, String orderStatus, String fulfillmentStatus,
+                          String orderNoLike, Long userId, Date startTime, Date endTime);
 
     /**
      * 待发货订单：已支付 + 待发货 + 无退款（refund_status 为空或 NONE），按支付时间升序。
@@ -65,6 +77,11 @@ public interface OrderRepository {
      * 订单明细按 id 升序。
      */
     List<OrderItem> listItemsByOrderNo(String orderNo);
+
+    /**
+     * 批量按订单号查询明细（按 id 升序），用于列表页一次取回整页明细，避免逐单查询。
+     */
+    List<OrderItem> listItemsByOrderNos(List<String> orderNos);
 
     /**
      * 按 id 查询单条订单明细，不存在返回 null。

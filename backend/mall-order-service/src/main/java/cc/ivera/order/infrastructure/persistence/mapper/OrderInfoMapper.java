@@ -12,8 +12,20 @@ import java.util.List;
 public interface OrderInfoMapper extends BaseMapper<OrderInfoPO> {
 
     /**
+     * 用户订单分页：按创建时间倒序，LIMIT/OFFSET 由服务端换算。
+     */
+    List<OrderInfoPO> selectUserOrderPage(@Param("userId") Long userId,
+                                          @Param("limit") int limit,
+                                          @Param("offset") long offset);
+
+    /**
+     * 用户订单总数。
+     */
+    Long countUserOrders(@Param("userId") Long userId);
+
+    /**
      * 管理员全部订单动态条件查询（XML 动态 SQL）：支付/生命周期/履约状态等值、订单号模糊、
-     * 用户编号精确、创建时间闭区间，全部可选；按创建时间倒序。
+     * 用户编号精确、创建时间闭区间，全部可选；按创建时间倒序，LIMIT/OFFSET 分页。
      */
     List<OrderInfoPO> selectAdminOrderList(@Param("payStatus") String payStatus,
                                            @Param("orderStatus") String orderStatus,
@@ -21,7 +33,20 @@ public interface OrderInfoMapper extends BaseMapper<OrderInfoPO> {
                                            @Param("orderNoLike") String orderNoLike,
                                            @Param("userId") Long userId,
                                            @Param("startTime") Date startTime,
-                                           @Param("endTime") Date endTime);
+                                           @Param("endTime") Date endTime,
+                                           @Param("limit") int limit,
+                                           @Param("offset") long offset);
+
+    /**
+     * 管理员订单总数：筛选条件与 {@link #selectAdminOrderList} 完全一致。
+     */
+    Long countAdminOrderList(@Param("payStatus") String payStatus,
+                             @Param("orderStatus") String orderStatus,
+                             @Param("fulfillmentStatus") String fulfillmentStatus,
+                             @Param("orderNoLike") String orderNoLike,
+                             @Param("userId") Long userId,
+                             @Param("startTime") Date startTime,
+                             @Param("endTime") Date endTime);
 
     /**
      * 查询指定商品 + 支付方式下最新的一笔未支付订单（V1 语义，legacy_status=NOTPAY），不加锁。
