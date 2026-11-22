@@ -120,6 +120,10 @@ FROM USER_TAB_COLUMNS
 WHERE TABLE_NAME IN ('T_REFUND_ORDER', 'T_BILL_RECONCILE_DISCREPANCY')
   AND COLUMN_NAME IN ('GOODS_DISPOSITION', 'LOCAL_BIZ_NO', 'LOCAL_LEDGER_NO', 'LOCAL_SERIAL_NO');
 
+SELECT COLUMN_NAME
+FROM USER_TAB_COLUMNS
+WHERE TABLE_NAME = 'T_REFUND_INFO' AND COLUMN_NAME = 'FENCE_TOKEN';
+
 SELECT INDEX_NAME
 FROM USER_INDEXES
 WHERE INDEX_NAME IN ('IDX_PAYMENT_ORDER_CHANNEL_STATUS_PAID_TIME', 'IDX_REFUND_ORDER_STATUS_SUCCESS_TIME');
@@ -128,6 +132,9 @@ WHERE INDEX_NAME IN ('IDX_PAYMENT_ORDER_CHANNEL_STATUS_PAID_TIME', 'IDX_REFUND_O
 仅对缺失对象执行一次：
 
 ```sql
+ALTER TABLE t_refund_info ADD fence_token BIGINT DEFAULT 0 NOT NULL;
+COMMENT ON COLUMN t_refund_info.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
+
 ALTER TABLE t_refund_order ADD goods_disposition VARCHAR(20);
 COMMENT ON COLUMN t_refund_order.goods_disposition IS '已发货退款商品去向：LOST-商品丢失/无法回收，RECOVERED-商品已全部回收';
 
@@ -144,4 +151,4 @@ CREATE INDEX idx_refund_order_status_success_time
 ON t_refund_order(status, success_time);
 ```
 
-三个 `local_*` 字段用于差异单同时保留渠道侧与平台侧凭证；两个组合索引用于按 `Asia/Shanghai` 账单日扫描支付成功时间/退款成功时间。已经存在的对象不要重复执行对应 DDL。全新数据库直接执行最新 `backend/env/sql/dm8/schema.sql`。
+三个 `local_*` 字段用于差异单同时保留渠道侧与平台侧凭证；两个组合索引用于按 `Asia/Shanghai` 账单日扫描支付成功时间/退款成功时间；`t_refund_info.fence_token` 用于渠道退款状态推进的围栏 CAS。已经存在的对象不要重复执行对应 DDL。全新数据库直接执行最新 `backend/env/sql/dm8/schema.sql`。

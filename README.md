@@ -1625,7 +1625,7 @@ flowchart TD
 - 加锁成功后才 `INCR lock:fence:seq` 生成**全局**围栏令牌，`EXPIRE` 30 天（首次使用以当前毫秒时间初始化）；令牌全局单调递增，保证后拿锁者一定拥有更大令牌。同一聚合会被不同业务键的锁先后推进（支付→发货→收货→退款受理），令牌必须跨键可比，否则新锁拿到的令牌可能小于行上已有令牌，合法 CAS 会被静默丢弃。
 - 业务事务内的 Repository 从 `FenceTokenHolder.get()` 读取令牌并传给 Mapper，由 Mapper 追加 `SET fence_token = newToken` 与 `WHERE ... AND fence_token <= newToken`。用 `<=` 是因为同一把锁内会连续推进多次状态（如退款单创建后立即定价、受理后立即发起渠道退款），首次 UPDATE 已将行令牌写成当前令牌；陈旧持有者的令牌更小，仍会被拒绝。
 - 未持锁时 `FenceTokenHolder.get()` 返回 `null`，围栏条件自动跳过，不影响无锁场景的正常更新。
-- 含 `fence_token` 列的核心聚合表：`t_order_info`、`t_payment_order`、`t_refund_order`、`t_bill_import`。
+- 含 `fence_token` 列的核心聚合表：`t_order_info`、`t_payment_order`、`t_refund_order`、`t_refund_info`、`t_bill_import`。
 - 拿不到锁是快速失败（抛 `BizException`），不进入自旋重试；重试与结果回放由上层幂等键、状态机负责。
 - `InterruptedException` 先 `Thread.currentThread().interrupt()` 再包装抛出，避免中断信号丢失。
 - 本项目禁止用 `select ... for update` 作为并发主方案：远程渠道调用期间不得长时间持有数据库行锁。
@@ -1757,6 +1757,9 @@ cc.ivera.api.payment.PaymentChannelRefundApi
 - P5 物理拆分后退款服务通过 `PaymentChannelRefundRemoteAdapter` 调用同一契约；微信退款通知链路为
   `WxPayRefundNotifyController → PaymentChannelRefundApi.processRefundNotify → RefundApplicationService.applyRefundSync`，
   锁键保持 `payment:wx:notify:refund:<refundNo>`。
+- 发起渠道退款必须与退款状态推进处于同一把分布式锁内：管理端受理/签收/重试在 `refund:accept|confirm-return|retry:<refundNo>` 锁内执行，
+  未发货取消的自动受理在 `refund:create:<orderNo>` 锁内完成事务提交与渠道调用，避免事务提交后锁已释放导致同一退款单被并发重复提交渠道。
+- `t_refund_info` 持有 `fence_token`，状态推进 UPDATE 同样带 `fence_token <= newToken` 围栏 CAS。
 
 ### 15.10 RabbitMQ 设计
 
@@ -2427,6 +2430,7 @@ NOTPAY 不能被无条件更新
 服务端 RefundPolicy 是金额权威
 受理阶段冻结额度
 渠道退款只能经 PaymentChannelRefundApi
+渠道退款调用不脱离状态推进的分布式锁
 ```
 
 #### 15.20.5 MQ

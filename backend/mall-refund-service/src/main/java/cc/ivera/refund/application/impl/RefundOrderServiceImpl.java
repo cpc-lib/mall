@@ -112,12 +112,15 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     @Override
     public RefundApplyVO create(Long userId, RefundApplyRequest request) {
         RefundInfo[] channelHolder = new RefundInfo[1];
-        RefundApplyVO vo = lockTemplate.execute("refund:create:" + request.getOrderNo(), 5000L, () ->
-            tx.execute(s -> doCreate(userId, request, null, channelHolder)));
-        if (channelHolder[0] != null) {
-            executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
-        }
-        return vo;
+        // 自动受理（CANCEL_BEFORE_SHIP）会立即发起渠道退款：渠道调用必须留在锁内，
+        // 否则事务提交后锁已释放，并发请求可能对同一退款单重复提交渠道退款。
+        return lockTemplate.execute("refund:create:" + request.getOrderNo(), 5000L, () -> {
+            RefundApplyVO vo = tx.execute(s -> doCreate(userId, request, null, channelHolder));
+            if (channelHolder[0] != null) {
+                executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
+            }
+            return vo;
+        });
     }
 
     @Override
@@ -140,12 +143,14 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     @Override
     public RefundApplyVO cancelPaidOrder(Long userId, String orderNo) {
         RefundInfo[] channelHolder = new RefundInfo[1];
-        RefundApplyVO vo = lockTemplate.execute("refund:create:" + orderNo, 5000L, () ->
-            tx.execute(s -> doCancelPaidOrder(userId, orderNo, channelHolder)));
-        if (channelHolder[0] != null) {
-            executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
-        }
-        return vo;
+        // 与 create 一致：未发货取消会自动受理并发起渠道退款，渠道调用必须留在锁内。
+        return lockTemplate.execute("refund:create:" + orderNo, 5000L, () -> {
+            RefundApplyVO vo = tx.execute(s -> doCancelPaidOrder(userId, orderNo, channelHolder));
+            if (channelHolder[0] != null) {
+                executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
+            }
+            return vo;
+        });
     }
 
     @Override

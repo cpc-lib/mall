@@ -446,6 +446,7 @@ CREATE TABLE t_refund_info
     refund_status   VARCHAR(30),
     content_return  CLOB,
     content_notify  CLOB,
+    fence_token     BIGINT DEFAULT 0 NOT NULL,
     create_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_refund_info PRIMARY KEY (id),
@@ -481,6 +482,8 @@ COMMENT
 ON COLUMN t_refund_info.content_return IS '申请退款返回参数';
 COMMENT
 ON COLUMN t_refund_info.content_notify IS '退款结果通知参数';
+COMMENT
+ON COLUMN t_refund_info.fence_token IS '围栏令牌：Redis全局锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件，防止锁过期/异步复制后旧持有者覆盖新数据';
 
 CREATE INDEX idx_refund_order_approval_status ON t_refund_info (order_no, approval_status);
 CREATE INDEX idx_refund_info_order_refund_status ON t_refund_info (order_no, refund_status);

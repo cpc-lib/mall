@@ -7,6 +7,7 @@ import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.refund.infrastructure.persistence.converter.RefundInfoPOConverter;
 import cc.ivera.refund.infrastructure.persistence.mapper.RefundInfoMapper;
 import cc.ivera.refund.infrastructure.persistence.po.RefundInfoPO;
+import cc.ivera.shared.domain.lock.FenceTokenHolder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Repository;
@@ -31,6 +32,7 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
     @Override
     public void save(RefundInfo refundInfo) {
         RefundInfoPO po = RefundInfoPOConverter.toPO(refundInfo);
+        po.setFenceToken(FenceTokenHolder.get());
         refundInfoMapper.insert(po);
         refundInfo.setId(po.getId());
         refundInfo.setCreateTime(po.getCreateTime());
@@ -79,12 +81,13 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
         if (contentNotify != null) {
             wrapper.set(RefundInfoPO::getContentNotify, contentNotify);
         }
+        applyFence(wrapper);
         return refundInfoMapper.update(null, wrapper) > 0;
     }
 
     @Override
     public boolean casApprovalPassed(String refundNo, String approveRemark, Date approvedTime) {
-        return refundInfoMapper.update(null, new LambdaUpdateWrapper<RefundInfoPO>()
+        LambdaUpdateWrapper<RefundInfoPO> wrapper = new LambdaUpdateWrapper<RefundInfoPO>()
             .eq(RefundInfoPO::getRefundNo, refundNo)
             .eq(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.PENDING.getType())
             .in(RefundInfoPO::getRefundStatus,
@@ -93,18 +96,22 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
                 RefundStatus.ABNORMAL.getType())
             .set(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.APPROVED.getType())
             .set(RefundInfoPO::getApproveRemark, approveRemark)
-            .set(RefundInfoPO::getApprovedTime, approvedTime)) > 0;
+            .set(RefundInfoPO::getApprovedTime, approvedTime);
+        applyFence(wrapper);
+        return refundInfoMapper.update(null, wrapper) > 0;
     }
 
     @Override
     public boolean casApprovalRejected(String refundNo, String approveRemark, Date approvedTime) {
-        return refundInfoMapper.update(null, new LambdaUpdateWrapper<RefundInfoPO>()
+        LambdaUpdateWrapper<RefundInfoPO> wrapper = new LambdaUpdateWrapper<RefundInfoPO>()
             .eq(RefundInfoPO::getRefundNo, refundNo)
             .eq(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.PENDING.getType())
             .set(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.REJECTED.getType())
             .set(RefundInfoPO::getApproveRemark, approveRemark)
             .set(RefundInfoPO::getApprovedTime, approvedTime)
-            .set(RefundInfoPO::getRefundStatus, RefundStatus.CLOSED.getType())) > 0;
+            .set(RefundInfoPO::getRefundStatus, RefundStatus.CLOSED.getType());
+        applyFence(wrapper);
+        return refundInfoMapper.update(null, wrapper) > 0;
     }
 
     @Override
@@ -113,8 +120,22 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
         String refundNo = patch.getRefundNo();
         // refundNo 仅作 WHERE 条件，不进 SET（与原实体更新一致：补丁对象不回流退款单号）。
         po.setRefundNo(null);
-        refundInfoMapper.update(po, new LambdaUpdateWrapper<RefundInfoPO>()
-            .eq(RefundInfoPO::getRefundNo, refundNo));
+        LambdaUpdateWrapper<RefundInfoPO> wrapper = new LambdaUpdateWrapper<RefundInfoPO>()
+            .eq(RefundInfoPO::getRefundNo, refundNo);
+        applyFence(wrapper);
+        refundInfoMapper.update(po, wrapper);
+    }
+
+    /**
+     * 持锁时追加围栏 CAS：SET fence_token = newToken 与 WHERE fence_token &lt;= newToken。
+     * 同一把锁内允许连续多次推进；未持锁时跳过，不影响无锁场景。
+     */
+    private static void applyFence(LambdaUpdateWrapper<RefundInfoPO> wrapper) {
+        Long fenceToken = FenceTokenHolder.get();
+        if (fenceToken != null) {
+            wrapper.le(RefundInfoPO::getFenceToken, fenceToken);
+            wrapper.set(RefundInfoPO::getFenceToken, fenceToken);
+        }
     }
 
     @Override

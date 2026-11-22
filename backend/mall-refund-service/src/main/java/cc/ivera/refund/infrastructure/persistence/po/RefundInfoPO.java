@@ -37,4 +37,6 @@ public class RefundInfoPO extends BaseEntity {
     private String contentReturn;//申请退款返回参数
 
     private String contentNotify;//退款结果通知参数
+
+    private Long fenceToken;//围栏令牌：Redis锁单调递增令牌，状态推进UPDATE携带 fence_token <= newToken 条件
 }

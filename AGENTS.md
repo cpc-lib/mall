@@ -118,6 +118,7 @@ WHERE available_stock >= qty
 - 最后一件商品允许按服务端规则处理金额尾差。
 - `order_item.restocked_qty` 的累加守卫属于退款调用方：退款受理时先调用 `OrderRefundQuotaApi.addRestockedQty` 做 CAS 守卫，再调用商品服务的回补/核销接口；商品服务不得反向读取订单表判断可回补上限。
 - 渠道退款唯一入口是 `cc.ivera.api.payment.PaymentChannelRefundApi`；`payment` 上下文不得引用退款仓储、`RefundInfoService` 或写 `t_refund_*`，退款成功/处理中/失败由退款域回写。
+- 发起渠道退款必须与退款状态推进处于同一把分布式锁内，禁止“事务提交后已释放锁再调渠道”，避免同一退款单被并发重复提交渠道。
 
 ### 5.5 账账核对不变量
 
@@ -148,7 +149,7 @@ CAS 条件更新（含 fence_token <= newToken 围栏 CAS）
 
 **分布式锁机制**：`DistributedLockTemplate.execute(lockKey, waitTimeMillis, supplier)` 统一使用 Redisson watchdog（`leaseTime = -1`，持有期间自动续期，调用方无需指定过期时间）。加锁成功后通过 Redis `INCR lock:fence:seq` 生成**全局**单调递增围栏令牌，写入 `FenceTokenHolder`（ThreadLocal）。令牌必须全局递增：同一聚合会被不同业务键的锁先后推进（支付→发货→收货→退款受理），按锁键各自计数会让新锁拿到的令牌小于行上已有令牌，导致合法 CAS 被静默丢弃。
 
-**Fence 围栏令牌**：核心聚合表（`t_order_info`、`t_payment_order`、`t_refund_order`、`t_bill_import`）均含 `fence_token BIGINT DEFAULT 0` 列。状态推进 UPDATE 在持锁时追加 `SET fence_token = #{fenceToken}` 与 `WHERE ... AND fence_token <= #{fenceToken}`，确保锁过期（异步复制延迟、进程停顿、GC 等）后旧持有者的写入被新持有者的更高令牌拒绝；同一把锁内允许连续多次推进（首次 UPDATE 已把行令牌写成当前令牌，用严格 `<` 会让同锁内的第二次更新静默失效）。未持锁时 `FenceTokenHolder.get()` 返回 null，围栏 CAS 自动跳过，不影响无锁场景的正常更新。
+**Fence 围栏令牌**：核心聚合表（`t_order_info`、`t_payment_order`、`t_refund_order`、`t_refund_info`、`t_bill_import`）均含 `fence_token BIGINT DEFAULT 0` 列。状态推进 UPDATE 在持锁时追加 `SET fence_token = #{fenceToken}` 与 `WHERE ... AND fence_token <= #{fenceToken}`，确保锁过期（异步复制延迟、进程停顿、GC 等）后旧持有者的写入被新持有者的更高令牌拒绝；同一把锁内允许连续多次推进（首次 UPDATE 已把行令牌写成当前令牌，用严格 `<` 会让同锁内的第二次更新静默失效）。未持锁时 `FenceTokenHolder.get()` 返回 null，围栏 CAS 自动跳过，不影响无锁场景的正常更新。
 
 ### 5.7 购物车持久化
 
