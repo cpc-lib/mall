@@ -1,5 +1,6 @@
 package cc.ivera.shared.infrastructure.mq;
 
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -19,14 +20,21 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(prefix = "local-message", name = "relay-enabled", havingValue = "true", matchIfMissing = true)
 public class LocalMessageSendJob {
 
-    private final LocalMessageService localMessageService;
+    private static final String LOCK_KEY = "scheduler:local-message-send";
 
-    public LocalMessageSendJob(LocalMessageService localMessageService) {
+    private final LocalMessageService localMessageService;
+    private final DistributedLockTemplate lockTemplate;
+
+    public LocalMessageSendJob(LocalMessageService localMessageService,
+                               DistributedLockTemplate lockTemplate) {
         this.localMessageService = localMessageService;
+        this.lockTemplate = lockTemplate;
     }
 
     @Scheduled(fixedDelay = 30000)
     public void publishPendingMessages() {
-        localMessageService.publishPending();
+        if (!lockTemplate.tryExecute(LOCK_KEY, () -> localMessageService.publishPending())) {
+            log.debug("LocalMessageSendJob 抢锁失败，跳过本轮投递");
+        }
     }
 }

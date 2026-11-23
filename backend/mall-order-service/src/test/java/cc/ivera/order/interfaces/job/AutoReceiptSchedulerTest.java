@@ -3,6 +3,7 @@ package cc.ivera.order.interfaces.job;
 import cc.ivera.order.application.ShipmentService;
 import cc.ivera.order.domain.model.OrderShipment;
 import cc.ivera.order.domain.repository.OrderShipmentRepository;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import org.junit.jupiter.api.Test;
 
 import java.util.Date;
@@ -21,10 +22,13 @@ class AutoReceiptSchedulerTest {
     void confirmsEveryOverdueShipmentThroughExistingReceiptChain() {
         OrderShipmentRepository repository = mock(OrderShipmentRepository.class);
         ShipmentService shipmentService = mock(ShipmentService.class);
+        DistributedLockTemplate lockTemplate = mock(DistributedLockTemplate.class);
+        when(lockTemplate.tryExecute(any(String.class), any(Runnable.class)))
+            .thenAnswer(invocation -> { invocation.getArgument(1, Runnable.class).run(); return true; });
         when(repository.listAutoReceiptCandidates(any(Date.class), eq(200)))
             .thenReturn(List.of(shipment("ORD-1"), shipment("ORD-2")));
 
-        new AutoReceiptScheduler(repository, shipmentService, 60_000L).scan();
+        new AutoReceiptScheduler(repository, shipmentService, lockTemplate, 60_000L).scan();
 
         verify(shipmentService).confirmReceipt("ORD-1");
         verify(shipmentService).confirmReceipt("ORD-2");
@@ -34,12 +38,15 @@ class AutoReceiptSchedulerTest {
     void singleFailureDoesNotBlockRemainingShipments() {
         OrderShipmentRepository repository = mock(OrderShipmentRepository.class);
         ShipmentService shipmentService = mock(ShipmentService.class);
+        DistributedLockTemplate lockTemplate = mock(DistributedLockTemplate.class);
+        when(lockTemplate.tryExecute(any(String.class), any(Runnable.class)))
+            .thenAnswer(invocation -> { invocation.getArgument(1, Runnable.class).run(); return true; });
         when(repository.listAutoReceiptCandidates(any(Date.class), eq(200)))
             .thenReturn(List.of(shipment("ORD-1"), shipment("ORD-2")));
         doThrow(new IllegalStateException("concurrent status change"))
             .when(shipmentService).confirmReceipt("ORD-1");
 
-        new AutoReceiptScheduler(repository, shipmentService, 60_000L).scan();
+        new AutoReceiptScheduler(repository, shipmentService, lockTemplate, 60_000L).scan();
 
         verify(shipmentService).confirmReceipt("ORD-1");
         verify(shipmentService).confirmReceipt("ORD-2");

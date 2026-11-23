@@ -146,22 +146,14 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
 
     @Override
     public List<RefundInfo> listProcessingApproved() {
+        // 移除 DM8 LIMIT 兼容性 catch 回退：DM8 原生支持 LIMIT，catch 一旦触发会跑不带 LIMIT 的全表扫描
         LambdaQueryWrapper<RefundInfoPO> q = new LambdaQueryWrapper<RefundInfoPO>()
             .eq(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.APPROVED.getType())
             .eq(RefundInfoPO::getRefundStatus, RefundStatus.PROCESSING.getType())
             .orderByAsc(RefundInfoPO::getCreateTime)
             .last("limit 100");
-        List<RefundInfoPO> rows;
-        try {
-            rows = refundInfoMapper.selectList(q);
-        } catch (RuntimeException dmLimitSyntax) {
-            // DM8 对 LIMIT 语法兼容性依赖模式；退化为不带 LIMIT 的扫描，不改变业务时序。
-            rows = refundInfoMapper.selectList(new LambdaQueryWrapper<RefundInfoPO>()
-                .eq(RefundInfoPO::getApprovalStatus, RefundApprovalStatus.APPROVED.getType())
-                .eq(RefundInfoPO::getRefundStatus, RefundStatus.PROCESSING.getType())
-                .orderByAsc(RefundInfoPO::getCreateTime));
-        }
-        return rows.stream().map(RefundInfoPOConverter::toDomain).collect(Collectors.toList());
+        return refundInfoMapper.selectList(q).stream()
+            .map(RefundInfoPOConverter::toDomain).collect(Collectors.toList());
     }
 
     @Override

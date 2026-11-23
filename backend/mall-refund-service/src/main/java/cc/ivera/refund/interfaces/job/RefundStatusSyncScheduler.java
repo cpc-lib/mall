@@ -3,6 +3,7 @@ package cc.ivera.refund.interfaces.job;
 import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.repository.RefundInfoRepository;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,20 +20,25 @@ import java.util.List;
  * <p>
  * 幂等性：queryRefundStatus 按退款单号加分布式锁，内部为状态 CAS 更新（updateRefundIfStatusIn），
  * 与 MQ 消费并发执行安全，重复对账无副作用。
+ * 进程级去重：调度器入口 tryExecute 确保集群多节点只有一个实例执行，避免 DB 层重复遍历开销。
  */
 @Component
 @Slf4j
 @ConditionalOnProperty(name = "refund.status-sync-enabled", matchIfMissing = true)
 public class RefundStatusSyncScheduler {
 
-    private final RefundInfoRepository refundInfoRepository;
+    private static final String LOCK_KEY = "scheduler:refund-status-sync";
 
+    private final RefundInfoRepository refundInfoRepository;
     private final RefundApplicationService refundApplicationService;
+    private final DistributedLockTemplate lockTemplate;
 
     public RefundStatusSyncScheduler(RefundInfoRepository refundInfoRepository,
-                                     RefundApplicationService refundApplicationService) {
+                                     RefundApplicationService refundApplicationService,
+                                     DistributedLockTemplate lockTemplate) {
         this.refundInfoRepository = refundInfoRepository;
         this.refundApplicationService = refundApplicationService;
+        this.lockTemplate = lockTemplate;
     }
 
     /**
@@ -41,13 +47,17 @@ public class RefundStatusSyncScheduler {
      */
     @Scheduled(fixedDelayString = "${payment.refund.status-sync-scan-ms:60000}")
     public void scan() {
-        List<RefundInfo> refunds = refundInfoRepository.listProcessingApproved();
-        for (RefundInfo refundInfo : refunds) {
-            try {
-                refundApplicationService.queryRefundStatus(refundInfo.getRefundNo());
-            } catch (RuntimeException e) {
-                log.warn("退款状态同步兜底失败，等待下轮重试或人工处理，refundNo={}", refundInfo.getRefundNo(), e);
+        if (!lockTemplate.tryExecute(LOCK_KEY, () -> {
+            List<RefundInfo> refunds = refundInfoRepository.listProcessingApproved();
+            for (RefundInfo refundInfo : refunds) {
+                try {
+                    refundApplicationService.queryRefundStatus(refundInfo.getRefundNo());
+                } catch (RuntimeException e) {
+                    log.warn("退款状态同步兜底失败，等待下轮重试或人工处理，refundNo={}", refundInfo.getRefundNo(), e);
+                }
             }
+        })) {
+            log.debug("RefundStatusSyncScheduler 抢锁失败，跳过本轮");
         }
     }
 }

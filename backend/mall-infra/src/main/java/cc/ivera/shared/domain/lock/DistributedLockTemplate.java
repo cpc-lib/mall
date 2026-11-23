@@ -1,5 +1,7 @@
 package cc.ivera.shared.domain.lock;
 
+import cc.ivera.shared.domain.exception.BizException;
+
 import java.util.function.Supplier;
 
 /**
@@ -37,5 +39,23 @@ public interface DistributedLockTemplate {
             runnable.run();
             return null;
         });
+    }
+
+    /**
+     * 尝试非阻塞抢锁并执行：抢不到静默返回 false，不抛异常。
+     * 用于定时任务/兜底扫描等场景——集群多节点只允许一个实例执行，抢不到跳过不重试。
+     *
+     * @param lockKey  锁 key
+     * @param runnable 加锁成功后执行的业务逻辑
+     * @return {@code true} 抢到锁并执行；{@code false} 未抢到锁（其他实例持有或锁被占用）
+     */
+    default boolean tryExecute(String lockKey, Runnable runnable) {
+        try {
+            execute(lockKey, 0L, runnable);
+            return true;
+        } catch (BizException acquireFailed) {
+            // execute 抢不到锁会抛 BizException；吞掉让调用方自行决定是否日志记录
+            return false;
+        }
     }
 }

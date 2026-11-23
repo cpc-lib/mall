@@ -1,6 +1,7 @@
 package cc.ivera.order.interfaces.job;
 
 import cc.ivera.order.domain.repository.OrderRequestRepository;
+import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -15,23 +16,31 @@ import java.util.Date;
 public class OrderRequestCleanupScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(OrderRequestCleanupScheduler.class);
+    private static final String LOCK_KEY = "scheduler:order-request-cleanup";
     private static final int REQUEST_CLEAN_LIMIT = 500;
 
     private final OrderRequestRepository orderRequestRepository;
+    private final DistributedLockTemplate lockTemplate;
 
-    public OrderRequestCleanupScheduler(OrderRequestRepository orderRequestRepository) {
+    public OrderRequestCleanupScheduler(OrderRequestRepository orderRequestRepository,
+                                        DistributedLockTemplate lockTemplate) {
         this.orderRequestRepository = orderRequestRepository;
+        this.lockTemplate = lockTemplate;
     }
 
     @Scheduled(fixedDelayString = "${order.request.clean-scan-ms:60000}")
     public void clean() {
-        try {
-            int cleaned = orderRequestRepository.deleteExpired(new Date(), REQUEST_CLEAN_LIMIT);
-            if (cleaned > 0) {
-                log.info("清理过期下单幂等记录 {} 条", cleaned);
+        if (!lockTemplate.tryExecute(LOCK_KEY, () -> {
+            try {
+                int cleaned = orderRequestRepository.deleteExpired(new Date(), REQUEST_CLEAN_LIMIT);
+                if (cleaned > 0) {
+                    log.info("清理过期下单幂等记录 {} 条", cleaned);
+                }
+            } catch (RuntimeException e) {
+                log.error("清理过期下单幂等记录失败", e);
             }
-        } catch (RuntimeException e) {
-            log.error("清理过期下单幂等记录失败", e);
+        })) {
+            log.debug("OrderRequestCleanupScheduler 抢锁失败，跳过本轮清理");
         }
     }
 }
