@@ -20,7 +20,11 @@ export default function AdminOrders() {
   const [channelQueryLoading, setChannelQueryLoading] = useState(false)
   const [payAttempts, setPayAttempts] = useState([])
   const [detailPayAttempts, setDetailPayAttempts] = useState([])
+  const [detailPayLoaded, setDetailPayLoaded] = useState(false)
+  const [detailPayLoading, setDetailPayLoading] = useState(false)
   const [detailRefundOrders, setDetailRefundOrders] = useState([])
+  const [detailRefundLoaded, setDetailRefundLoaded] = useState(false)
+  const [detailRefundLoading, setDetailRefundLoading] = useState(false)
   const [detailShipment, setDetailShipment] = useState(null)
   const [shipmentLoading, setShipmentLoading] = useState(false)
   const loadAllOrders = (nextPage = page, nextSize = size) => {
@@ -93,8 +97,30 @@ export default function AdminOrders() {
   const openDetail = d => {
     setDetailRow(d); setPaAmount(0); setPaReason('差价补偿')
     setDetailShipment(null)
-    shipmentApi.paymentOrders(d.order.orderNo).then(r => setDetailPayAttempts(r.data || []))
-    shipmentApi.refundOrders(d.order.orderNo).then(r => setDetailRefundOrders(r.data || []))
+    setDetailPayAttempts([]); setDetailPayLoaded(false)
+    setDetailRefundOrders([]); setDetailRefundLoaded(false)
+  }
+  const loadDetailPayments = async orderNo => {
+    if (detailPayLoading) return
+    setDetailPayLoading(true)
+    try {
+      const r = await shipmentApi.paymentOrders(orderNo)
+      setDetailPayAttempts(r.data || [])
+      setDetailPayLoaded(true)
+    } finally {
+      setDetailPayLoading(false)
+    }
+  }
+  const loadDetailRefunds = async orderNo => {
+    if (detailRefundLoading) return
+    setDetailRefundLoading(true)
+    try {
+      const r = await shipmentApi.refundOrders(orderNo)
+      setDetailRefundOrders(r.data || [])
+      setDetailRefundLoaded(true)
+    } finally {
+      setDetailRefundLoading(false)
+    }
   }
   const loadShipment = async orderNo => {
     if (shipmentLoading) return
@@ -232,9 +258,11 @@ export default function AdminOrders() {
           <Button type="primary" onClick={submitPriceAdjust}>提交差价退款</Button>
         </Space>
         <h4 style={{ marginTop: 24 }}>支付尝试记录</h4>
-        <Table rowKey="id" dataSource={detailPayAttempts} columns={poCols} pagination={false} size="small" style={{ marginBottom: 16 }} />
+        {!detailPayLoaded && <Button size="small" loading={detailPayLoading} onClick={() => loadDetailPayments(o.orderNo)}>查看支付尝试记录</Button>}
+        {detailPayLoaded && <Table rowKey="id" dataSource={detailPayAttempts} columns={poCols} pagination={false} size="small" style={{ marginBottom: 16 }} />}
         <h4>退款单记录</h4>
-        <Table rowKey={(r) => r.apply?.refundNo || r.apply?.id} dataSource={detailRefundOrders} columns={refundCols} pagination={false} size="small" locale={{ emptyText: '暂无退款记录' }} />
+        {!detailRefundLoaded && <Button size="small" loading={detailRefundLoading} onClick={() => loadDetailRefunds(o.orderNo)}>查看退款单记录</Button>}
+        {detailRefundLoaded && <Table rowKey={(r) => r.apply?.refundNo || r.apply?.id} dataSource={detailRefundOrders} columns={refundCols} pagination={false} size="small" locale={{ emptyText: '暂无退款记录' }} />}
       </div>}
     </Drawer>
     <Modal
