@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Button, Empty, Input, InputNumber, message, Modal, Tag } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Button, Empty, Input, InputNumber, message, Modal, Pagination, Tag } from 'antd'
 import refundApi from '@/api/refundApply'
 import checkoutApi from '@/api/checkout'
 import { availableRefundQuantityExcluding, refundAmountEstimate } from '@/utils/refundQuota'
@@ -8,16 +8,24 @@ import { REFUND_STATUS_COLOR, REFUND_STATUS_LABEL, REFUND_TYPE_LABEL } from '@/u
 export default function RefundApplications() {
   const [list, setList] = useState([])
   const [orders, setOrders] = useState([])
+  const [page, setPage] = useState(1)
+  const size = 10
+  const [total, setTotal] = useState(0)
+  const pageRef = useRef(1)
   const [editing, setEditing] = useState(null)
   const [reason, setReason] = useState('')
   const [quantities, setQuantities] = useState({})
   // 退款单只用于补全订单明细快照，取最近一页订单即可覆盖当前可见的退款申请
-  const load = async () => {
-    const [r, o] = await Promise.all([refundApi.mine(), checkoutApi.list({ page: 1, size: 100 })])
-    setList(r.data || [])
+  const load = async (nextPage = pageRef.current) => {
+    const [r, o] = await Promise.all([refundApi.mine(nextPage, size), checkoutApi.list({ page: 1, size: 100 })])
+    const data = r.data || {}
+    pageRef.current = data.page || nextPage
+    setList(data.records || [])
+    setTotal(data.total || 0)
+    setPage(data.page || nextPage)
     setOrders(o.data?.records || [])
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(1) }, [])
   const orderItemMap = useMemo(() => { const m = new Map(); orders.forEach(o => o.items?.forEach(i => m.set(Number(i.id), i))); return m }, [orders])
   const beginEdit = row => { setEditing(row); setReason(row.apply.reason || ''); const next = {}; row.items.forEach(i => { next[i.orderItemId] = i.refundQty }); setQuantities(next) }
   const maxFor = item => {
@@ -66,6 +74,9 @@ export default function RefundApplications() {
           </div>
         </div>
       ))}
+      {total > size && <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+        <Pagination current={page} pageSize={size} total={total} showSizeChanger={false} onChange={p => load(p)} />
+      </div>}
     </div>
     <Modal open={!!editing} title="编辑待审核退款申请" onCancel={() => setEditing(null)} onOk={save} okButtonProps={{ disabled: editTotal <= 0 }}>
       {editing?.items.map(i => { const max = maxFor(i); return <div key={i.id} className="m-modal-line"><b>item#{i.orderItemId}</b><InputNumber min={0} max={max} value={quantities[i.orderItemId] || 0} onChange={v => setQuantities({ ...quantities, [i.orderItemId]: Math.min(max, Number(v || 0)) })} /><span className="m-modal-hint">最大 {max} 件</span></div> })}

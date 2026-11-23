@@ -3,7 +3,7 @@ export default {
   create: (data) => request.post('/api/refund-applies', data),
   update: (refundNo, data) => request.put(`/api/refund-applies/${refundNo}`, data),
   cancel: (refundNo) => request.delete(`/api/refund-applies/${refundNo}`),
-  mine: () => request.get('/api/refund-applies'),
+  mine: (page, size) => request.get('/api/refund-applies', { params: { page, size } }),
   all: () => request.get('/api/refund-applies/admin/all'),
   accept: (refundNo, remark) => request.post(`/api/refund-applies/${refundNo}/accept`, { remark }),
   reject: (refundNo, remark) => request.post(`/api/refund-applies/${refundNo}/reject`, { remark }),

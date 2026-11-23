@@ -73,7 +73,10 @@ public interface RefundOrderService {
      */
     void settle(String refundNo);
 
-    List<RefundApplyVO> listForUser(Long userId);
+    /**
+     * 用户退款申请列表（分页，创建时间倒序）。
+     */
+    PageVO<RefundApplyVO> listForUser(Long userId, int page, int size);
 
     /**
      * 管理员退款列表（分页，创建时间倒序）。

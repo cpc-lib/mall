@@ -43,7 +43,7 @@ interfaces → application → domain ← infrastructure
 - 发货/物流状态查看、送达后手动确认收货，以及送达超时自动确认收货。
 - 已付款未发货取消订单。
 - 分项退款、仅退款、退货退款、退款申请编辑/撤销；已发货未收货退款由管理员确认商品丢失或已全部回收后再发起渠道退款。
-- 支付成功页和退款申请列表。
+- 支付成功页和退款申请列表（服务端分页）。
 
 ### 2.2 管理后台
 
@@ -2232,7 +2232,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | Controller | 前缀 | 主要职责 |
 |---|---|---|
-| `RefundApplyController` | `/api/refund-applies` | 用户退款申请 / 管理端退款列表（分页） |
+| `RefundApplyController` | `/api/refund-applies` | 用户退款申请（`page`/`size` 服务端分页）/ 管理端退款列表（分页） |
 | `RefundApplicationController` | 方法级兼容路由 | 兼容退款入口、`/api/wx-pay/refunds`、`/api/ali-pay/trade/refund` |
 | `RefundInfoController` | `/api/refund-info` | 退款查询（仅管理员可访问） |
 | `WxPayRefundNotifyController` | `/api/wx-pay/refunds/notify` | 微信退款结果通知 |

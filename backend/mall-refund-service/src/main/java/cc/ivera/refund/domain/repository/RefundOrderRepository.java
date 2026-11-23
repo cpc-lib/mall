@@ -44,9 +44,14 @@ public interface RefundOrderRepository {
     List<RefundOrder> listByOrderNoCreateTimeDesc(String orderNo);
 
     /**
-     * 用户退款单按创建时间倒序。
+     * 用户退款单分页：按创建时间倒序、id 倒序保证稳定翻页。
      */
-    List<RefundOrder> listByUserIdCreateTimeDesc(Long userId);
+    List<RefundOrder> listByUserIdPage(Long userId, int limit, long offset);
+
+    /**
+     * 用户退款单总数（与 {@link #listByUserIdPage} 口径一致）。
+     */
+    long countByUserId(Long userId);
 
     /**
      * 退款单总数（管理员分页用）。

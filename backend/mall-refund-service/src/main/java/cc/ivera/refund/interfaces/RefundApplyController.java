@@ -12,7 +12,6 @@ import cc.ivera.shared.web.R;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import java.util.List;
 
 /**
  * 退款申请用户端（V2）：创建/编辑/撤回/查询。
@@ -46,8 +45,9 @@ public class RefundApplyController {
     }
 
     @GetMapping
-    public R<List<RefundApplyVO>> mine() {
-        return R.ok(service.listForUser(AuthContext.userId()));
+    public R<PageVO<RefundApplyVO>> mine(@RequestParam(defaultValue = "1") int page,
+                                         @RequestParam(defaultValue = "10") int size) {
+        return R.ok(service.listForUser(AuthContext.userId(), page, size));
     }
 
     @GetMapping("/admin/all")

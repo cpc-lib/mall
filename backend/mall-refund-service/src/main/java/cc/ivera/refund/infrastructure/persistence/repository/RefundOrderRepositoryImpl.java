@@ -84,11 +84,20 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     }
 
     @Override
-    public List<RefundOrder> listByUserIdCreateTimeDesc(Long userId) {
+    public List<RefundOrder> listByUserIdPage(Long userId, int limit, long offset) {
         return refundOrderMapper.selectList(new LambdaQueryWrapper<RefundOrderPO>()
                 .eq(RefundOrderPO::getUserId, userId)
-                .orderByDesc(RefundOrderPO::getCreateTime))
+                .orderByDesc(RefundOrderPO::getCreateTime)
+                .orderByDesc(RefundOrderPO::getId)
+                .last("LIMIT " + limit + " OFFSET " + offset))
             .stream().map(RefundOrderPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countByUserId(Long userId) {
+        Long total = refundOrderMapper.selectCount(new LambdaQueryWrapper<RefundOrderPO>()
+            .eq(RefundOrderPO::getUserId, userId));
+        return total == null ? 0L : total;
     }
 
     @Override

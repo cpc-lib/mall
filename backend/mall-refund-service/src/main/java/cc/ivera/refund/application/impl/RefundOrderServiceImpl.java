@@ -209,8 +209,16 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
-    public List<RefundApplyVO> listForUser(Long userId) {
-        return details(refundOrderRepository.listByUserIdCreateTimeDesc(userId));
+    public PageVO<RefundApplyVO> listForUser(Long userId, int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        PageVO<RefundApplyVO> result = new PageVO<>();
+        result.setTotal(refundOrderRepository.countByUserId(userId));
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(details(
+            refundOrderRepository.listByUserIdPage(userId, safeSize, (long) (safePage - 1) * safeSize)));
+        return result;
     }
 
     // ==================== 内部：创建链路 ====================
