@@ -6,13 +6,20 @@ import { FULFILLMENT_LABEL, REFUND_STATUS_LABEL, REFUND_STATUS_COLOR, REFUND_TYP
 export default function AdminRefunds() {
   const [refunds, setRefunds] = useState([])
   const [detail, setDetail] = useState(null)
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [acceptTarget, setAcceptTarget] = useState(null)
   const [goodsDisposition, setGoodsDisposition] = useState('')
   const [acceptRemark, setAcceptRemark] = useState('')
-  const load = () => {
-    refundApi.all().then(r => {
-      const list = r.data || []
+  const load = (nextPage = page, nextSize = size) => {
+    refundApi.all(nextPage, nextSize).then(r => {
+      const data = r.data || {}
+      const list = data.records || []
       setRefunds(list)
+      setTotal(data.total || 0)
+      setPage(data.page || nextPage)
+      setSize(data.size || nextSize)
       setDetail(prev => prev ? (list.find(x => x.apply.refundNo === prev.apply.refundNo) || prev) : null)
     })
   }
@@ -71,7 +78,16 @@ export default function AdminRefunds() {
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>退款受理</Typography.Title>
     <Card styles={{ body: { padding: '8px 20px 16px' } }}>
-      <Table rowKey={v => v.apply.refundNo} dataSource={refunds} columns={refundCols} />
+      <Table rowKey={v => v.apply.refundNo} dataSource={refunds} columns={refundCols}
+        pagination={{
+          current: page,
+          pageSize: size,
+          total,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          showTotal: t => `共 ${t} 条`,
+          onChange: (nextPage, nextSize) => load(nextPage, nextSize)
+        }} />
     </Card>
     <Drawer open={!!detail} width={720} onClose={() => setDetail(null)}
       title={a ? `退款详情 - ${a.refundNo}` : '退款详情'}

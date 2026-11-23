@@ -108,8 +108,9 @@ public class UserInternalController {
     }
 
     @GetMapping("/password-reset-requests")
-    public R<List<PasswordResetRequest>> passwordResetRequests() {
-        return R.ok(passwordResetRequestService.list());
+    public R<PageVO<PasswordResetRequest>> passwordResetRequests(@RequestParam(defaultValue = "1") int page,
+                                                                 @RequestParam(defaultValue = "10") int size) {
+        return R.ok(passwordResetRequestService.list(page, size));
     }
 
     @PostMapping("/password-reset-requests/{id}/handle")

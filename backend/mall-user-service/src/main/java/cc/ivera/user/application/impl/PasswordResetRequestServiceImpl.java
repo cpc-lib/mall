@@ -12,11 +12,10 @@ import cc.ivera.user.application.dto.PasswordResetHandleRequest;
 import cc.ivera.user.application.dto.PasswordResetRejectRequest;
 import cc.ivera.user.application.dto.PasswordResetRequestSubmitRequest;
 import cc.ivera.user.application.vo.PasswordResetHandleVO;
+import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
-import java.util.Comparator;
-import java.util.List;
 
 @Service
 public class PasswordResetRequestServiceImpl implements PasswordResetRequestService {
@@ -53,11 +52,15 @@ public class PasswordResetRequestServiceImpl implements PasswordResetRequestServ
     }
 
     @Override
-    public List<PasswordResetRequest> list() {
-        List<PasswordResetRequest> list = requestRepository.listAll();
-        list.sort(Comparator.comparing((PasswordResetRequest r) -> STATUS_PENDING.equals(r.getStatus()) ? 0 : 1)
-            .thenComparing(Comparator.comparing(PasswordResetRequest::getCreateTime, Comparator.nullsLast(Comparator.reverseOrder()))));
-        return list;
+    public PageVO<PasswordResetRequest> list(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        PageVO<PasswordResetRequest> result = new PageVO<>();
+        result.setTotal(requestRepository.countAll());
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(requestRepository.listPagePendingFirst(safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override

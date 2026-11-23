@@ -88,8 +88,8 @@ public class UserServiceRemoteAdapter implements AuthService, AuthSessionService
     }
 
     @Override
-    public List<PasswordResetRequest> list() {
-        return unwrap(client.listPasswordResetRequests());
+    public PageVO<PasswordResetRequest> list(int page, int size) {
+        return unwrap(client.listPasswordResetRequests(page, size));
     }
 
     @Override

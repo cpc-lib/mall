@@ -1,6 +1,7 @@
 package cc.ivera.user.interfaces;
 
 import cc.ivera.shared.security.AuthContext;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import cc.ivera.user.application.PasswordResetRequestService;
 import cc.ivera.user.domain.model.PasswordResetRequest;
@@ -12,7 +13,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import java.util.List;
 
 /**
  * 管理员找回密码申请管理：查看申请列表、处理（生成一次性随机密码）、拒绝。
@@ -28,10 +28,11 @@ public class AdminPasswordResetRequestController {
         this.passwordResetRequestService = passwordResetRequestService;
     }
 
-    @Operation(summary = "密码重置申请列表（待处理优先）")
+    @Operation(summary = "密码重置申请列表（分页，待处理优先）")
     @GetMapping
-    public R<List<PasswordResetRequest>> list() {
-        return R.ok(passwordResetRequestService.list());
+    public R<PageVO<PasswordResetRequest>> list(@RequestParam(defaultValue = "1") int page,
+                                                @RequestParam(defaultValue = "10") int size) {
+        return R.ok(passwordResetRequestService.list(page, size));
     }
 
     @Operation(summary = "处理申请：重置为系统生成的一次性随机密码")

@@ -3,6 +3,7 @@ package cc.ivera.refund.application;
 import cc.ivera.refund.application.dto.RefundApplyRequest;
 import cc.ivera.refund.application.dto.RefundApplyUpdateRequest;
 import cc.ivera.refund.application.dto.RefundApplyVO;
+import cc.ivera.shared.web.PageVO;
 
 import java.util.List;
 
@@ -74,7 +75,10 @@ public interface RefundOrderService {
 
     List<RefundApplyVO> listForUser(Long userId);
 
-    List<RefundApplyVO> listAll();
+    /**
+     * 管理员退款列表（分页，创建时间倒序）。
+     */
+    PageVO<RefundApplyVO> listAll(int page, int size);
 
     /**
      * 按订单号查询退款单列表（管理员订单详情展示）。

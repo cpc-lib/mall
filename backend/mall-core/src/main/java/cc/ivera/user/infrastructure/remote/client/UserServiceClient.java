@@ -60,7 +60,8 @@ public interface UserServiceClient {
     R<Object> submitPasswordReset(@RequestBody PasswordResetRequestSubmitRequest request);
 
     @GetMapping("/internal/user/password-reset-requests")
-    R<List<PasswordResetRequest>> listPasswordResetRequests();
+    R<PageVO<PasswordResetRequest>> listPasswordResetRequests(@RequestParam("page") int page,
+                                                              @RequestParam("size") int size);
 
     @PostMapping("/internal/user/password-reset-requests/{id}/handle")
     R<PasswordResetHandleVO> handlePasswordReset(@PathVariable("id") Long id,

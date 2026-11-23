@@ -7,6 +7,7 @@ import cc.ivera.refund.application.dto.RefundApplyUpdateRequest;
 import cc.ivera.refund.application.dto.RefundRejectRequest;
 import cc.ivera.refund.application.dto.RefundApplyVO;
 import cc.ivera.shared.security.AuthContext;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import org.springframework.web.bind.annotation.*;
 
@@ -50,8 +51,9 @@ public class RefundApplyController {
     }
 
     @GetMapping("/admin/all")
-    public R<List<RefundApplyVO>> all() {
-        return R.ok(service.listAll());
+    public R<PageVO<RefundApplyVO>> all(@RequestParam(defaultValue = "1") int page,
+                                        @RequestParam(defaultValue = "10") int size) {
+        return R.ok(service.listAll(page, size));
     }
 
     @PostMapping("/{refundNo}/accept")

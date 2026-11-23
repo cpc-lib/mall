@@ -55,9 +55,9 @@ interfaces → application → domain ← infrastructure
 - 库存流水分页与审计。
 - Excel 库存导入、编辑、确认入库。
 - Excel 文件支持本地磁盘或 MinIO 存储。
-- 退款受理、拒绝、已发货商品去向判定（丢失/全部回收）、退货签收、渠道重试、状态同步、差价退款。
+- 退款申请列表（服务端分页）、受理、拒绝、已发货商品去向判定（丢失/全部回收）、退货签收、渠道重试、状态同步、差价退款。
 - 用户列表、启用/禁用、用户详情。
-- 密码重置申请受理/拒绝、管理员直接重置密码。
+- 密码重置申请列表（服务端分页，待处理优先）、受理/拒绝、管理员直接重置密码。
 - 支付渠道和支付应用配置维护、缓存刷新。
 - 微信交易账单 XLSX 上传、同步对账、差异查看、重跑、人工标记处理。
 
@@ -2230,7 +2230,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | Controller | 前缀 | 主要职责 |
 |---|---|---|
-| `RefundApplyController` | `/api/refund-applies` | 用户退款申请 |
+| `RefundApplyController` | `/api/refund-applies` | 用户退款申请 / 管理端退款列表（分页） |
 | `RefundApplicationController` | 方法级兼容路由 | 兼容退款入口、`/api/wx-pay/refunds`、`/api/ali-pay/trade/refund` |
 | `RefundInfoController` | `/api/refund-info` | 退款查询（仅管理员可访问） |
 | `WxPayRefundNotifyController` | `/api/wx-pay/refunds/notify` | 微信退款结果通知 |
@@ -2263,7 +2263,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `StockAdminController` | `/api/admin/stock` |
 | `AdminUserController` | `/api/admin/users` |
 | `AdminUserSessionController` | `/api/admin/users/{userId}/sessions` |
-| `AdminPasswordResetRequestController` | `/api/admin/password-reset-requests` |
+| `AdminPasswordResetRequestController` | `/api/admin/password-reset-requests` | 密码重置申请（分页，待处理优先） |
 
 #### 15.16.6 账单能力（bill-service）
 

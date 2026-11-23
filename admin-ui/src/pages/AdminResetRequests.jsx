@@ -5,14 +5,21 @@ import { RESET_STATUS_COLOR, RESET_STATUS_LABEL } from '@/utils/statusLabels'
 
 export default function AdminResetRequests() {
   const [resetRequests, setResetRequests] = useState([])
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(20)
+  const [total, setTotal] = useState(0)
   const [detail, setDetail] = useState(null)
   const [handleRemark, setHandleRemark] = useState('')
   const [rejectRemark, setRejectRemark] = useState('')
   const [generatedPwd, setGeneratedPwd] = useState('')
-  const load = () => {
-    authApi.passwordResetRequests().then(r => {
-      const list = r.data || []
+  const load = (nextPage = page, nextSize = size) => {
+    authApi.passwordResetRequests(nextPage, nextSize).then(r => {
+      const data = r.data || {}
+      const list = data.records || []
       setResetRequests(list)
+      setTotal(data.total || 0)
+      setPage(data.page || nextPage)
+      setSize(data.size || nextSize)
       setDetail(prev => prev ? (list.find(x => x.id === prev.id) || prev) : null)
     }).catch(() => setResetRequests([]))
   }
@@ -42,7 +49,16 @@ export default function AdminResetRequests() {
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>密码重置申请</Typography.Title>
     <Card styles={{ body: { padding: '8px 20px 16px' } }}>
-    <Table rowKey="id" dataSource={resetRequests} columns={prCols} size="small" />
+    <Table rowKey="id" dataSource={resetRequests} columns={prCols} size="small"
+      pagination={{
+        current: page,
+        pageSize: size,
+        total,
+        showSizeChanger: true,
+        pageSizeOptions: [10, 20, 50, 100],
+        showTotal: t => `共 ${t} 条`,
+        onChange: (nextPage, nextSize) => load(nextPage, nextSize)
+      }} />
     <Drawer open={!!detail} width={560} onClose={() => setDetail(null)}
       title={detail ? `重置申请详情 - ${detail.username}` : '重置申请详情'}
       footer={detail?.status === 'PENDING' ? <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

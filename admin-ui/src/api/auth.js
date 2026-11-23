@@ -8,7 +8,7 @@ export default {
   adminUsers: (params) => request.get('/api/admin/users', { params }),
   adminUserDetail: (id) => request.get(`/api/admin/users/${id}`),
   setUserStatus: (id, userStatus) => request.put(`/api/admin/users/${id}/status`, { userStatus }),
-  passwordResetRequests: () => request.get('/api/admin/password-reset-requests'),
+  passwordResetRequests: (page, size) => request.get('/api/admin/password-reset-requests', { params: { page, size } }),
   handlePasswordResetRequest: (id, adminRemark) => request.post(`/api/admin/password-reset-requests/${id}/handle`, { adminRemark }),
   rejectPasswordResetRequest: (id, adminRemark) => request.post(`/api/admin/password-reset-requests/${id}/reject`, { adminRemark }),
   submitPasswordResetRequest: (data) => request.post('/api/auth/password-reset-request', data)

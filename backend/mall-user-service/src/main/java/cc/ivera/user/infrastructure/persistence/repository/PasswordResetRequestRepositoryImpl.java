@@ -50,8 +50,14 @@ public class PasswordResetRequestRepositoryImpl implements PasswordResetRequestR
     }
 
     @Override
-    public List<PasswordResetRequest> listAll() {
-        return passwordResetRequestMapper.selectList(null).stream()
+    public List<PasswordResetRequest> listPagePendingFirst(int limit, long offset) {
+        return passwordResetRequestMapper.selectPagePendingFirst(limit, offset).stream()
             .map(PasswordResetRequestPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countAll() {
+        Long total = passwordResetRequestMapper.countAllRequests();
+        return total == null ? 0L : total;
     }
 }

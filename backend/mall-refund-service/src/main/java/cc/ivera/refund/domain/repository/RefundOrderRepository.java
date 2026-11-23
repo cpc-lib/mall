@@ -49,9 +49,14 @@ public interface RefundOrderRepository {
     List<RefundOrder> listByUserIdCreateTimeDesc(Long userId);
 
     /**
-     * 全量退款单按创建时间倒序。
+     * 退款单总数（管理员分页用）。
      */
-    List<RefundOrder> listAllCreateTimeDesc();
+    long countAll();
+
+    /**
+     * 管理员分页：创建时间倒序，limit/offset 由调用方按页计算。
+     */
+    List<RefundOrder> listPageCreateTimeDesc(int limit, long offset);
 
     /**
      * 账账核对批量查询：按退款单号集合加载平台退款账。

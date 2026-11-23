@@ -37,6 +37,7 @@ import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import cc.ivera.shared.web.PageVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -215,8 +216,16 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 内部：创建链路 ====================
 
     @Override
-    public List<RefundApplyVO> listAll() {
-        return details(refundOrderRepository.listAllCreateTimeDesc());
+    public PageVO<RefundApplyVO> listAll(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        PageVO<RefundApplyVO> result = new PageVO<>();
+        result.setTotal(refundOrderRepository.countAll());
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(details(
+            refundOrderRepository.listPageCreateTimeDesc(safeSize, (long) (safePage - 1) * safeSize)));
+        return result;
     }
 
     @Override
