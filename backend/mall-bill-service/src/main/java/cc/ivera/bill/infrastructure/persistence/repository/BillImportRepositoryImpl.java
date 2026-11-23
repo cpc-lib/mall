@@ -73,8 +73,14 @@ public class BillImportRepositoryImpl implements BillImportRepository {
     }
 
     @Override
-    public List<BillImport> listByDate(String billDate) {
-        return billImportMapper.selectImportsByDate(billDate).stream()
+    public long countByDate(String billDate) {
+        Long total = billImportMapper.countImportsByDate(billDate);
+        return total == null ? 0L : total;
+    }
+
+    @Override
+    public List<BillImport> listPageByDate(String billDate, int limit, long offset) {
+        return billImportMapper.selectPageByDate(billDate, limit, offset).stream()
             .map(BillImportPOConverter::toDomain).collect(Collectors.toList());
     }
 }

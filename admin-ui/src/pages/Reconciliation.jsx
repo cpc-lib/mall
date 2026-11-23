@@ -60,6 +60,9 @@ export default function Reconciliation() {
   const [queryDate, setQueryDate] = useState(null)
   const [importList, setImportList] = useState([])
   const [loading, setLoading] = useState(false)
+  const [importPage, setImportPage] = useState(1)
+  const [importSize, setImportSize] = useState(10)
+  const [importTotal, setImportTotal] = useState(0)
 
   const [uploadDate, setUploadDate] = useState(null)
   const [fileList, setFileList] = useState([])
@@ -98,18 +101,20 @@ export default function Reconciliation() {
 
   const loadImports = useCallback(() => {
     setLoading(true)
-    const params = {}
+    const params = { page: importPage, size: importSize }
     if (queryDate) {
       params.billDate = queryDate.format('YYYY-MM-DD')
     }
     listImports(params)
       .then((res) => {
-        setImportList(res?.data || [])
+        const data = res?.data || {}
+        setImportList(data.records || [])
+        setImportTotal(data.total || 0)
       })
       .finally(() => {
         setLoading(false)
       })
-  }, [queryDate])
+  }, [queryDate, importPage, importSize])
 
   useEffect(() => {
     loadImports()
@@ -562,7 +567,7 @@ export default function Reconciliation() {
             <span>账单日期：</span>
             <DatePicker
               value={queryDate}
-              onChange={(d) => setQueryDate(d)}
+              onChange={(d) => { setQueryDate(d); setImportPage(1) }}
               allowClear
               placeholder="按账单日期筛选"
             />
@@ -577,6 +582,7 @@ export default function Reconciliation() {
             <Button
               onClick={() => {
                 setQueryDate(null)
+                setImportPage(1)
               }}
             >
               重置
@@ -590,7 +596,15 @@ export default function Reconciliation() {
             loading={loading}
             scroll={{ x: 1500 }}
             size="middle"
-            pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+            pagination={{
+              current: importPage,
+              pageSize: importSize,
+              total: importTotal,
+              showSizeChanger: true,
+              pageSizeOptions: [10, 20, 50, 100],
+              showTotal: (total) => `共 ${total} 条`,
+              onChange: (nextPage, nextSize) => { setImportPage(nextPage); setImportSize(nextSize) }
+            }}
           />
         </Card>
 

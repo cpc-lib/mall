@@ -40,9 +40,9 @@ public interface BillReconcileService {
     BillImport getByImportNo(String importNo);
 
     /**
-     * 查询导入批次列表（按创建时间倒序），billDate 非空时按账单日期过滤。
+     * 分页查询导入批次（按 id 倒序），billDate 非空时按账单日期过滤。
      */
-    List<BillImport> listImports(String billDate);
+    PageVO<BillImport> listImports(String billDate, int page, int size);
 
     /**
      * 分页查询批次下的账单流水（按 id 升序），recordType 非空时按 PAY/REFUND 过滤。

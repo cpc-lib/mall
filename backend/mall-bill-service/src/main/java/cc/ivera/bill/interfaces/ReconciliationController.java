@@ -59,11 +59,20 @@ public class ReconciliationController {
     }
 
     /**
-     * 导入批次列表（按创建时间倒序），billDate 非空时按账单日期过滤。
+     * 导入批次分页（按 id 倒序），billDate 非空时按账单日期过滤。
      */
     @GetMapping("/imports")
-    public R<List<BillImportVO>> listImports(@RequestParam(value = "billDate", required = false) String billDate) {
-        return R.ok(BillImportVO.from(billReconcileService.listImports(billDate)));
+    public R<PageVO<BillImportVO>> listImports(
+        @RequestParam(value = "billDate", required = false) String billDate,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        PageVO<BillImport> result = billReconcileService.listImports(billDate, page, size);
+        PageVO<BillImportVO> vo = new PageVO<>();
+        vo.setTotal(result.getTotal());
+        vo.setPage(result.getPage());
+        vo.setSize(result.getSize());
+        vo.setRecords(BillImportVO.from(result.getRecords()));
+        return R.ok(vo);
     }
 
     /**

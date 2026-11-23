@@ -581,9 +581,17 @@ public class BillReconcileServiceImpl implements BillReconcileService {
     }
 
     @Override
-    public List<BillImport> listImports(String billDate) {
+    public PageVO<BillImport> listImports(String billDate, int page, int size) {
         String billDateValue = StringUtils.hasText(billDate) ? billDate.trim() : null;
-        return billImportRepository.listByDate(billDateValue);
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<BillImport> result = new PageVO<>();
+        result.setTotal(billImportRepository.countByDate(billDateValue));
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(billImportRepository.listPageByDate(
+            billDateValue, safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override

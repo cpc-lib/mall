@@ -13,8 +13,9 @@ import java.util.List;
 @Mapper
 public interface BillImportMapper extends BaseMapper<BillImportPO> {
 
-    /**
-     * 导入批次列表：billDate 非空时按账单日期过滤，按 id 倒序。
-     */
-    List<BillImportPO> selectImportsByDate(@Param("billDate") String billDate);
+    Long countImportsByDate(@Param("billDate") String billDate);
+
+    List<BillImportPO> selectPageByDate(@Param("billDate") String billDate,
+                                        @Param("limit") int limit,
+                                        @Param("offset") long offset);
 }

@@ -37,7 +37,12 @@ public interface BillImportRepository {
     List<BillImport> listByChannelDate(String channelCode, String billType, String billDate);
 
     /**
-     * 导入批次列表：billDate 非空时按账单日期过滤，按 id 倒序。
+     * 导入批次总数（同一过滤条件）。
      */
-    List<BillImport> listByDate(String billDate);
+    long countByDate(String billDate);
+
+    /**
+     * 导入批次分页：id 倒序，limit/offset 由调用方按页计算。
+     */
+    List<BillImport> listPageByDate(String billDate, int limit, long offset);
 }

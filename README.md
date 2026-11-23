@@ -293,7 +293,7 @@ REFUND_CHANNEL_DUPLICATE
 
 只有“支付笔数/金额一致 + 退款笔数/金额一致 + 净额一致 + 无 OPEN 差异”才判定 `balanced=true`，避免多笔错误金额互相抵消后被误判平账。汇总接口：`GET /api/reconciliation/imports/{importNo}/summary`。
 
-差异列表支持“核验下钻”：`GET /api/reconciliation/discrepancies/{id}/drilldown` 同时返回渠道账 XLSX 原始行快照、平台 `PaymentOrder/RefundOrder` 候选账本记录，以及业务单号、渠道流水号、金额、状态四个维度的逐项核验结果。普通账单流水接口不返回 `raw_line`，原始行仅在下钻接口中按需读取，避免大账单列表响应膨胀。批次流水 `GET /api/reconciliation/imports/{importNo}/records` 与差异单 `GET /api/reconciliation/imports/{importNo}/discrepancies` 均为服务端分页（`page`/`size`，默认 1/10，上限 200，按 id 升序稳定翻页），过滤条件与总数在同一 SQL 条件口径下统计。
+差异列表支持“核验下钻”：`GET /api/reconciliation/discrepancies/{id}/drilldown` 同时返回渠道账 XLSX 原始行快照、平台 `PaymentOrder/RefundOrder` 候选账本记录，以及业务单号、渠道流水号、金额、状态四个维度的逐项核验结果。普通账单流水接口不返回 `raw_line`，原始行仅在下钻接口中按需读取，避免大账单列表响应膨胀。批次流水 `GET /api/reconciliation/imports/{importNo}/records`、差异单 `GET /api/reconciliation/imports/{importNo}/discrepancies` 与批次列表 `GET /api/reconciliation/imports` 均为服务端分页（`page`/`size`，默认 1/10，上限 200；流水/差异按 id 升序，批次按 id 倒序），过滤条件与总数在同一 SQL 条件口径下统计。
 
 当前为**交易账账核对**，不把渠道手续费混入净交易额；手续费应在后续资金/结算账单核对中单独处理。幂等防线包括文件 SHA-256、账单日/种类互斥、Redisson 锁、数据库唯一约束、批次状态校验。
 
@@ -2269,7 +2269,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | Controller | 前缀 |
 |---|---|
-| `ReconciliationController` | `/api/reconciliation` | 上传/重新对账、批次查询、流水分页、差异分页、核验下钻 |
+| `ReconciliationController` | `/api/reconciliation` | 上传/重新对账、批次分页、流水分页、差异分页、核验下钻 |
 
 ### 15.17 前端导览
 

@@ -2,16 +2,28 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.bill.infrastructure.persistence.mapper.BillImportMapper">
 
-  <!-- 导入批次列表：billDate 非空时按账单日期过滤，id 倒序 -->
-  <select id="selectImportsByDate" resultType="cc.ivera.bill.infrastructure.persistence.po.BillImportPO">
-    select *
-    from t_bill_import
+  <!-- 导入批次过滤条件：billDate 非空时按账单日期过滤 -->
+  <sql id="importFilter">
     <where>
       <if test="billDate != null and billDate != ''">
         and bill_date = #{billDate}
       </if>
     </where>
+  </sql>
+
+  <select id="countImportsByDate" resultType="java.lang.Long">
+    select count(*)
+    from t_bill_import
+    <include refid="importFilter"/>
+  </select>
+
+  <!-- 导入批次分页：id 倒序，limit/offset 由调用方按页计算 -->
+  <select id="selectPageByDate" resultType="cc.ivera.bill.infrastructure.persistence.po.BillImportPO">
+    select *
+    from t_bill_import
+    <include refid="importFilter"/>
     order by id desc
+    limit #{limit} offset #{offset}
   </select>
 
 </mapper>
