@@ -45,11 +45,6 @@ public class ProductServiceRemoteAdapter implements ProductService, ProductStock
     }
 
     @Override
-    public List<Product> list() {
-        return unwrap(client.list());
-    }
-
-    @Override
     public PageVO<Product> page(int page, int size) {
         return unwrap(client.page(page, size));
     }

@@ -25,9 +25,6 @@ public interface ProductServiceClient {
     @PostMapping("/internal/product/query/batch")
     R<List<Product>> queryBatch(@RequestBody List<Long> ids);
 
-    @GetMapping("/internal/product/products")
-    R<List<Product>> list();
-
     @GetMapping("/internal/product/products/page")
     R<PageVO<Product>> page(@RequestParam("page") int page, @RequestParam("size") int size);
 

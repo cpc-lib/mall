@@ -3,17 +3,10 @@ package cc.ivera.product.application;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.shared.web.PageVO;
 
-import java.util.List;
-
 /**
  * 商品应用服务：商品列表/详情/新增/上下架。
  */
 public interface ProductService {
-
-    /**
-     * 商品列表（按 id 升序）。
-     */
-    List<Product> list();
 
     /**
      * 商品列表服务端分页（按 id 升序）。

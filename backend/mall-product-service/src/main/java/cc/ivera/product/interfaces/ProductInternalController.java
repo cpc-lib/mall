@@ -40,11 +40,6 @@ public class ProductInternalController {
         this.inventoryService = inventoryService;
     }
 
-    @GetMapping("/products")
-    public R<List<Product>> list() {
-        return R.ok(productService.list());
-    }
-
     @GetMapping("/products/page")
     public R<PageVO<Product>> page(@RequestParam int page, @RequestParam int size) {
         return R.ok(productService.page(page, size));

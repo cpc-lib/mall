@@ -24,11 +24,6 @@ public class ProductServiceImpl implements ProductService, ProductQueryApi {
     }
 
     @Override
-    public List<Product> list() {
-        return productRepository.findAll();
-    }
-
-    @Override
     public PageVO<Product> page(int page, int size) {
         int safePage = Math.max(page, 1);
         int safeSize = Math.min(Math.max(size, 1), 100);

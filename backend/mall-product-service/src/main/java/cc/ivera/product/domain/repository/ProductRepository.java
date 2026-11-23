@@ -19,8 +19,6 @@ public interface ProductRepository {
      */
     List<Product> findByIds(Collection<Long> ids);
 
-    List<Product> findAll();
-
     long countAll();
 
     List<Product> findPage(int limit, long offset);

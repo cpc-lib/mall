@@ -46,12 +46,6 @@ public class AdminProductController {
         this.productQueryApi = productQueryApi;
     }
 
-    @Operation(summary = "商品列表")
-    @GetMapping
-    public R<List<Product>> list() {
-        return R.ok(productService.list());
-    }
-
     @Operation(summary = "商品列表（服务端分页）")
     @GetMapping("/page")
     public R<PageVO<Product>> page(@RequestParam(defaultValue = "1") int page,

@@ -5,7 +5,6 @@ import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.product.infrastructure.persistence.converter.ProductPOConverter;
 import cc.ivera.product.infrastructure.persistence.mapper.ProductMapper;
 import cc.ivera.product.infrastructure.persistence.po.ProductPO;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Repository;
 
@@ -35,13 +34,6 @@ public class ProductRepositoryImpl implements ProductRepository {
         return productMapper.selectBatchIds(ids).stream()
             .map(ProductPOConverter::toDomain)
             .collect(Collectors.toList());
-    }
-
-    @Override
-    public List<Product> findAll() {
-        List<ProductPO> rows = productMapper.selectList(
-            new LambdaQueryWrapper<ProductPO>().orderByAsc(ProductPO::getId));
-        return rows.stream().map(ProductPOConverter::toDomain).collect(Collectors.toList());
     }
 
     @Override
