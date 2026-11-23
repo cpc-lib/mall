@@ -51,4 +51,19 @@ public class BillReconcileDiscrepancyRepositoryImpl implements BillReconcileDisc
         return discrepancyMapper.selectDiscrepanciesByImport(importId, bizType, discrepancyType, status).stream()
             .map(BillReconcileDiscrepancyPOConverter::toDomain).collect(Collectors.toList());
     }
+
+    @Override
+    public long countByImport(Long importId, String bizType, String discrepancyType, String status) {
+        Long total = discrepancyMapper.countDiscrepanciesByImport(
+            importId, bizType, discrepancyType, status);
+        return total == null ? 0L : total;
+    }
+
+    @Override
+    public List<BillReconcileDiscrepancy> listPageByImport(Long importId, String bizType,
+                                                           String discrepancyType, String status,
+                                                           int limit, long offset) {
+        return discrepancyMapper.selectPageByImport(importId, bizType, discrepancyType, status, limit, offset)
+            .stream().map(BillReconcileDiscrepancyPOConverter::toDomain).collect(Collectors.toList());
+    }
 }

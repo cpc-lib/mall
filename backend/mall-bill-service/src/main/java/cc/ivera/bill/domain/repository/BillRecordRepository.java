@@ -18,4 +18,14 @@ public interface BillRecordRepository {
      * 批次明细列表：importId 必填，recordType 非空时按记录类型过滤，按 id 升序。
      */
     List<BillRecord> listByImport(Long importId, String recordType);
+
+    /**
+     * 批次明细总数（同一过滤条件）。
+     */
+    long countByImport(Long importId, String recordType);
+
+    /**
+     * 批次明细分页：id 升序，limit/offset 由调用方按页计算。
+     */
+    List<BillRecord> listPageByImport(Long importId, String recordType, int limit, long offset);
 }

@@ -31,4 +31,16 @@ public interface BillReconcileDiscrepancyRepository {
      */
     List<BillReconcileDiscrepancy> listByImport(Long importId, String bizType,
                                                 String discrepancyType, String status);
+
+    /**
+     * 批次差异总数（同一过滤条件）。
+     */
+    long countByImport(Long importId, String bizType, String discrepancyType, String status);
+
+    /**
+     * 批次差异分页：id 升序，limit/offset 由调用方按页计算。
+     */
+    List<BillReconcileDiscrepancy> listPageByImport(Long importId, String bizType,
+                                                    String discrepancyType, String status,
+                                                    int limit, long offset);
 }

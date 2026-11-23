@@ -10,6 +10,7 @@ import cc.ivera.bill.application.vo.BillImportVO;
 import cc.ivera.bill.application.vo.BillReconcileDrilldownVO;
 import cc.ivera.bill.application.vo.BillReconcileSummaryVO;
 import cc.ivera.bill.application.vo.BillRecordVO;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -82,28 +83,42 @@ public class ReconciliationController {
     }
 
     /**
-     * 批次下账单流水，recordType 可选 PAY/REFUND 过滤。
+     * 批次下账单流水分页，recordType 可选 PAY/REFUND 过滤。
      */
     @GetMapping("/imports/{importNo}/records")
-    public R<List<BillRecordVO>> listRecords(
+    public R<PageVO<BillRecordVO>> listRecords(
         @PathVariable String importNo,
-        @RequestParam(value = "recordType", required = false) String recordType) {
-        List<BillRecord> records = billReconcileService.listRecords(importNo, recordType);
-        return R.ok(BillRecordVO.from(records));
+        @RequestParam(value = "recordType", required = false) String recordType,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        PageVO<BillRecord> result = billReconcileService.listRecords(importNo, recordType, page, size);
+        PageVO<BillRecordVO> vo = new PageVO<>();
+        vo.setTotal(result.getTotal());
+        vo.setPage(result.getPage());
+        vo.setSize(result.getSize());
+        vo.setRecords(BillRecordVO.from(result.getRecords()));
+        return R.ok(vo);
     }
 
     /**
-     * 批次下对账差异单，bizType/discrepancyType/status 可选过滤。
+     * 批次下对账差异单分页，bizType/discrepancyType/status 可选过滤。
      */
     @GetMapping("/imports/{importNo}/discrepancies")
-    public R<List<BillDiscrepancyVO>> listDiscrepancies(
+    public R<PageVO<BillDiscrepancyVO>> listDiscrepancies(
         @PathVariable String importNo,
         @RequestParam(value = "bizType", required = false) String bizType,
         @RequestParam(value = "discrepancyType", required = false) String discrepancyType,
-        @RequestParam(value = "status", required = false) String status) {
-        List<BillReconcileDiscrepancy> discrepancies =
-            billReconcileService.listDiscrepancies(importNo, bizType, discrepancyType, status);
-        return R.ok(BillDiscrepancyVO.from(discrepancies));
+        @RequestParam(value = "status", required = false) String status,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "10") int size) {
+        PageVO<BillReconcileDiscrepancy> result =
+            billReconcileService.listDiscrepancies(importNo, bizType, discrepancyType, status, page, size);
+        PageVO<BillDiscrepancyVO> vo = new PageVO<>();
+        vo.setTotal(result.getTotal());
+        vo.setPage(result.getPage());
+        vo.setSize(result.getSize());
+        vo.setRecords(BillDiscrepancyVO.from(result.getRecords()));
+        return R.ok(vo);
     }
 
     /**

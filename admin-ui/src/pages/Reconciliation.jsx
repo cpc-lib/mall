@@ -74,12 +74,18 @@ export default function Reconciliation() {
   const [recordList, setRecordList] = useState([])
   const [recordLoading, setRecordLoading] = useState(false)
   const [recordType, setRecordType] = useState('')
+  const [recordPage, setRecordPage] = useState(1)
+  const [recordSize, setRecordSize] = useState(10)
+  const [recordTotal, setRecordTotal] = useState(0)
 
   const [discModalOpen, setDiscModalOpen] = useState(false)
   const [discList, setDiscList] = useState([])
   const [discLoading, setDiscLoading] = useState(false)
   const [discStatus, setDiscStatus] = useState('')
   const [discType, setDiscType] = useState('')
+  const [discPage, setDiscPage] = useState(1)
+  const [discSize, setDiscSize] = useState(10)
+  const [discTotal, setDiscTotal] = useState(0)
 
   const [drillOpen, setDrillOpen] = useState(false)
   const [drillLoading, setDrillLoading] = useState(false)
@@ -153,24 +159,27 @@ export default function Reconciliation() {
   const openRecords = (row) => {
     setCurrentImport(row)
     setRecordType('')
+    setRecordPage(1)
     setRecordModalOpen(true)
   }
 
   const loadRecords = useCallback(() => {
     if (!currentImport) return
     setRecordLoading(true)
-    const params = {}
+    const params = { page: recordPage, size: recordSize }
     if (recordType) {
       params.recordType = recordType
     }
     listRecords(currentImport.importNo, params)
       .then((res) => {
-        setRecordList(res?.data || [])
+        const data = res?.data || {}
+        setRecordList(data.records || [])
+        setRecordTotal(data.total || 0)
       })
       .finally(() => {
         setRecordLoading(false)
       })
-  }, [currentImport, recordType])
+  }, [currentImport, recordType, recordPage, recordSize])
 
   useEffect(() => {
     if (recordModalOpen) {
@@ -182,13 +191,14 @@ export default function Reconciliation() {
     setCurrentImport(row)
     setDiscStatus('')
     setDiscType('')
+    setDiscPage(1)
     setDiscModalOpen(true)
   }
 
   const loadDisc = useCallback(() => {
     if (!currentImport) return
     setDiscLoading(true)
-    const params = {}
+    const params = { page: discPage, size: discSize }
     if (discStatus) {
       params.status = discStatus
     }
@@ -197,12 +207,14 @@ export default function Reconciliation() {
     }
     listDiscrepancies(currentImport.importNo, params)
       .then((res) => {
-        setDiscList(res?.data || [])
+        const data = res?.data || {}
+        setDiscList(data.records || [])
+        setDiscTotal(data.total || 0)
       })
       .finally(() => {
         setDiscLoading(false)
       })
-  }, [currentImport, discStatus, discType])
+  }, [currentImport, discStatus, discType, discPage, discSize])
 
   useEffect(() => {
     if (discModalOpen) {
@@ -624,7 +636,7 @@ export default function Reconciliation() {
             style={{ width: 140 }}
             allowClear
             value={recordType || undefined}
-            onChange={(val) => setRecordType(val || '')}
+            onChange={(val) => { setRecordType(val || ''); setRecordPage(1) }}
           >
             <Select.Option value="PAY">支付</Select.Option>
             <Select.Option value="REFUND">退款</Select.Option>
@@ -638,7 +650,15 @@ export default function Reconciliation() {
           loading={recordLoading}
           scroll={{ x: 1100 }}
           size="small"
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+          pagination={{
+            current: recordPage,
+            pageSize: recordSize,
+            total: recordTotal,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (nextPage, nextSize) => { setRecordPage(nextPage); setRecordSize(nextSize) }
+          }}
         />
       </Drawer>
 
@@ -655,7 +675,7 @@ export default function Reconciliation() {
             style={{ width: 140 }}
             allowClear
             value={discStatus || undefined}
-            onChange={(val) => setDiscStatus(val || '')}
+            onChange={(val) => { setDiscStatus(val || ''); setDiscPage(1) }}
           >
             <Select.Option value="OPEN">待处理</Select.Option>
             <Select.Option value="RESOLVED">已处理</Select.Option>
@@ -665,7 +685,7 @@ export default function Reconciliation() {
             style={{ width: 200 }}
             allowClear
             value={discType || undefined}
-            onChange={(val) => setDiscType(val || '')}
+            onChange={(val) => { setDiscType(val || ''); setDiscPage(1) }}
             options={DISCREPANCY_TYPE_OPTIONS}
           />
         </Space>
@@ -677,7 +697,15 @@ export default function Reconciliation() {
           loading={discLoading}
           scroll={{ x: 1950 }}
           size="small"
-          pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 条` }}
+          pagination={{
+            current: discPage,
+            pageSize: discSize,
+            total: discTotal,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: (total) => `共 ${total} 条`,
+            onChange: (nextPage, nextSize) => { setDiscPage(nextPage); setDiscSize(nextSize) }
+          }}
         />
       </Drawer>
 

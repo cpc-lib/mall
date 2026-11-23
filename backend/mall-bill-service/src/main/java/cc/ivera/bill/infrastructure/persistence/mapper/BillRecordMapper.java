@@ -18,4 +18,12 @@ public interface BillRecordMapper extends BaseMapper<BillRecordPO> {
      */
     List<BillRecordPO> selectRecordsByImport(@Param("importId") Long importId,
                                              @Param("recordType") String recordType);
+
+    Long countRecordsByImport(@Param("importId") Long importId,
+                              @Param("recordType") String recordType);
+
+    List<BillRecordPO> selectPageByImport(@Param("importId") Long importId,
+                                         @Param("recordType") String recordType,
+                                         @Param("limit") int limit,
+                                         @Param("offset") long offset);
 }

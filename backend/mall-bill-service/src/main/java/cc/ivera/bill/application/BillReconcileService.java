@@ -4,6 +4,7 @@ import cc.ivera.bill.domain.model.BillImport;
 import cc.ivera.bill.domain.model.BillReconcileDiscrepancy;
 import cc.ivera.bill.domain.model.BillReconcileDrilldown;
 import cc.ivera.bill.domain.model.BillReconcileSummary;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.bill.domain.model.BillRecord;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -44,15 +45,16 @@ public interface BillReconcileService {
     List<BillImport> listImports(String billDate);
 
     /**
-     * 查询批次下的账单流水（按 id 升序），recordType 非空时按 PAY/REFUND 过滤。
+     * 分页查询批次下的账单流水（按 id 升序），recordType 非空时按 PAY/REFUND 过滤。
      */
-    List<BillRecord> listRecords(String importNo, String recordType);
+    PageVO<BillRecord> listRecords(String importNo, String recordType, int page, int size);
 
     /**
-     * 查询批次下的对账差异单（按 id 升序），bizType/discrepancyType/status 非空时过滤。
+     * 分页查询批次下的对账差异单（按 id 升序），bizType/discrepancyType/status 非空时过滤。
      */
-    List<BillReconcileDiscrepancy> listDiscrepancies(String importNo, String bizType,
-                                                     String discrepancyType, String status);
+    PageVO<BillReconcileDiscrepancy> listDiscrepancies(String importNo, String bizType,
+                                                      String discrepancyType, String status,
+                                                      int page, int size);
 
     /**
      * 账账核对汇总：渠道/平台支付与退款笔数、金额、净额以及是否平账。

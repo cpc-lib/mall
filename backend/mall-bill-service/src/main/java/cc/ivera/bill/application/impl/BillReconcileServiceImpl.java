@@ -27,6 +27,7 @@ import cc.ivera.shared.infrastructure.constant.DatePatterns;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
 import cc.ivera.shared.security.AuthContext;
 import cc.ivera.shared.security.AuthPrincipal;
+import cc.ivera.shared.web.PageVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -586,21 +587,39 @@ public class BillReconcileServiceImpl implements BillReconcileService {
     }
 
     @Override
-    public List<BillRecord> listRecords(String importNo, String recordType) {
+    public PageVO<BillRecord> listRecords(String importNo, String recordType, int page, int size) {
         BillImport billImport = requireByImportNo(importNo);
         String recordTypeValue = StringUtils.hasText(recordType) ? recordType.trim().toUpperCase() : null;
-        return billRecordRepository.listByImport(billImport.getId(), recordTypeValue);
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<BillRecord> result = new PageVO<>();
+        result.setTotal(billRecordRepository.countByImport(billImport.getId(), recordTypeValue));
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(billRecordRepository.listPageByImport(
+            billImport.getId(), recordTypeValue, safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override
-    public List<BillReconcileDiscrepancy> listDiscrepancies(String importNo, String bizType,
-                                                            String discrepancyType, String status) {
+    public PageVO<BillReconcileDiscrepancy> listDiscrepancies(String importNo, String bizType,
+                                                             String discrepancyType, String status,
+                                                             int page, int size) {
         BillImport billImport = requireByImportNo(importNo);
         String bizTypeValue = StringUtils.hasText(bizType) ? bizType.trim().toUpperCase() : null;
         String discrepancyTypeValue = StringUtils.hasText(discrepancyType) ? discrepancyType.trim() : null;
         String statusValue = StringUtils.hasText(status) ? status.trim().toUpperCase() : null;
-        return discrepancyRepository.listByImport(
-            billImport.getId(), bizTypeValue, discrepancyTypeValue, statusValue);
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<BillReconcileDiscrepancy> result = new PageVO<>();
+        result.setTotal(discrepancyRepository.countByImport(
+            billImport.getId(), bizTypeValue, discrepancyTypeValue, statusValue));
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(discrepancyRepository.listPageByImport(
+            billImport.getId(), bizTypeValue, discrepancyTypeValue, statusValue,
+            safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override

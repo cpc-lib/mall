@@ -20,4 +20,16 @@ public interface BillReconcileDiscrepancyMapper extends BaseMapper<BillReconcile
                                                                  @Param("bizType") String bizType,
                                                                  @Param("discrepancyType") String discrepancyType,
                                                                  @Param("status") String status);
+
+    Long countDiscrepanciesByImport(@Param("importId") Long importId,
+                                    @Param("bizType") String bizType,
+                                    @Param("discrepancyType") String discrepancyType,
+                                    @Param("status") String status);
+
+    List<BillReconcileDiscrepancyPO> selectPageByImport(@Param("importId") Long importId,
+                                                        @Param("bizType") String bizType,
+                                                        @Param("discrepancyType") String discrepancyType,
+                                                        @Param("status") String status,
+                                                        @Param("limit") int limit,
+                                                        @Param("offset") long offset);
 }
