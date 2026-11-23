@@ -153,7 +153,8 @@ public class WxPayV2Controller {
                     return wxNotifyFail("金额校验失败");
                 }
 
-                String lockKey = "payment:wx:v2:notify:pay:" + orderNo;
+                // 订单级支付锁：同一订单的支付通知/查单/关单/支付单推进共用一把锁。
+                String lockKey = "payment:order:" + orderNo;
 
                 // 使用 Redisson 分布式锁（leaseTime=-1 开启看门狗自动续期）
                 distributedLockTemplate.execute(lockKey, 5000L, () ->

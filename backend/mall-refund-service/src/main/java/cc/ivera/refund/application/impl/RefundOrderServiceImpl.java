@@ -27,7 +27,7 @@ import cc.ivera.refund.domain.model.RefundInfo;
 import cc.ivera.refund.domain.model.RefundItem;
 import cc.ivera.refund.domain.model.RefundOrder;
 import cc.ivera.refund.domain.policy.RefundPolicy;
-import cc.ivera.refund.domain.repository.RefundInfoRepository;
+import cc.ivera.refund.domain.repository.RefundInfoRepository; 
 import cc.ivera.refund.domain.repository.RefundItemRepository;
 import cc.ivera.refund.domain.repository.RefundOrderRepository;
 import cc.ivera.refund.application.dto.RefundApplyItemRequest;
@@ -129,13 +129,13 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
-    @DistributedLock(key = "'refund:edit:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public RefundApplyVO update(Long userId, String refundNo, RefundApplyUpdateRequest request) {
         return tx.execute(s -> doUpdate(userId, refundNo, request));
     }
 
     @Override
-    @DistributedLock(key = "'refund:cancel:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public void cancel(Long userId, String refundNo) {
         tx.execute(s -> {
             doCancelOrReject(userId, refundNo, null, true);
@@ -159,7 +159,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     @Override
-    @DistributedLock(key = "'refund:cancel:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public void reject(String refundNo, String remark) {
         tx.execute(s -> {
             doCancelOrReject(null, refundNo, remark, false);
@@ -169,18 +169,18 @@ public class RefundOrderServiceImpl implements RefundOrderService {
 
     @Override
     public void accept(String refundNo, String remark, String goodsDisposition) {
-        executeWithLockAndChannelRefund("refund:accept:" + refundNo,
+        executeWithLockAndChannelRefund("refund:order:" + refundNo,
             () -> prepareAccept(refundNo, remark, goodsDisposition));
     }
 
     @Override
     public void confirmReturn(String refundNo, String remark) {
-        executeWithLockAndChannelRefund("refund:confirm-return:" + refundNo, () -> prepareConfirmReturn(refundNo, remark));
+        executeWithLockAndChannelRefund("refund:order:" + refundNo, () -> prepareConfirmReturn(refundNo, remark));
     }
 
     @Override
     public void retry(String refundNo) {
-        executeWithLockAndChannelRefund("refund:retry:" + refundNo, () -> prepareRetry(refundNo));
+        executeWithLockAndChannelRefund("refund:order:" + refundNo, () -> prepareRetry(refundNo));
     }
 
     private void executeWithLockAndChannelRefund(String lockKey, java.util.function.Supplier<RefundInfo> prepare) {
@@ -204,7 +204,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     // ==================== 查询 ====================
 
     @Override
-    @DistributedLock(key = "'refund:settle:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public void settle(String refundNo) {
         tx.execute(s -> {
             doSettle(refundNo);

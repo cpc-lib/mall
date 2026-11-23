@@ -157,7 +157,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
-    @DistributedLock(key = "'payment:wx:native:v3:order:' + #orderNo", waitTimeMillis = 3000L)
+    @DistributedLock(key = "'payment:order:' + #orderNo", waitTimeMillis = 3000L)
     public WxPayNativeVO nativePayByOrderNo(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
@@ -223,7 +223,8 @@ public class WxPayOrderService implements WxPayOrderFacade {
         }
 
         String notifyId = getString(bodyMap, "id");
-        distributedLockTemplate.execute("payment:wx:notify:pay:" + orderNo, PAY_NOTIFY_LOCK_WAIT_MS, () ->
+        // 订单级支付锁：同一订单的支付通知/查单/关单/支付单推进共用一把锁，避免并发写同一笔 t_payment_order。
+        distributedLockTemplate.execute("payment:order:" + orderNo, PAY_NOTIFY_LOCK_WAIT_MS, () ->
             transactionTemplate.execute(status -> {
                 doProcessOrderNotifyInTransaction(orderNo, plainTextMap, plainText, notifyId);
                 return null;
@@ -257,7 +258,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     }
 
     @Override
-    @DistributedLock(key = "'payment:order:cancel:' + #orderNo", waitTimeMillis = 3000L)
+    @DistributedLock(key = "'payment:order:' + #orderNo", waitTimeMillis = 3000L)
     public void cancelOrder(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
@@ -358,7 +359,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
             Map<String, Object> finalResultMap = resultMap;
             String finalResult = result;
             String finalTradeState = tradeState;
-            distributedLockTemplate.execute("payment:wx:query:order:" + orderNo, 5000L, () ->
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
                 transactionTemplate.execute(status -> {
                     doSyncOrderStatusFromWxQuery(orderNo, finalResultMap, finalResult, finalTradeState, false);
                     return null;
@@ -373,7 +374,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     @Override
     public void checkOrderStatus(String orderNo) {
         String result = queryOrderBodyIfExists(orderNo);
-        distributedLockTemplate.execute("payment:wx:check:order:" + orderNo, 5000L, () ->
+        distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
             transactionTemplate.execute(status -> {
                 if (result == null) {
                     closeLocalOrderWhenChannelAbsent(orderNo);

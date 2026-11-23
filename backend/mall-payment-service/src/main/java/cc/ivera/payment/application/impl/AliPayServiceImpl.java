@@ -140,7 +140,7 @@ public class AliPayServiceImpl implements AliPayService {
     }
 
     @Override
-    @DistributedLock(key = "'payment:ali:pagepay:order:' + #orderNo", waitTimeMillis = 3000L)
+    @DistributedLock(key = "'payment:order:' + #orderNo", waitTimeMillis = 3000L)
     public String tradeCreateByOrderNo(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
@@ -189,7 +189,8 @@ public class AliPayServiceImpl implements AliPayService {
         }
 
         String notifyId = params.get("notify_id");
-        String lockKey = "payment:ali:notify:pay:" + orderNo;
+        // 订单级支付锁：同一订单的支付通知/查单/关单/支付单推进共用一把锁，避免并发写同一笔 t_payment_order。
+        String lockKey = "payment:order:" + orderNo;
 
         distributedLockTemplate.execute(lockKey, 5000L, () ->
             transactionTemplate.execute(status -> {
@@ -243,7 +244,7 @@ public class AliPayServiceImpl implements AliPayService {
 
     @Override
     public void cancelOrder(String orderNo) {
-        distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+        distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
             // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，order 状态仍为 NOTPAY，
             // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
             if (paymentDealRepository.existsByOrderNo(orderNo)) {
@@ -314,7 +315,7 @@ public class AliPayServiceImpl implements AliPayService {
         if (tradeStatus == null && ALIPAY_SUB_CODE_TRADE_NOT_EXIST.equals(subCode)) {
             // 渠道侧从无此交易（从未发起支付）：渠道无单可关（关单接口对不存在交易仅返回失败，不抛异常），
             // 直接走本地 V2 关单链路（CAS NOTPAY->CLOSED：关闭活跃支付单 + 释放预占库存）。
-            distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
                 log.warn("支付宝核实渠道无此交易（从未发起支付），本地订单超时关单 ===> {}", orderNo);
                 closeOrder(orderNo);
                 orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
@@ -323,7 +324,7 @@ public class AliPayServiceImpl implements AliPayService {
         }
 
         if (AliPayTradeState.NOTPAY.getType().equals(tradeStatus)) {
-            distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
                 log.warn("支付宝核实订单未支付，执行关单 ===> {}", orderNo);
                 closeOrder(orderNo);
                 orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
@@ -338,7 +339,7 @@ public class AliPayServiceImpl implements AliPayService {
             String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
             String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
             Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-            distributedLockTemplate.execute("payment:ali:check:order:" + orderNo, 5000L, () ->
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
                 transactionTemplate.execute(status -> {
                     boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
                         orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
@@ -388,7 +389,7 @@ public class AliPayServiceImpl implements AliPayService {
                     String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
                     String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
                     Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-                    distributedLockTemplate.execute("payment:ali:query:order:" + orderNo, 5000L, () ->
+                    distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
                         transactionTemplate.execute(status -> {
                             boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
                                 orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);

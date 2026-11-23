@@ -236,7 +236,7 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
         if (result == null || result.getRefundNo() == null || result.getRefundNo().trim().isEmpty()) {
             return;
         }
-        distributedLockTemplate.execute("payment:wx:notify:refund:" + result.getRefundNo(), 5000L, () -> {
+        distributedLockTemplate.execute("refund:order:" + result.getRefundNo(), 5000L, () -> {
             RefundStatusSyncResult syncResult = toRefundStatusSyncResult(result);
             transactionTemplate.execute(status -> {
                 refundInfoService.syncRefundStatus(syncResult);

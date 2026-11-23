@@ -62,7 +62,7 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
     }
 
     @Override
-    @DistributedLock(key = "'payment:offline:mark:' + #orderNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'payment:order:' + #orderNo", waitTimeMillis = 5000L)
     public boolean markOfflinePaid(String orderNo) {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("标记付款缺少订单号");

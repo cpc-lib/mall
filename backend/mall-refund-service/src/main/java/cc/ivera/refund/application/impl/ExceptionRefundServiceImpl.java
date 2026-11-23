@@ -86,7 +86,8 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
 
     @Override
     public void trigger(String orderNo, String reason) {
-        lock.execute("oversold:refund:" + orderNo, 5000L, () -> {
+        // 退款申请创建按订单号串行化，与用户端 create/cancelPaidOrder 共用同一把锁，避免同一订单并发创建多笔退款。
+        lock.execute("refund:create:" + orderNo, 5000L, () -> {
             RefundInfo refund = tx.execute(s -> prepareOversold(orderNo, reason));
             if (refund == null) {
                 return null;
