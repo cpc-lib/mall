@@ -14,6 +14,7 @@ import cc.ivera.payment.domain.enums.wxpay.WxNotifyType;
 import cc.ivera.payment.domain.enums.wxpay.WxTradeState;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
+import cc.ivera.payment.domain.repository.PaymentDealRepository;
 import cc.ivera.payment.application.vo.WxPayJsapiVO;
 import cc.ivera.payment.application.dto.WxPayNativeVO;
 import cc.ivera.payment.application.vo.WxPayStatusVO;
@@ -65,6 +66,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     private final WxPayNotificationDecoder wxPayNotificationDecoder;
     private final DistributedLockTemplate distributedLockTemplate;
     private final TransactionTemplate transactionTemplate;
+    private final PaymentDealRepository paymentDealRepository;
 
     public WxPayOrderService(PaymentConfigGateway paymentConfigLoader,
                              OrderPaymentApi orderInfoService,
@@ -75,7 +77,8 @@ public class WxPayOrderService implements WxPayOrderFacade {
                              WxPayHttpClient wxPayHttpClient,
                              WxPayNotificationDecoder wxPayNotificationDecoder,
                              DistributedLockTemplate distributedLockTemplate,
-                             TransactionTemplate transactionTemplate) {
+                             TransactionTemplate transactionTemplate,
+                             PaymentDealRepository paymentDealRepository) {
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
         this.orderStatusCommandApi = orderStatusCommandApi;
@@ -86,6 +89,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
         this.wxPayNotificationDecoder = wxPayNotificationDecoder;
         this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.paymentDealRepository = paymentDealRepository;
     }
 
     @Override
@@ -259,6 +263,12 @@ public class WxPayOrderService implements WxPayOrderFacade {
             throw new BizException("订单号不能为空");
         }
         transactionTemplate.execute(status -> {
+            // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，order 状态仍为 NOTPAY，
+            // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
+            if (paymentDealRepository.existsByOrderNo(orderNo)) {
+                log.info("cancelOrder 发现有效成交，跳过关单 orderNo={}", orderNo);
+                return null;
+            }
             OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
             if (lockedOrder == null) {
                 throw new BizException("订单不存在，orderNo=" + orderNo);

@@ -513,7 +513,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundInfo handleCancelBeforeShip(String refundNo, RefundOrder refundOrder) {
-        refundInventoryGateway.restockForRefund(refundNo, toStockLines(itemsOf(refundNo)), false);
+        // 必须先 restockWithGuard：累加 t_order_item.restocked_qty 做 CAS 防超补守卫，
+        // 直接调 restockForRefund 会绕过订单侧的数量累加校验，违反 AGENTS §5.4。
+        restockWithGuard(refundNo, false);
         return initiateChannelRefund(refundOrder);
     }
 

@@ -89,10 +89,15 @@ public class AdminOrderShipmentController {
         String ps = order.getPayStatus();
         if (!PayStatus.UNPAID.getType().equals(ps) && !PayStatus.PAYING.getType().equals(ps))
             throw new BizException("仅未支付/支付中订单可强制关单，当前支付状态：" + ps);
-        // 幂等：已被超时调度器或前次操作关闭的订单直接返回成功。
-        // order_status 存 V2 生命周期码（CLOSED），不能拿 legacy 中文标签比较。
+        // 已被超时调度器或前次操作关闭的订单直接返回成功（幂等）。
         if (OrderLifecycleStatus.CLOSED.getType().equals(order.getOrderStatus())) {
             return R.ok().setMessage("订单已关闭（幂等），无需重复操作");
+        }
+        // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，payStatus 仍为 PAYING，
+        // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
+        if (paymentOrderRepository.hasSuccessfulPayment(orderNo)) {
+            orderInfoService.markPaid(orderNo);
+            return R.ok().setMessage("订单已支付成交，已标记为已支付状态，禁止关单");
         }
         boolean ok = orderInfoService.updateStatusByOrderNoIfStatus(orderNo, OrderStatus.NOTPAY, OrderStatus.CLOSED);
         if (!ok) throw new BizException("关单失败：订单状态可能已被并发修改，请刷新后重试");

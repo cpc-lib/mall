@@ -13,6 +13,7 @@ import cc.ivera.payment.domain.enums.PayType;
 import cc.ivera.payment.domain.enums.alipay.AliPayTradeState;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
+import cc.ivera.payment.domain.repository.PaymentDealRepository;
 import cc.ivera.payment.application.dto.ChannelOrderQueryVO;
 import cc.ivera.payment.application.dto.ChannelRefundCommand;
 import cc.ivera.payment.application.dto.ChannelRefundQuery;
@@ -62,6 +63,8 @@ public class AliPayServiceImpl implements AliPayService {
 
     private final TransactionTemplate transactionTemplate;
 
+    private final PaymentDealRepository paymentDealRepository;
+
     public AliPayServiceImpl(
         OrderPaymentApi orderInfoService,
         OrderStatusCommandApi orderStatusCommandApi,
@@ -70,7 +73,8 @@ public class AliPayServiceImpl implements AliPayService {
         PaymentOrderService paymentOrderService,
         PaymentSuccessService paymentSuccessService,
         DistributedLockTemplate distributedLockTemplate,
-        TransactionTemplate transactionTemplate
+        TransactionTemplate transactionTemplate,
+        PaymentDealRepository paymentDealRepository
     ) {
         this.orderInfoService = orderInfoService;
         this.orderStatusCommandApi = orderStatusCommandApi;
@@ -80,6 +84,7 @@ public class AliPayServiceImpl implements AliPayService {
         this.paymentSuccessService = paymentSuccessService;
         this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
+        this.paymentDealRepository = paymentDealRepository;
     }
 
     @Override
@@ -239,6 +244,12 @@ public class AliPayServiceImpl implements AliPayService {
     @Override
     public void cancelOrder(String orderNo) {
         distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+            // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，order 状态仍为 NOTPAY，
+            // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
+            if (paymentDealRepository.existsByOrderNo(orderNo)) {
+                log.info("cancelOrder 发现有效成交，跳过关单 orderNo={}", orderNo);
+                return;
+            }
             if (!OrderStatus.NOTPAY.getType().equals(orderInfoService.getOrderStatus(orderNo))) {
                 log.info("订单当前状态不允许取消，orderNo={}", orderNo);
                 return;

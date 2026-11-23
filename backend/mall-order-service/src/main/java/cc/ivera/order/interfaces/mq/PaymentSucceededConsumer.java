@@ -61,6 +61,9 @@ public class PaymentSucceededConsumer {
             return;
         }
         if (OrderStatus.SUCCESS.getType().equals(order.getLegacyStatus())) {
+            // 幂等兜底：即使订单已是 SUCCESS，仍幂等提交一次库存预占。
+            // 防止上次 CAS 成功但 afterCommit 内远程 commitReservation 超时，导致 locked_stock 永久泄漏。
+            orderInfoService.ensureReservationCommitted(orderNo);
             log.info("订单已支付，支付成交事件幂等忽略，orderNo={}, paymentNo={}", orderNo, message.getPaymentNo());
             return;
         }

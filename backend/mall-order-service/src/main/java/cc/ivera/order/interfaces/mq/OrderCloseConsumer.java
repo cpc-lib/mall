@@ -55,6 +55,13 @@ public class OrderCloseConsumer {
             return;
         }
         if (!OrderStatus.NOTPAY.getType().equals(orderInfo.getLegacyStatus())) {
+            // 订单已离开 NOTPAY：幂等兜底库存操作，防止 CAS 成功但 afterCommit 内远程调用超时导致泄漏。
+            if (OrderStatus.CLOSED.getType().equals(orderInfo.getLegacyStatus())
+                || OrderStatus.CANCEL.getType().equals(orderInfo.getLegacyStatus())) {
+                orderInfoService.ensureReservationReleased(orderNo);
+            } else if (OrderStatus.SUCCESS.getType().equals(orderInfo.getLegacyStatus())) {
+                orderInfoService.ensureReservationCommitted(orderNo);
+            }
             log.info("订单当前状态无需关单，orderNo={}, status={}", orderNo, orderInfo.getLegacyStatus());
             return;
         }
@@ -63,6 +70,9 @@ public class OrderCloseConsumer {
         if (paymentOrderQueryApi.hasSuccessfulPayment(orderNo)) {
             log.info("订单存在有效支付成交，转为支付成功处理，orderNo={}", orderNo);
             orderInfoService.markPaid(orderNo);
+            // markPaid 内部 CAS 成功后在 afterCommit 里调 commitReservation；
+            // 如果 afterCommit 内远程调用超时，这里幂等再调一次兜底。
+            orderInfoService.ensureReservationCommitted(orderNo);
             return;
         }
         channelOrderStatusDispatcher.checkOrderStatus(paymentType, orderNo);

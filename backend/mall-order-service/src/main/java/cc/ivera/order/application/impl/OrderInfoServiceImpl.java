@@ -294,6 +294,20 @@ public class OrderInfoServiceImpl implements OrderInfoService, OrderPaymentApi {
         });
     }
 
+    @Override
+    public void ensureReservationCommitted(String orderNo) {
+        // 幂等兜底：MQ 消费者/定时任务重试时订单已是 SUCCESS 但库存提交可能漏执行（CAS 成功但 afterCommit 内远程调用超时）
+        // product 侧 commitReservation 基于 reservation 状态 CAS（LOCKED→COMMITTED），已 COMMITTED 会安全短路。
+        inventoryService.commitReservation(orderNo);
+    }
+
+    @Override
+    public void ensureReservationReleased(String orderNo) {
+        // 幂等兜底：MQ 消费者/定时任务重试时订单已是 CLOSED/CANCEL 但库存释放可能漏执行
+        // product 侧 releaseReservation 基于 reservation 状态 CAS（LOCKED→RELEASED），已 RELEASED/COMMITTED 会安全短路。
+        inventoryService.releaseReservation(orderNo);
+    }
+
     /**
      * 本地事务未提交（回滚或异常）时执行补偿释放预占；无事务上下文时无事可回滚。
      */

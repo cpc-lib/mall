@@ -45,4 +45,16 @@ public interface OrderInfoService {
      * 超时未支付订单扫描：legacy NOTPAY 且创建时间早于 cutoff（定时兜底关单用）。
      */
     List<OrderInfo> listTimeoutNotPayOrders(Date cutoff);
+
+    /**
+     * 幂等提交库存预占：给 MQ 消费者/定时任务在"订单已 SUCCESS 但库存提交可能漏执行"时兜底。
+     * 内部直接调 InventoryService.commitReservation（product 侧基于 reservation CAS 幂等）。
+     */
+    void ensureReservationCommitted(String orderNo);
+
+    /**
+     * 幂等释放库存预占：给 MQ 消费者/定时任务在"订单已 CLOSED 但库存释放可能漏执行"时兜底。
+     * 内部直接调 InventoryService.releaseReservation（product 侧基于 reservation CAS 幂等）。
+     */
+    void ensureReservationReleased(String orderNo);
 }
