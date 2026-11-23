@@ -8,6 +8,9 @@ import cc.ivera.shared.domain.exception.ErrorCode;
 import cc.ivera.shared.web.R;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.List;
+
 /**
  * 商品查询远程适配器：购物车只读取商品快照（标题/价格/库存/状态），不访问商品库。
  */
@@ -23,6 +26,14 @@ public class ProductQueryRemoteAdapter implements ProductQueryApi {
     @Override
     public Product findById(Long id) {
         return unwrap(client.findById(id));
+    }
+
+    @Override
+    public List<Product> findByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return unwrap(client.findByIds(List.copyOf(ids)));
     }
 
     private <T> T unwrap(R<T> response) {

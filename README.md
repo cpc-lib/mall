@@ -792,7 +792,7 @@ http://localhost:3002
 
 ### 后端
 
-后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现），以及 `mall-order-service` 的 `AutoReceiptSchedulerTest`（复用确认收货链路、单批失败隔离）。测试均不启动 Spring 上下文、不依赖 DM8；其余模块仍以编译通过为基础门槛：
+后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现），`mall-order-service` 的 `AutoReceiptSchedulerTest`（复用确认收货链路、单批失败隔离），以及 `mall-cart-service` 的 `CartServiceImplTest`（购物车列表批量查询商品快照、空购物车不发起远程调用）。测试均不启动 Spring 上下文、不依赖 DM8；其余模块仍以编译通过为基础门槛：
 
 ```powershell
 cd backend
@@ -2385,7 +2385,7 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）；`mall-order-service` 包含 `AutoReceiptSchedulerTest`（2 个用例，覆盖复用确认收货链路与单批失败隔离）。所有测试均不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
+后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）；`mall-order-service` 包含 `AutoReceiptSchedulerTest`（2 个用例，覆盖复用确认收货链路与单批失败隔离）；`mall-cart-service` 包含 `CartServiceImplTest`（2 个用例，覆盖购物车列表批量查询商品快照与空购物车不发起远程调用）。所有测试均不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
 
 命令：
 

@@ -2,6 +2,7 @@ package cc.ivera.product.domain.repository;
 
 import cc.ivera.product.domain.model.Product;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -12,6 +13,11 @@ import java.util.List;
 public interface ProductRepository {
 
     Product findById(Long id);
+
+    /**
+     * 批量按主键查询，只返回存在的商品。
+     */
+    List<Product> findByIds(Collection<Long> ids);
 
     List<Product> findAll();
 

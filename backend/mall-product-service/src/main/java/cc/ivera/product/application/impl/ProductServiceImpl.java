@@ -10,6 +10,7 @@ import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
@@ -53,6 +54,11 @@ public class ProductServiceImpl implements ProductService, ProductQueryApi {
     @Override
     public Product findById(Long id) {
         return productRepository.findById(id);
+    }
+
+    @Override
+    public List<Product> findByIds(Collection<Long> ids) {
+        return productRepository.findByIds(ids);
     }
 
     @Override

@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
+import java.util.List;
+
 /**
  * 商品服务内部契约：商品快照读取与库存预占推进。
  */
@@ -20,6 +22,9 @@ public interface ProductServiceClient {
 
     @GetMapping("/internal/product/query/{id}")
     R<Product> findById(@PathVariable("id") Long id);
+
+    @PostMapping("/internal/product/query/batch")
+    R<List<Product>> findByIds(@RequestBody List<Long> ids);
 
     @PostMapping("/internal/product/inventory/reserve")
     R<Object> reserve(@RequestBody InventoryReserveRequest request);

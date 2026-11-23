@@ -70,6 +70,11 @@ public class ProductInternalController {
         return R.ok(productQueryApi.findById(id));
     }
 
+    @PostMapping("/query/batch")
+    public R<List<Product>> queryBatch(@RequestBody List<Long> ids) {
+        return R.ok(productQueryApi.findByIds(ids));
+    }
+
     @PostMapping("/stock/{id}/adjust")
     public R<Product> adjust(@PathVariable Long id, @Valid @RequestBody ProductStockAdjustRequest request) {
         return R.ok(productStockService.adjustOne(id, request.getDelta()));

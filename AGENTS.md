@@ -15,7 +15,7 @@
 - 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`；P3–P7 阶段用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与其他进程仍同库同 schema。
 - 每个业务上下文遵循四层结构：`interfaces / application / domain / infrastructure`。
 - 服务治理：所有可运行进程通过 Nacos 注册服务并从配置中心导入 `<应用名>.yaml`（`spring.config.import: optional:nacos:...`）；内部调用统一使用 Spring Cloud OpenFeign（`cc.ivera.infra.feign.InternalFeignConfiguration` 解包 `R` 信封），网关路由目标统一为 `lb://mall-xxx-service`。`NACOS_ENABLED=false` 时注册与配置导入关闭，此时必须用 `USER_SERVICE_BASE_URL` 等 base-url 与 `MALL_*_URI` 直连。微信/支付宝渠道客户端保持独立 SDK/HTTP 客户端，不得改成 Feign。
-- 后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（退款尾差与防超退不变量）与 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 依赖方向），以及 `mall-order-service` 的 `AutoReceiptSchedulerTest`（自动收货链路复用与单批失败隔离）；其余模块仍无测试，验证以编译通过为准。`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。CI 见 `.github/workflows/ci.yml`。
+- 后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（退款尾差与防超退不变量）与 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 依赖方向），`mall-order-service` 的 `AutoReceiptSchedulerTest`（自动收货链路复用与单批失败隔离），以及 `mall-cart-service` 的 `CartServiceImplTest`（购物车列表批量商品快照与空购物车短路）；其余模块仍无测试，验证以编译通过为准。`user-ui` 有 1 个 Node 逻辑测试；`admin-ui` 暂无自动化测试。CI 见 `.github/workflows/ci.yml`。
 
 文档职责：
 
@@ -243,7 +243,7 @@ backend/env/sql/dm8/schema.sql
 
 ## 8. 测试规则
 
-后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest` 与 `RefundDomainArchitectureTest` 均为纯域单测，`mall-order-service` 的 `AutoReceiptSchedulerTest` 为 Mockito 单测；均不启动 Spring 上下文、不依赖 DM8，其余模块仍无测试。变更验证以 `mvn clean test` 通过为准。CI（`.github/workflows/ci.yml`）执行同一命令，并构建两个前端。
+后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest` 与 `RefundDomainArchitectureTest` 均为纯域单测，`mall-order-service` 的 `AutoReceiptSchedulerTest` 与 `mall-cart-service` 的 `CartServiceImplTest` 为 Mockito 单测；均不启动 Spring 上下文、不依赖 DM8，其余模块仍无测试。变更验证以 `mvn clean test` 通过为准。CI（`.github/workflows/ci.yml`）执行同一命令，并构建两个前端。
 
 必须执行的回归：
 

@@ -10,6 +10,7 @@ import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.ReserveLine;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
@@ -29,6 +30,14 @@ public class ProductRemoteAdapter implements ProductQueryApi, InventoryService {
     @Override
     public Product findById(Long id) {
         return RemoteResponseUnwrapper.unwrap(client.findById(id), SERVICE);
+    }
+
+    @Override
+    public List<Product> findByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return RemoteResponseUnwrapper.unwrap(client.findByIds(List.copyOf(ids)), SERVICE);
     }
 
     @Override

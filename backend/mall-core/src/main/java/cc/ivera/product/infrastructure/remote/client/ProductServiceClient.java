@@ -22,6 +22,9 @@ public interface ProductServiceClient {
     @GetMapping("/internal/product/query/{id}")
     R<Product> query(@PathVariable("id") Long id);
 
+    @PostMapping("/internal/product/query/batch")
+    R<List<Product>> queryBatch(@RequestBody List<Long> ids);
+
     @GetMapping("/internal/product/products")
     R<List<Product>> list();
 

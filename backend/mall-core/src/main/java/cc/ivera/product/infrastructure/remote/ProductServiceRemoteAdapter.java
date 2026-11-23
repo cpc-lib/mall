@@ -14,6 +14,7 @@ import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
@@ -33,6 +34,14 @@ public class ProductServiceRemoteAdapter implements ProductService, ProductStock
     @Override
     public Product findById(Long id) {
         return unwrap(client.query(id));
+    }
+
+    @Override
+    public List<Product> findByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        return unwrap(client.queryBatch(List.copyOf(ids)));
     }
 
     @Override

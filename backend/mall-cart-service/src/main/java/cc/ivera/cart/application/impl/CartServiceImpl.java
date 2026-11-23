@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class CartServiceImpl implements CartService {
@@ -28,9 +30,17 @@ public class CartServiceImpl implements CartService {
 
     @Override
     public List<CartItemVO> list(Long userId) {
+        List<CartItem> items = cartRepository.findAll(userId);
+        if (items.isEmpty()) {
+            return new ArrayList<>();
+        }
+        // 批量取商品快照，避免按条目逐次远程查询。
+        List<Long> productIds = items.stream().map(CartItem::getProductId).distinct().toList();
+        Map<Long, Product> products = productRepository.findByIds(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p, (first, second) -> first));
         List<CartItemVO> list = new ArrayList<>();
-        for (CartItem item : cartRepository.findAll(userId)) {
-            Product product = productRepository.findById(item.getProductId());
+        for (CartItem item : items) {
+            Product product = products.get(item.getProductId());
             CartItemVO vo = new CartItemVO();
             vo.setProductId(item.getProductId());
             vo.setQuantity(item.getQuantity());
