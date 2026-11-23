@@ -374,6 +374,14 @@
   - 将 Saga 正向顺序调整为 **`ReserveInventory`（预占库存）→ `CreateOrder`（落单 + Outbox）→ `ClearCart`（清购物车）**（`orderNo` 已在 `CheckoutSagaService` 启动状态机前生成，`t_inventory_reservation` 按 `order_no + product_id` 唯一约束幂等预占），库存不足时第一步直接失败，根本不会写入 `t_order_info` 和 `t_local_message`。
   - 在 `CheckoutTxService.cancelIfUnpaid` 中补充 `localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo)`。
 
+#### 处理进展（2026-11-23）
+
+- ✅ 优化方案第 2 条已实现：`CheckoutTxService.cancelIfUnpaid` 在条件关单成功（rows > 0）后调用 `localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo)`，补偿关单不再残留 30 分钟后投递的延迟关单消息。
+- ⏸ 优化方案第 1 条（`ReserveInventory` 前移）**暂缓，转为独立设计变更**，原因：
+  - 原文前提「`t_inventory_reservation` 按 `order_no + product_id` 唯一约束」与实际 schema 不符：`backend/env/sql/dm8/schema.sql` 中 `order_item_id BIGINT NOT NULL`，唯一键为 `uk_reservation_order_item(order_item_id)`；`InventoryServiceImpl.reserveForOrder` 对 `orderItemId == null` 直接抛异常，而 `orderItemId` 仅在 `CreateOrder` 落单后产生，因此无法在不改预占模型的前提下前移。
+  - 若前移，需同步处理：`schema.sql` 唯一键与可空性迁移；`InventoryService` 预占契约改为按「订单 + 商品」幂等；`CheckoutTxService.prepare` 的可用库存校验（预占后可用库存已扣减，原校验会误报「库存不足」）；Saga 入参需从购物车构造预占行；并需核实所有读取 `reservation.order_item_id` 的退款/结算路径。
+  - 按 `AGENTS.md` §2/§7，这属于设计变更 + DB schema 变更，需先出「现状 → 目标 → 影响面 → 回滚」评审并同步 `README.md` 第 15 章，不在 P1 收尾阶段直接实施。
+
 ---
 
 ### P1-6：Transactional Outbox（`t_local_message`）跨进程竞态重投、`STATUS_SENT` 被误覆盖及 BFF 寄宿问题
