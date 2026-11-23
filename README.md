@@ -2001,6 +2001,8 @@ StockImportFileStorage
 
 `t_stock_import.storage_type` 记录每个历史文件实际使用的存储后端，切换全局配置后仍可按记录读取旧文件。
 
+导入记录查询：`GET /api/admin/stock/imports` 服务端分页（`page`/`size`，默认 1/10，上限 200，创建时间倒序）；`GET /api/admin/stock/imports/{id}` 按 id 读取单条记录（含明细），供 Excel 编辑器直接定位，不再依赖列表全量返回。
+
 ### 15.14 账账核对
 
 对账全流程：

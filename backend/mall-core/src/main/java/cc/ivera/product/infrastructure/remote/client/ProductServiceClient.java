@@ -60,7 +60,7 @@ public interface ProductServiceClient {
     R<Long> createImport(@RequestBody StockImportCreateRequest request);
 
     @GetMapping("/internal/product/imports")
-    R<List<StockImport>> listImports();
+    R<PageVO<StockImport>> listImports(@RequestParam("page") int page, @RequestParam("size") int size);
 
     @GetMapping("/internal/product/imports/{id}")
     R<StockImport> getImport(@PathVariable("id") Long id);

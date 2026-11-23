@@ -55,15 +55,12 @@ export default function StockExcelEditor() {
     let cancelled = false
     ;(async () => {
       let aoa = null
-      let record = null
-      const [productsRes, importsRes] = await Promise.all([
-        stockApi.products().catch(() => ({ data: [] })),
-        stockApi.imports().catch(() => ({ data: [] }))
-      ])
+      const productsRes = await stockApi.products().catch(() => ({ data: [] }))
+      const metaRes = await stockApi.getImport(id).catch(() => ({ data: null }))
       if (cancelled) return
       const productList = productsRes.data || []
       setProducts(productList)
-      record = (importsRes.data || []).find(r => r.id === Number(id)) || null
+      const record = metaRes.data || null
       setMeta(record)
       try {
         const res = await stockApi.getImportFile(id)

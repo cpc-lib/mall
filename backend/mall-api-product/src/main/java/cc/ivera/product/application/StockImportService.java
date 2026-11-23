@@ -3,6 +3,7 @@ package cc.ivera.product.application;
 import cc.ivera.product.application.dto.StockAdjustResult;
 import cc.ivera.product.domain.model.StockAdjustLine;
 import cc.ivera.product.domain.model.StockImport;
+import cc.ivera.shared.web.PageVO;
 
 import java.util.List;
 
@@ -19,9 +20,9 @@ public interface StockImportService {
     Long createImport(String fileName, String fileBase64, List<StockAdjustLine> items);
 
     /**
-     * 最近导入记录（最多 50 条，含解析后的明细）。
+     * 导入记录分页（创建时间倒序，含解析后的明细）。
      */
-    List<StockImport> listImports();
+    PageVO<StockImport> listImports(int page, int size);
 
     /**
      * 按 id 查询导入记录（含解析后的明细），不存在抛 BizException。

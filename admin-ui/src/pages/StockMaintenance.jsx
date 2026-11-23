@@ -23,6 +23,9 @@ const HEADER = ['商品ID', '商品名称', '调整量']
 export default function StockMaintenance() {
   const [products, setProducts] = useState([])
   const [imports, setImports] = useState([])
+  const [importPage, setImportPage] = useState(1)
+  const [importSize, setImportSize] = useState(10)
+  const [importTotal, setImportTotal] = useState(0)
   const [selectedImportId, setSelectedImportId] = useState(null)
   const [batchResult, setBatchResult] = useState(null)
   const [importReport, setImportReport] = useState(null)
@@ -35,7 +38,12 @@ export default function StockMaintenance() {
   const [loading, setLoading] = useState(false)
 
   const loadProducts = () => stockApi.products().then(res => setProducts(res.data || [])).catch(() => {})
-  const loadImports = () => stockApi.imports().then(res => setImports(res.data || [])).catch(() => {})
+  const loadImports = (p = importPage, s = importSize) => stockApi.imports(p, s).then(res => {
+    setImports(res.data?.records || [])
+    setImportTotal(res.data?.total || 0)
+    setImportPage(res.data?.page || p)
+    setImportSize(res.data?.size || s)
+  }).catch(() => {})
 
   useEffect(() => {
     loadProducts()
@@ -186,7 +194,16 @@ export default function StockMaintenance() {
             message={`Excel 导入：成功匹配 ${importReport.applied} 行${importReport.issues.length ? `，${importReport.issues.length} 行被跳过` : ''}`}
             description={importReport.issues.length ? importReport.issues.map((t, i) => <div key={i}>{t}</div>) : undefined} />
         )}
-        <Table rowKey="id" dataSource={imports} size="small" pagination={false} scroll={{ y: 320 }}
+        <Table rowKey="id" dataSource={imports} size="small" scroll={{ y: 320 }}
+          pagination={{
+            current: importPage,
+            pageSize: importSize,
+            total: importTotal,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            showTotal: t => `共 ${t} 条`,
+            onChange: (p, s) => loadImports(p, s)
+          }}
           onRow={r => ({ onClick: () => { if (r.status === 'PENDING') setSelectedImportId(r.id) } })}
           rowSelection={{
             type: 'radio',

@@ -106,8 +106,9 @@ public class ProductInternalController {
     }
 
     @GetMapping("/imports")
-    public R<List<StockImport>> listImports() {
-        return R.ok(stockImportService.listImports());
+    public R<PageVO<StockImport>> listImports(@RequestParam(defaultValue = "1") int page,
+                                              @RequestParam(defaultValue = "10") int size) {
+        return R.ok(stockImportService.listImports(page, size));
     }
 
     @GetMapping("/imports/{id}")

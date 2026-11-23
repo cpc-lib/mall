@@ -4,6 +4,7 @@ package cc.ivera.product.interfaces;
 import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.application.StockImportService;
 import cc.ivera.product.domain.model.StockAdjustLine;
+import cc.ivera.product.domain.model.StockImport;
 import cc.ivera.product.interfaces.assembler.ProductViewAssembler;
 import cc.ivera.product.application.dto.StockImportCreateRequest;
 import cc.ivera.product.application.dto.StockImportFileSaveRequest;
@@ -54,10 +55,23 @@ public class StockAdminController {
             .setMessage("导入记录已创建，请点选该记录进行编辑或确认入库");
     }
 
-    @Operation(summary = "Excel 导入记录列表（最近 50 条，含明细）")
+    @Operation(summary = "Excel 导入记录分页（含明细）")
     @GetMapping("/imports")
-    public R<List<StockImportVO>> imports() {
-        return R.ok(ProductViewAssembler.toStockImportVOList(stockImportService.listImports()));
+    public R<PageVO<StockImportVO>> imports(@RequestParam(defaultValue = "1") int page,
+                                            @RequestParam(defaultValue = "10") int size) {
+        PageVO<StockImport> result = stockImportService.listImports(page, size);
+        PageVO<StockImportVO> vo = new PageVO<>();
+        vo.setTotal(result.getTotal());
+        vo.setPage(result.getPage());
+        vo.setSize(result.getSize());
+        vo.setRecords(ProductViewAssembler.toStockImportVOList(result.getRecords()));
+        return R.ok(vo);
+    }
+
+    @Operation(summary = "按 id 查询导入记录（含明细）")
+    @GetMapping("/imports/{id}")
+    public R<StockImportVO> getImport(@PathVariable Long id) {
+        return R.ok(ProductViewAssembler.toStockImportVO(stockImportService.getImport(id)));
     }
 
     @Operation(summary = "读取导入记录的 Excel 文件（base64），供前端 JS 打开编辑")

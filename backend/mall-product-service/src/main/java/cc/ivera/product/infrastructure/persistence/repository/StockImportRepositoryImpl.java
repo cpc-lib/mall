@@ -42,10 +42,16 @@ public class StockImportRepositoryImpl implements StockImportRepository {
     }
 
     @Override
-    public List<StockImport> findRecent(int limit) {
+    public long countAll() {
+        Long total = stockImportMapper.selectCount(null);
+        return total == null ? 0L : total;
+    }
+
+    @Override
+    public List<StockImport> listPage(int limit, long offset) {
         List<StockImportPO> rows = stockImportMapper.selectList(
             new LambdaQueryWrapper<StockImportPO>().orderByDesc(StockImportPO::getCreateTime)
-                .orderByDesc(StockImportPO::getId).last("LIMIT " + limit));
+                .orderByDesc(StockImportPO::getId).last("LIMIT " + limit + " OFFSET " + offset));
         return rows.stream().map(StockImportPOConverter::toDomain).collect(Collectors.toList());
     }
 

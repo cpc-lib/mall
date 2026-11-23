@@ -10,6 +10,7 @@ import cc.ivera.product.domain.model.StockImport;
 import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.product.domain.repository.StockImportRepository;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.web.PageVO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
@@ -35,7 +36,6 @@ public class StockImportServiceImpl implements StockImportService {
 
     private static final int MAX_ITEMS_JSON_LENGTH = 4000;
     private static final int MAX_FILE_BYTES = 2 * 1024 * 1024;
-    private static final int LIST_LIMIT = 50;
 
     private final StockImportRepository stockImportRepository;
     private final ProductRepository productRepository;
@@ -70,10 +70,17 @@ public class StockImportServiceImpl implements StockImportService {
     }
 
     @Override
-    public List<StockImport> listImports() {
-        List<StockImport> rows = stockImportRepository.findRecent(LIST_LIMIT);
+    public PageVO<StockImport> listImports(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<StockImport> result = new PageVO<>();
+        result.setTotal(stockImportRepository.countAll());
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        List<StockImport> rows = stockImportRepository.listPage(safeSize, (long) (safePage - 1) * safeSize);
         for (StockImport row : rows) row.setItems(fromItemsJson(row.getItemsJson()));
-        return rows;
+        result.setRecords(rows);
+        return result;
     }
 
     @Override
