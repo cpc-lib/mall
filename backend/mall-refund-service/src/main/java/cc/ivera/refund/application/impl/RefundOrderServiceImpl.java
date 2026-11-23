@@ -17,6 +17,7 @@ import cc.ivera.product.domain.model.RefundStockLine;
 import cc.ivera.refund.application.RefundApplicationService;
 import cc.ivera.refund.application.RefundInfoService;
 import cc.ivera.refund.application.RefundOrderService;
+import cc.ivera.refund.application.RefundStatusSyncMessageService;
 import cc.ivera.refund.domain.enums.RefundApprovalStatus;
 import cc.ivera.refund.domain.enums.RefundGoodsDisposition;
 import cc.ivera.refund.domain.enums.RefundOrderStatus;
@@ -79,6 +80,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     private final PaymentChannelRefundApi paymentChannelRefundApi;
     private final RefundApplicationService refundApplicationService;
     private final RefundInfoService refundInfoService;
+    private final RefundStatusSyncMessageService refundStatusSyncMessageService;
 
     // ==================== 用户端：申请 / 编辑 / 撤回 / 未发货取消 ====================
 
@@ -94,7 +96,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
                                   TransactionTemplate tx,
                                   PaymentChannelRefundApi paymentChannelRefundApi,
                                   RefundApplicationService refundApplicationService,
-                                  RefundInfoService refundInfoService) {
+                                  RefundInfoService refundInfoService,
+                                  RefundStatusSyncMessageService refundStatusSyncMessageService) {
         this.refundOrderRepository = refundOrderRepository;
         this.refundItemRepository = refundItemRepository;
         this.refundInfoRepository = refundInfoRepository;
@@ -108,6 +111,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         this.paymentChannelRefundApi = paymentChannelRefundApi;
         this.refundApplicationService = refundApplicationService;
         this.refundInfoService = refundInfoService;
+        this.refundStatusSyncMessageService = refundStatusSyncMessageService;
     }
 
     @Override
@@ -679,6 +683,10 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         refundInfoService.applyChannelRefundResult(refund.getRefundNo(), result);
         if (result == null || result.getOutcome() == ChannelRefundResult.Outcome.FAILED) {
             throw new BizException(result == null ? "渠道退款结果为空" : result.getErrorMessage());
+        }
+        if (result.getOutcome() == ChannelRefundResult.Outcome.PROCESSING) {
+            // 渠道退款异步处理中：发 REFUND_SYNC 延迟消息，由定时任务/消费者对账确认终态
+            refundStatusSyncMessageService.sendRefundStatusSyncMessage(refund.getRefundNo());
         }
     }
 

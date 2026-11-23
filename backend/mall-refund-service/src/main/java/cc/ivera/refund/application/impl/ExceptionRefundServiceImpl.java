@@ -12,6 +12,7 @@ import cc.ivera.api.payment.PaymentOrderCommandApi;
 import cc.ivera.api.payment.PaymentOrderQueryApi;
 import cc.ivera.refund.application.ExceptionRefundService;
 import cc.ivera.refund.application.RefundInfoService;
+import cc.ivera.refund.application.RefundStatusSyncMessageService;
 import cc.ivera.refund.domain.enums.RefundApprovalStatus;
 import cc.ivera.refund.domain.enums.RefundOrderStatus;
 import cc.ivera.refund.domain.enums.RefundStatus;
@@ -55,6 +56,7 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
     private final PaymentOrderCommandApi paymentOrderCommandApi;
     private final PaymentChannelRefundApi paymentChannelRefundApi;
     private final RefundInfoService refundInfoService;
+    private final RefundStatusSyncMessageService refundStatusSyncMessageService;
 
     public ExceptionRefundServiceImpl(DistributedLockTemplate lock,
                                       TransactionTemplate tx,
@@ -66,7 +68,8 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
                                       PaymentOrderQueryApi paymentOrderQueryApi,
                                       PaymentOrderCommandApi paymentOrderCommandApi,
                                       PaymentChannelRefundApi paymentChannelRefundApi,
-                                      RefundInfoService refundInfoService) {
+                                      RefundInfoService refundInfoService,
+                                      RefundStatusSyncMessageService refundStatusSyncMessageService) {
         this.lock = lock;
         this.tx = tx;
         this.orderQueryApi = orderQueryApi;
@@ -78,6 +81,7 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
         this.paymentOrderCommandApi = paymentOrderCommandApi;
         this.paymentChannelRefundApi = paymentChannelRefundApi;
         this.refundInfoService = refundInfoService;
+        this.refundStatusSyncMessageService = refundStatusSyncMessageService;
     }
 
     @Override
@@ -250,6 +254,9 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
         refundInfoService.applyChannelRefundResult(refund.getRefundNo(), result);
         if (result == null || result.getOutcome() == ChannelRefundResult.Outcome.FAILED) {
             throw new BizException(result == null ? "渠道退款结果为空" : result.getErrorMessage());
+        }
+        if (result.getOutcome() == ChannelRefundResult.Outcome.PROCESSING) {
+            refundStatusSyncMessageService.sendRefundStatusSyncMessage(refund.getRefundNo());
         }
     }
 
