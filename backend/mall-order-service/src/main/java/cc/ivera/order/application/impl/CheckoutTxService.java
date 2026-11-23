@@ -15,6 +15,8 @@ import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.domain.mq.LocalMessageService;
+import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import cc.ivera.user.application.ShippingAddressService;
 import cc.ivera.user.domain.model.ShippingAddress;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,6 +44,7 @@ public class CheckoutTxService {
     private final PaymentConfigGateway paymentConfigLoader;
     private final OrderCloseMessageService orderCloseMessageService;
     private final ShippingAddressService addressService;
+    private final LocalMessageService localMessageService;
 
     @Value("${payment.order.expire-minutes:3}")
     private long orderExpireMinutes;
@@ -49,13 +52,15 @@ public class CheckoutTxService {
     public CheckoutTxService(CartService cartService, ProductQueryApi productRepository,
                              OrderRepository orderRepository, PaymentConfigGateway paymentConfigLoader,
                              OrderCloseMessageService orderCloseMessageService,
-                             ShippingAddressService addressService) {
+                             ShippingAddressService addressService,
+                             LocalMessageService localMessageService) {
         this.cartService = cartService;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderCloseMessageService = orderCloseMessageService;
         this.addressService = addressService;
+        this.localMessageService = localMessageService;
     }
 
     /**
@@ -145,10 +150,14 @@ public class CheckoutTxService {
 
     /**
      * 下单补偿：仅未支付订单可关闭，已支付/已关闭订单不受影响（条件 UPDATE，幂等）。
+     * 关单成功后同步作废本地发件箱中的延迟关单消息，避免 30 分钟后仍投递并触发无意义的渠道查单。
      */
     @Transactional(rollbackFor = Exception.class)
     public void cancelIfUnpaid(String orderNo) {
-        orderRepository.cancelIfUnpaid(orderNo);
+        int changed = orderRepository.cancelIfUnpaid(orderNo);
+        if (changed > 0) {
+            localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo);
+        }
     }
 
     private Map<String, Object> context(OrderInfo order, List<OrderItem> items) {
