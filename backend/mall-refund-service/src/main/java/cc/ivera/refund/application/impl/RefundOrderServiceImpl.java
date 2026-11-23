@@ -583,14 +583,22 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             channelError = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
             log.warn("渠道退款状态查询失败，返回本地状态 refundNo={} err={}", refundNo, channelError);
         }
-        // 2. 从 V1 RefundInfo 同步 V2 RefundOrder 状态
+        // 2. 从 V1 RefundInfo 同步 V2 RefundOrder 状态（条件 UPDATE 避免锁外脏对象覆盖）
         RefundInfo info = refundInfoRepository.findByRefundNo(refundNo);
         if (info != null && info.getRefundStatus() != null) {
             String v2Status = mapV1RefundStatusToV2(info.getRefundStatus());
             if (v2Status != null && !v2Status.equals(refundOrder.getStatus())) {
-                refundOrder.setStatus(v2Status);
-                refundOrderRepository.update(refundOrder);
-                log.info("退款单状态同步 refundNo={} {}→{}", refundNo, refundOrder.getStatus(), v2Status);
+                // 条件 UPDATE：仅当当前状态仍等于查询时读到的旧状态时才更新
+                int rows = refundOrderRepository.updateStatusIfStatusIn(
+                    refundNo, List.of(refundOrder.getStatus()), v2Status);
+                if (rows > 0) {
+                    refundOrder.setStatus(v2Status);
+                    log.info("退款单状态同步 refundNo={} {}→{}", refundNo, refundOrder.getStatus(), v2Status);
+                } else {
+                    log.debug("退款单状态同步跳过：已被其他链路推进，refundNo={}", refundNo);
+                    // 重新查询拿到最新状态
+                    refundOrder = refundOrderRepository.findByRefundNo(refundNo);
+                }
             }
         }
         RefundApplyVO vo = detail(refundOrder);

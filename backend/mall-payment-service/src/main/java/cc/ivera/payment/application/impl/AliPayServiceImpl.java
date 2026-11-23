@@ -238,16 +238,17 @@ public class AliPayServiceImpl implements AliPayService {
 
     @Override
     public void cancelOrder(String orderNo) {
-        if (!OrderStatus.NOTPAY.getType().equals(orderInfoService.getOrderStatus(orderNo))) {
-            log.info("订单当前状态不允许取消，orderNo={}", orderNo);
-            return;
-        }
-
-        closeOrder(orderNo);
-        boolean updated = orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
-        if (!updated) {
-            log.info("订单取消状态更新被忽略，orderNo={}", orderNo);
-        }
+        distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+            if (!OrderStatus.NOTPAY.getType().equals(orderInfoService.getOrderStatus(orderNo))) {
+                log.info("订单当前状态不允许取消，orderNo={}", orderNo);
+                return;
+            }
+            closeOrder(orderNo);
+            boolean updated = orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
+            if (!updated) {
+                log.info("订单取消状态更新被忽略，orderNo={}", orderNo);
+            }
+        });
     }
 
     @Override
@@ -302,16 +303,20 @@ public class AliPayServiceImpl implements AliPayService {
         if (tradeStatus == null && ALIPAY_SUB_CODE_TRADE_NOT_EXIST.equals(subCode)) {
             // 渠道侧从无此交易（从未发起支付）：渠道无单可关（关单接口对不存在交易仅返回失败，不抛异常），
             // 直接走本地 V2 关单链路（CAS NOTPAY->CLOSED：关闭活跃支付单 + 释放预占库存）。
-            log.warn("支付宝核实渠道无此交易（从未发起支付），本地订单超时关单 ===> {}", orderNo);
-            closeOrder(orderNo);
-            orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
+            distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+                log.warn("支付宝核实渠道无此交易（从未发起支付），本地订单超时关单 ===> {}", orderNo);
+                closeOrder(orderNo);
+                orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
+            });
             return;
         }
 
         if (AliPayTradeState.NOTPAY.getType().equals(tradeStatus)) {
-            log.warn("支付宝核实订单未支付 ===> {}", orderNo);
-            closeOrder(orderNo);
-            orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
+            distributedLockTemplate.execute("payment:ali:close:order:" + orderNo, 5000L, () -> {
+                log.warn("支付宝核实订单未支付，执行关单 ===> {}", orderNo);
+                closeOrder(orderNo);
+                orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
+            });
             return;
         }
 

@@ -8,7 +8,17 @@ public interface PasswordResetRequestRepository {
 
     void save(PasswordResetRequest request);
 
+    @Deprecated
     void update(PasswordResetRequest request);
+
+    /**
+     * 条件更新：仅当当前状态在 allowed 集合内时，置为 newStatus 并写入 handledBy / adminRemark。
+     * 用于 handle/reject 等锁外管理操作，避免并发时先读后改的脏对象覆盖。
+     *
+     * @return 实际更新行数；0 表示已被其他管理员处理，跳过
+     */
+    int markResolvedIfStatusIn(Long id, java.util.Collection<String> allowed, String newStatus,
+                               Long handledBy, String adminRemark);
 
     PasswordResetRequest findById(Long id);
 

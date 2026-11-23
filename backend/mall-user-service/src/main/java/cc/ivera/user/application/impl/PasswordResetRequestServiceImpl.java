@@ -14,8 +14,10 @@ import cc.ivera.user.application.dto.PasswordResetRequestSubmitRequest;
 import cc.ivera.user.application.vo.PasswordResetHandleVO;
 import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.util.List;
 
 @Service
 public class PasswordResetRequestServiceImpl implements PasswordResetRequestService {
@@ -64,23 +66,29 @@ public class PasswordResetRequestServiceImpl implements PasswordResetRequestServ
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public PasswordResetHandleVO handle(Long id, PasswordResetHandleRequest request, Long operatorUserId) {
+        // 1. 快速检查（非权威，仅提前失败）
         PasswordResetRequest row = requestRepository.findById(id);
         if (row == null) throw new BizException("申请不存在");
         if (!STATUS_PENDING.equals(row.getStatus())) throw new BizException("该申请已被处理，请刷新列表");
         UserAccount user = userRepository.findByUsername(row.getUsername());
         if (user == null) throw new BizException("用户不存在");
+
+        // 2. 条件 UPDATE CAS：仅当状态仍为 PENDING 时置为 HANDLED，确保并发 handle + reject 互斥
+        int rows = requestRepository.markResolvedIfStatusIn(id, List.of(STATUS_PENDING), STATUS_HANDLED,
+            operatorUserId, request == null ? null : request.getAdminRemark());
+        if (rows == 0) throw new BizException("该申请已被其他管理员处理，请刷新列表");
+
+        // 3. CAS 成功后再执行副作用（密码重置），失败则外层事务回滚
         String newPassword = generatePassword();
         AdminResetPasswordRequest resetRequest = new AdminResetPasswordRequest();
         resetRequest.setUserId(user.getId());
         resetRequest.setNewPassword(newPassword);
         authService.adminResetPassword(resetRequest);
-        row.setStatus(STATUS_HANDLED);
-        row.setHandledBy(operatorUserId);
-        row.setAdminRemark(request == null ? null : request.getAdminRemark());
-        requestRepository.update(row);
+
         PasswordResetHandleVO result = new PasswordResetHandleVO();
-        result.setId(row.getId());
+        result.setId(id);
         result.setUsername(row.getUsername());
         result.setNewPassword(newPassword);
         return result;
@@ -88,13 +96,15 @@ public class PasswordResetRequestServiceImpl implements PasswordResetRequestServ
 
     @Override
     public void reject(Long id, PasswordResetRejectRequest request, Long operatorUserId) {
+        // 快速检查（非权威）
         PasswordResetRequest row = requestRepository.findById(id);
         if (row == null) throw new BizException("申请不存在");
         if (!STATUS_PENDING.equals(row.getStatus())) throw new BizException("该申请已被处理，请刷新列表");
-        row.setStatus(STATUS_REJECTED);
-        row.setHandledBy(operatorUserId);
-        row.setAdminRemark(request == null ? null : request.getAdminRemark());
-        requestRepository.update(row);
+
+        // 条件 UPDATE CAS：仅当状态仍为 PENDING 时置为 REJECTED
+        int rows = requestRepository.markResolvedIfStatusIn(id, List.of(STATUS_PENDING), STATUS_REJECTED,
+            operatorUserId, request == null ? null : request.getAdminRemark());
+        if (rows == 0) throw new BizException("该申请已被其他管理员处理，请刷新列表");
     }
 
     private String generatePassword() {

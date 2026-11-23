@@ -6,8 +6,12 @@ import cc.ivera.user.infrastructure.persistence.converter.PasswordResetRequestPO
 import cc.ivera.user.infrastructure.persistence.mapper.PasswordResetRequestMapper;
 import cc.ivera.user.infrastructure.persistence.po.PasswordResetRequestPO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,6 +38,20 @@ public class PasswordResetRequestRepositoryImpl implements PasswordResetRequestR
     @Override
     public void update(PasswordResetRequest request) {
         passwordResetRequestMapper.updateById(PasswordResetRequestPOConverter.toPO(request));
+    }
+
+    @Override
+    public int markResolvedIfStatusIn(Long id, Collection<String> allowed, String newStatus,
+                                      Long handledBy, String adminRemark) {
+        LambdaUpdateWrapper<PasswordResetRequestPO> wrapper = new LambdaUpdateWrapper<PasswordResetRequestPO>()
+            .eq(PasswordResetRequestPO::getId, id)
+            .in(allowed != null && !allowed.isEmpty() ? PasswordResetRequestPO::getStatus : PasswordResetRequestPO::getId,
+                allowed != null && !allowed.isEmpty() ? allowed : Collections.singleton("__never_match__"))
+            .set(PasswordResetRequestPO::getStatus, newStatus)
+            .set(PasswordResetRequestPO::getHandledBy, handledBy)
+            .set(PasswordResetRequestPO::getAdminRemark, adminRemark)
+            .set(PasswordResetRequestPO::getUpdateTime, new Date());
+        return passwordResetRequestMapper.update(null, wrapper);
     }
 
     @Override

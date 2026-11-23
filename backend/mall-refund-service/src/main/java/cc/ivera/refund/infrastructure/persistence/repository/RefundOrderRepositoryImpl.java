@@ -56,6 +56,39 @@ public class RefundOrderRepositoryImpl implements RefundOrderRepository {
     }
 
     @Override
+    public int updateStatusIfStatusIn(String refundNo, Collection<String> allowed, String newStatus) {
+        LambdaUpdateWrapper<RefundOrderPO> wrapper = new LambdaUpdateWrapper<RefundOrderPO>()
+            .eq(RefundOrderPO::getRefundNo, refundNo)
+            .in(allowed != null && !allowed.isEmpty() ? RefundOrderPO::getStatus : RefundOrderPO::getRefundNo,
+                allowed != null && !allowed.isEmpty() ? allowed : List.of("__never_match__"))
+            .set(RefundOrderPO::getStatus, newStatus)
+            .set(RefundOrderPO::getUpdateTime, new Date());
+        Long fenceToken = FenceTokenHolder.get();
+        if (fenceToken != null) {
+            wrapper.le(RefundOrderPO::getFenceToken, fenceToken);
+            wrapper.set(RefundOrderPO::getFenceToken, fenceToken);
+        }
+        return refundOrderMapper.update(null, wrapper);
+    }
+
+    @Override
+    public int markFailedIfStatusIn(String refundNo, Collection<String> allowed) {
+        LambdaUpdateWrapper<RefundOrderPO> wrapper = new LambdaUpdateWrapper<RefundOrderPO>()
+            .eq(RefundOrderPO::getRefundNo, refundNo)
+            .in(allowed != null && !allowed.isEmpty() ? RefundOrderPO::getStatus : RefundOrderPO::getRefundNo,
+                allowed != null && !allowed.isEmpty() ? allowed : List.of("__never_match__"))
+            .set(RefundOrderPO::getStatus, RefundOrderStatus.FAILED.getType())
+            .set(RefundOrderPO::getLegacyApplyStatus, "FAILED")
+            .set(RefundOrderPO::getUpdateTime, new Date());
+        Long fenceToken = FenceTokenHolder.get();
+        if (fenceToken != null) {
+            wrapper.le(RefundOrderPO::getFenceToken, fenceToken);
+            wrapper.set(RefundOrderPO::getFenceToken, fenceToken);
+        }
+        return refundOrderMapper.update(null, wrapper);
+    }
+
+    @Override
     public RefundOrder findByRefundNo(String refundNo) {
         return RefundOrderPOConverter.toDomain(refundOrderMapper.selectOne(new LambdaQueryWrapper<RefundOrderPO>()
             .eq(RefundOrderPO::getRefundNo, refundNo)));

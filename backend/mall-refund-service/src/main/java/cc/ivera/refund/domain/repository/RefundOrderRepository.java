@@ -19,8 +19,28 @@ public interface RefundOrderRepository {
 
     /**
      * 按主键更新退款单（状态流转后持久化）。
+     *
+     * @deprecated 锁外调用方改用 {@link #updateStatusIfStatusIn(String, java.util.Collection, String)}
+     * 或 {@link #markFailedIfStatusIn(String, java.util.Collection)} 等条件更新，避免脏对象覆盖。
      */
+    @Deprecated
     void update(RefundOrder refundOrder);
+
+    /**
+     * 条件更新状态：仅当当前状态在 allowed 集合内时才更新为 newStatus，受 fence_token 围栏保护。
+     * 用于锁外状态同步/对账回写，避免先读后改的脏对象覆盖。
+     *
+     * @return 实际更新行数；0 表示当前状态已不在 allowed 集合，跳过
+     */
+    int updateStatusIfStatusIn(String refundNo, java.util.Collection<String> allowed, String newStatus);
+
+    /**
+     * 条件置为 FAILED：仅当当前状态在 allowed 集合内时才更新 status + legacyApplyStatus 为 FAILED。
+     * 用于 RefundQuotaReleasedListener 等锁外回调，避免覆盖后续链路已推进的状态。
+     *
+     * @return 实际更新行数；0 表示已被其他链路推进，跳过
+     */
+    int markFailedIfStatusIn(String refundNo, java.util.Collection<String> allowed);
 
     /**
      * 按退款单号查询（渠道失败回查/幂等监听/状态机读用）。
