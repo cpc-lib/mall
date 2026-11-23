@@ -20,6 +20,8 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Excel 批量库存导入记录实现（V5/V6）。
@@ -161,7 +163,12 @@ public class StockImportServiceImpl implements StockImportService {
             if (item.getDelta() == null || item.getDelta() == 0) {
                 throw new BizException("导入明细调整量需为非 0 整数（商品ID " + item.getProductId() + "）");
             }
-            if (productRepository.findById(item.getProductId()) == null) {
+        }
+        Set<Long> productIds = items.stream().map(StockAdjustLine::getProductId).collect(Collectors.toSet());
+        Set<Long> existingIds = productRepository.findByIds(productIds).stream()
+            .map(Product::getId).collect(Collectors.toSet());
+        for (StockAdjustLine item : items) {
+            if (!existingIds.contains(item.getProductId())) {
                 throw new BizException("商品不存在：商品ID " + item.getProductId());
             }
         }

@@ -2003,7 +2003,7 @@ StockImportFileStorage
 
 导入记录查询：`GET /api/admin/stock/imports` 服务端分页（`page`/`size`，默认 1/10，上限 200，创建时间倒序）；`GET /api/admin/stock/imports/{id}` 按 id 读取单条记录（含明细），供 Excel 编辑器直接定位，不再依赖列表全量返回。
 
-库存维护页与 Excel 编辑器不再在页面加载时拉取全量商品目录：批量结果的商品名称通过 `POST /api/admin/products/batch`（按 id 批量查询）补全；下载模板时按 `GET /api/admin/products/page`（`size=200`）逐页聚合商品 id/标题生成；商品存在性校验由服务端 `StockImportServiceImpl.validateItems` 在保存/确认入库时完成。用户端与管理端的全量商品列表接口（`GET /api/product/list`、`GET /api/admin/products`）已移除，页面统一使用 `/page` 分页与 `/batch` 批量查询。
+库存维护页与 Excel 编辑器不再在页面加载时拉取全量商品目录：批量结果的商品名称通过 `POST /api/admin/products/batch`（按 id 批量查询）补全；下载模板时按 `GET /api/admin/products/page`（`size=200`）逐页聚合商品 id/标题生成；商品存在性校验由服务端 `StockImportServiceImpl.validateItems` 在保存/确认入库时按商品 ID 批量查询（单次 `IN` 查询）完成。用户端与管理端的全量商品列表接口（`GET /api/product/list`、`GET /api/admin/products`）已移除，页面统一使用 `/page` 分页与 `/batch` 批量查询。
 
 ### 15.14 账账核对
 
