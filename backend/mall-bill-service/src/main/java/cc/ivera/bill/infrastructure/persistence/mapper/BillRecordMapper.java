@@ -19,6 +19,14 @@ public interface BillRecordMapper extends BaseMapper<BillRecordPO> {
     List<BillRecordPO> selectRecordsByImport(@Param("importId") Long importId,
                                              @Param("recordType") String recordType);
 
+    /**
+     * 差异下钻定位渠道流水：biz_no 或 channel_serial_no 任一相等，空白条件不参与匹配，按 id 升序。
+     */
+    List<BillRecordPO> selectRecordsByImportAndMatch(@Param("importId") Long importId,
+                                                     @Param("recordType") String recordType,
+                                                     @Param("bizNo") String bizNo,
+                                                     @Param("channelSerialNo") String channelSerialNo);
+
     Long countRecordsByImport(@Param("importId") Long importId,
                               @Param("recordType") String recordType);
 

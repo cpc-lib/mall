@@ -35,6 +35,13 @@ public class BillRecordRepositoryImpl implements BillRecordRepository {
     }
 
     @Override
+    public List<BillRecord> listByImportAndMatch(Long importId, String recordType, String bizNo,
+                                                 String channelSerialNo) {
+        return billRecordMapper.selectRecordsByImportAndMatch(importId, recordType, bizNo, channelSerialNo).stream()
+            .map(BillRecordPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
     public long countByImport(Long importId, String recordType) {
         Long total = billRecordMapper.countRecordsByImport(importId, recordType);
         return total == null ? 0L : total;

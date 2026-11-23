@@ -710,12 +710,9 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         BillReconcileDrilldown drilldown = new BillReconcileDrilldown();
         drilldown.setDiscrepancy(discrepancy);
 
-        List<BillRecord> channelRecords = billRecordRepository.listByImport(
-            discrepancy.getImportId(), discrepancy.getBizType());
-        List<BillRecord> matchedChannelRecords = channelRecords.stream()
-            .filter(record -> sameText(record.getBizNo(), discrepancy.getBizNo())
-                || sameText(record.getChannelSerialNo(), discrepancy.getChannelSerialNo()))
-            .collect(Collectors.toList());
+        List<BillRecord> matchedChannelRecords = billRecordRepository.listByImportAndMatch(
+            discrepancy.getImportId(), discrepancy.getBizType(), discrepancy.getBizNo(),
+            discrepancy.getChannelSerialNo());
         drilldown.setChannelRecords(matchedChannelRecords);
 
         List<BillLedgerSnapshot> localLedgers = BillRecordType.PAY.getType().equals(discrepancy.getBizType())
