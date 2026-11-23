@@ -2,6 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.product.infrastructure.persistence.mapper.InventoryTransactionMapper">
 
+  <!-- 显式列清单：与 InventoryTransactionPO 字段一一对应 -->
+  <sql id="transactionColumns">
+    id, biz_no, biz_type, order_no, order_item_id, refund_no, product_id,
+    available_delta, locked_delta, sold_delta, lost_delta, operation_status,
+    error_message, create_time, update_time
+  </sql>
+
   <sql id="transactionFilter">
     <where>
       <if test="productId != null">
@@ -25,7 +32,7 @@
 
   <!-- 库存流水分页：条件可选，创建时间、id 倒序，LIMIT/OFFSET 手动分页 -->
   <select id="selectTransactionPage" resultType="cc.ivera.product.infrastructure.persistence.po.InventoryTransactionPO">
-    select *
+    select <include refid="transactionColumns"/>
     from t_inventory_transaction
     <include refid="transactionFilter"/>
     order by create_time desc, id desc

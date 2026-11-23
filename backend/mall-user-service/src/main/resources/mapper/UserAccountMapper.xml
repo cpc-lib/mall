@@ -2,6 +2,11 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.user.infrastructure.persistence.mapper.UserAccountMapper">
 
+  <!-- 显式列清单：与 UserAccountPO 字段一一对应 -->
+  <sql id="userColumns">
+    id, username, password_hash, password_salt, role, user_status, create_time, update_time
+  </sql>
+
   <!-- 管理员用户列表总数：username 关键字模糊可选 -->
   <select id="countAdminUsers" resultType="java.lang.Long">
     select count(*)
@@ -15,7 +20,7 @@
 
   <!-- 管理员用户列表分页：username 关键字模糊可选，id 升序，LIMIT/OFFSET 手动分页 -->
   <select id="selectAdminUsers" resultType="cc.ivera.user.infrastructure.persistence.po.UserAccountPO">
-    select *
+    select <include refid="userColumns"/>
     from t_user
     <where>
       <if test="keywordLike != null">

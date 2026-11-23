@@ -2,6 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.bill.infrastructure.persistence.mapper.BillRecordMapper">
 
+  <!-- 显式列清单：与 BillRecordPO 字段一一对应 -->
+  <sql id="recordColumns">
+    id, import_id, channel_code, bill_date, record_type, channel_serial_no, biz_no,
+    trade_type, trade_status, total_amount, refund_amount, trade_time,
+    refund_apply_time, refund_success_time, raw_line, create_time, update_time
+  </sql>
+
   <!-- 批次明细过滤条件：importId 必填，recordType 非空时过滤 -->
   <sql id="recordFilter">
     where import_id = #{importId}
@@ -12,7 +19,7 @@
 
   <!-- 批次明细列表：id 升序 -->
   <select id="selectRecordsByImport" resultType="cc.ivera.bill.infrastructure.persistence.po.BillRecordPO">
-    select *
+    select <include refid="recordColumns"/>
     from t_bill_record
     <include refid="recordFilter"/>
     order by id asc
@@ -26,7 +33,7 @@
 
   <!-- 差异下钻定位渠道流水：业务单号与渠道流水号任一相等，空白条件不参与，按 id 升序 -->
   <select id="selectRecordsByImportAndMatch" resultType="cc.ivera.bill.infrastructure.persistence.po.BillRecordPO">
-    select *
+    select <include refid="recordColumns"/>
     from t_bill_record
     where import_id = #{importId}
     <if test="recordType != null and recordType != ''">
@@ -51,7 +58,7 @@
 
   <!-- 批次明细分页：id 升序，limit/offset 由调用方按页计算 -->
   <select id="selectPageByImport" resultType="cc.ivera.bill.infrastructure.persistence.po.BillRecordPO">
-    select *
+    select <include refid="recordColumns"/>
     from t_bill_record
     <include refid="recordFilter"/>
     order by id asc

@@ -2,6 +2,14 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.bill.infrastructure.persistence.mapper.BillReconcileDiscrepancyMapper">
 
+  <!-- 显式列清单：与 BillReconcileDiscrepancyPO 字段一一对应 -->
+  <sql id="discrepancyColumns">
+    id, import_id, bill_date, biz_type, discrepancy_type, biz_no, channel_serial_no,
+    local_biz_no, local_ledger_no, local_serial_no, channel_amount, local_amount,
+    channel_status, local_status, status, resolve_remark, resolved_time, resolved_by,
+    create_time, update_time
+  </sql>
+
   <!-- 批次差异过滤条件：importId 必填，bizType/discrepancyType/status 非空时分别过滤 -->
   <sql id="discrepancyFilter">
     where import_id = #{importId}
@@ -19,7 +27,7 @@
   <!-- 批次差异列表：id 升序 -->
   <select id="selectDiscrepanciesByImport"
           resultType="cc.ivera.bill.infrastructure.persistence.po.BillReconcileDiscrepancyPO">
-    select *
+    select <include refid="discrepancyColumns"/>
     from t_bill_reconcile_discrepancy
     <include refid="discrepancyFilter"/>
     order by id asc
@@ -34,7 +42,7 @@
   <!-- 批次差异分页：id 升序，limit/offset 由调用方按页计算 -->
   <select id="selectPageByImport"
           resultType="cc.ivera.bill.infrastructure.persistence.po.BillReconcileDiscrepancyPO">
-    select *
+    select <include refid="discrepancyColumns"/>
     from t_bill_reconcile_discrepancy
     <include refid="discrepancyFilter"/>
     order by id asc

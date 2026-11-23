@@ -2,9 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.order.infrastructure.persistence.mapper.OrderInfoMapper">
 
+  <!-- 显式列清单：与 OrderInfoPO 字段一一对应 -->
+  <sql id="orderInfoColumns">
+    id, title, order_no, user_id, product_id, total_fee, code_url, legacy_status,
+    order_status, pay_status, fulfillment_status, refund_status, paid_amount,
+    refund_frozen_amount, refunded_amount, expire_time, paid_time, receiver_name,
+    receiver_phone, receiver_address, payment_type, payment_app_id,
+    payment_channel_code, version, fence_token, create_time, update_time
+  </sql>
+
   <!-- 用户订单分页：创建时间倒序，LIMIT/OFFSET 与用户列表分页同族 -->
   <select id="selectUserOrderPage" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
-    select *
+    select <include refid="orderInfoColumns"/>
     from t_order_info
     where user_id = #{userId}
     order by create_time desc
@@ -46,7 +55,7 @@
 
   <!-- 管理员全部订单分页：创建时间倒序，LIMIT/OFFSET 与服务端分页参数一致 -->
   <select id="selectAdminOrderList" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
-    select *
+    select <include refid="orderInfoColumns"/>
     from t_order_info
     <include refid="adminOrderFilter"/>
     order by create_time desc
@@ -65,7 +74,7 @@
     并发复用由调用方同维度 Redis 分布式锁（硬门槛，拿不到即失败）串行化，本查询只负责读取。
   -->
   <select id="selectLatestNoPayOrder" resultType="cc.ivera.order.infrastructure.persistence.po.OrderInfoPO">
-    select *
+    select <include refid="orderInfoColumns"/>
     from t_order_info
     where id = (
     select id

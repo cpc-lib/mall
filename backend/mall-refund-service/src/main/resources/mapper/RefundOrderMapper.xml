@@ -2,6 +2,13 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.refund.infrastructure.persistence.mapper.RefundOrderMapper">
 
+  <!-- 显式列清单：与 RefundOrderPO 字段一一对应 -->
+  <sql id="refundOrderColumns">
+    id, refund_no, order_no, user_id, refund_type, payment_no, refund_amount, reason,
+    status, legacy_apply_status, apply_type, admin_remark, goods_disposition,
+    accepted_time, success_time, fence_token, create_time, update_time
+  </sql>
+
   <!-- 管理员退款列表分页：创建时间倒序，同时间按主键倒序保证翻页稳定 -->
   <select id="countAllRefundOrders" resultType="java.lang.Long">
     select count(*)
@@ -9,7 +16,7 @@
   </select>
 
   <select id="selectPageCreateTimeDesc" resultType="cc.ivera.refund.infrastructure.persistence.po.RefundOrderPO">
-    select *
+    select <include refid="refundOrderColumns"/>
     from t_refund_order
     order by create_time desc, id desc
     limit #{limit} offset #{offset}

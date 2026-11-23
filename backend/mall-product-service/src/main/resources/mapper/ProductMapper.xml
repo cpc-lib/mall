@@ -2,12 +2,18 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="cc.ivera.product.infrastructure.persistence.mapper.ProductMapper">
 
+  <!-- 显式列清单：available_stock 起别名 stock，对齐 ProductPO 的 @TableField 映射 -->
+  <sql id="productColumns">
+    id, title, price, available_stock AS stock, locked_stock, sold_stock, lost_stock,
+    product_status, create_time, update_time
+  </sql>
+
   <select id="countAll" resultType="java.lang.Long">
     select count(*) from t_product
   </select>
 
   <select id="selectProductPage" resultType="cc.ivera.product.infrastructure.persistence.po.ProductPO">
-    select *
+    select <include refid="productColumns"/>
     from t_product
     order by id asc
     limit #{limit} offset #{offset}
