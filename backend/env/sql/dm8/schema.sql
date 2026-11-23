@@ -1198,6 +1198,8 @@ ON COLUMN t_bill_record.update_time IS '更新时间';
 CREATE INDEX idx_bill_record_import ON t_bill_record (import_id);
 CREATE INDEX idx_bill_record_biz_no ON t_bill_record (biz_no);
 CREATE INDEX idx_bill_record_type_date ON t_bill_record (record_type, bill_date);
+-- 差异下钻按渠道流水号在单批次内定位，避免大账单批次下的顺序扫描
+CREATE INDEX idx_bill_record_import_serial ON t_bill_record (import_id, channel_serial_no);
 
 CREATE
 OR REPLACE TRIGGER trg_bill_record_uptime

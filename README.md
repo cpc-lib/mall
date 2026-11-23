@@ -589,9 +589,12 @@ ON t_payment_order(channel, status, paid_time);
 
 CREATE INDEX idx_refund_order_status_success_time
 ON t_refund_order(status, success_time);
+
+CREATE INDEX idx_bill_record_import_serial
+ON t_bill_record(import_id, channel_serial_no);
 ```
 
-这两个组合索引服务于按账单日扫描平台支付/退款成功账，避免数据量增大后对 `paid_time` / `success_time` 做大范围扫描。已经存在的字段或索引不要重复执行对应 DDL。
+前两个组合索引服务于按账单日扫描平台支付/退款成功账，避免数据量增大后对 `paid_time` / `success_time` 做大范围扫描。`idx_bill_record_import_serial` 服务于对账差异下钻：单批流水达到数十万行时，按 `import_id + channel_serial_no` 定位渠道流水，避免批次内顺序扫描；`biz_no` 分支已有 `idx_bill_record_biz_no`。已经存在的字段或索引不要重复执行对应 DDL。
 
 全新环境直接执行最新 `schema.sql` 即可。
 
