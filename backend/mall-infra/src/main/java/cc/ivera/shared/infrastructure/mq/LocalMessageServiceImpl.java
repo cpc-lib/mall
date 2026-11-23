@@ -25,6 +25,11 @@ public class LocalMessageServiceImpl implements LocalMessageService {
     private static final int MAX_RETRY_COUNT = 5;
     private static final int SCAN_LIMIT = 100;
     private static final long BROKER_CONFIRM_TIMEOUT_MS = 5000;
+    /**
+     * 初次落库后预留的异步投递宽限期：兜底扫描只捞 next_retry_time &lt;= now 的记录，
+     * 初次落库即到期的行会被扫描线程与 afterCommit 首次投递并发重投。
+     */
+    private static final long INITIAL_PUBLISH_GRACE_MS = 10_000L;
 
     private final LocalMessageMapper localMessageMapper;
 
@@ -47,7 +52,8 @@ public class LocalMessageServiceImpl implements LocalMessageService {
         message.setMessageContent(JsonUtils.toJson(payload));
         message.setStatus(LocalMessage.STATUS_PENDING);
         message.setRetryCount(0);
-        message.setNextRetryTime(new Date());
+        // 预留宽限期给 afterCommit 首次异步投递，避免兜底扫描抢在同一时刻重投造成重复消息。
+        message.setNextRetryTime(new Date(System.currentTimeMillis() + INITIAL_PUBLISH_GRACE_MS));
         // 有事务则随业务事务一起提交（发件箱与业务原子），无事务立即提交
         localMessageMapper.insert(message);
 
@@ -98,7 +104,8 @@ public class LocalMessageServiceImpl implements LocalMessageService {
     }
 
     /**
-     * 投递单条消息：发送者确认到达（broker ack）才置 SENT，否则排期重试。
+     * 投递单条消息：异步等待发送者确认（broker ack）后再置 SENT，否则排期重试。
+     * 不在业务 afterCommit / HTTP 线程上同步阻塞等待 Confirm。
      */
     private void publishOne(LocalMessage message) {
         try {
@@ -109,26 +116,18 @@ public class LocalMessageServiceImpl implements LocalMessageService {
                 bizType.getRoutingKey(),
                 deserializePayload(message, bizType),
                 correlationData);
-            if (waitBrokerConfirm(correlationData)) {
-                markSent(message.getId());
-            } else {
-                scheduleRetry(message, "发送者确认失败或超时");
-            }
+            // orTimeout 保留原有 5 秒确认超时语义：超时同样进入指数回避重试。
+            correlationData.getFuture()
+                .orTimeout(BROKER_CONFIRM_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .whenCompleteAsync((confirm, throwable) -> {
+                    if (throwable == null && confirm != null && confirm.isAck()) {
+                        markSent(message.getId());
+                    } else {
+                        scheduleRetry(message, throwable != null ? throwable.getMessage() : "发送者确认失败");
+                    }
+                });
         } catch (Exception e) {
             scheduleRetry(message, e.getMessage());
-        }
-    }
-
-    /**
-     * 等待 broker 确认（publisher-confirm correlated），超时/未确认返回 false。
-     */
-    private boolean waitBrokerConfirm(CorrelationData correlationData) {
-        try {
-            CorrelationData.Confirm confirm =
-                correlationData.getFuture().get(BROKER_CONFIRM_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            return confirm != null && confirm.isAck();
-        } catch (Exception e) {
-            return false;
         }
     }
 
@@ -146,13 +145,15 @@ public class LocalMessageServiceImpl implements LocalMessageService {
 
     /**
      * 投递失败排期重试：指数回避 3^n 秒（3s→9s→27s→81s→243s），超限置 FAILED 待人工补偿。
+     * 仅 PENDING 可被排期：若并发线程已确认并置 SENT（或已被消费置 CONSUMED），此处必须放弃回写，
+     * 否则会把 SENT/CONSUMED 覆盖回 PENDING/FAILED 造成重复投递。
      */
     private void scheduleRetry(LocalMessage message, String reason) {
         int nextRetryCount = (message.getRetryCount() == null ? 0 : message.getRetryCount()) + 1;
         Date now = new Date();
         LambdaUpdateWrapper<LocalMessage> updateWrapper = new LambdaUpdateWrapper<>();
         updateWrapper.eq(LocalMessage::getId, message.getId())
-            .in(LocalMessage::getStatus, LocalMessage.STATUS_PENDING, LocalMessage.STATUS_SENT)
+            .eq(LocalMessage::getStatus, LocalMessage.STATUS_PENDING)
             .set(LocalMessage::getRetryCount, nextRetryCount)
             .set(LocalMessage::getUpdateTime, now);
         if (nextRetryCount > MAX_RETRY_COUNT) {
