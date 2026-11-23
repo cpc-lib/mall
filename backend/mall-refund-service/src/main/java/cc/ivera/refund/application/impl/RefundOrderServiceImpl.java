@@ -291,8 +291,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
                 refundOrder.setAdminRemark("未发货自动受理");
                 refundOrder.setAcceptedTime(new Date());
                 refundOrderRepository.update(refundOrder);
-                restockWithGuard(refundNo, false);
+                // 先冻结渠道资金，成功后再回补库存：冻结不足会直接抛出，避免库存已回补而退款被拒导致库存虚增。
                 RefundInfo refundInfo = initiateChannelRefund(refundOrder);
+                restockWithGuard(refundNo, false);
                 if (channelHolder != null) channelHolder[0] = refundInfo;
             }
         } catch (RuntimeException e) {
@@ -504,23 +505,18 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         refundOrder.setAcceptedTime(new Date());
         refundOrderRepository.update(refundOrder);
 
-        if (RefundType.CANCEL_BEFORE_SHIP.getType().equals(type)) {
-            return handleCancelBeforeShip(refundNo, refundOrder);
-        }
         if (RefundType.RETURN_AND_REFUND.getType().equals(type)) {
+            // 退货退款须在签收后才发起渠道退款，此时不冻结资金也不回补/核销库存。
             return null;
         }
-        if (RefundType.REFUND_ONLY.getType().equals(type)) {
+        // 先冻结渠道资金，成功后再回补/核销库存：冻结不足会直接抛出，避免库存已回补/核销而退款被拒导致库存虚增。
+        RefundInfo refundInfo = initiateChannelRefund(refundOrder);
+        if (RefundType.CANCEL_BEFORE_SHIP.getType().equals(type)) {
+            restockWithGuard(refundNo, false);
+        } else if (RefundType.REFUND_ONLY.getType().equals(type)) {
             handleRefundOnly(refundNo, refundOrder);
         }
-        return initiateChannelRefund(refundOrder);
-    }
-
-    private RefundInfo handleCancelBeforeShip(String refundNo, RefundOrder refundOrder) {
-        // 必须先 restockWithGuard：累加 t_order_item.restocked_qty 做 CAS 防超补守卫，
-        // 直接调 restockForRefund 会绕过订单侧的数量累加校验，违反 AGENTS §5.4。
-        restockWithGuard(refundNo, false);
-        return initiateChannelRefund(refundOrder);
+        return refundInfo;
     }
 
     private void handleRefundOnly(String refundNo, RefundOrder refundOrder) {
@@ -554,12 +550,14 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (!RefundPolicy.restockOnConfirmReturn(refundOrder.getRefundType())) {
             throw new BizException("仅退货退款类型需要确认签收");
         }
-        restockWithGuard(refundNo, true);
         refundOrder.setGoodsDisposition(RefundGoodsDisposition.RECOVERED.getType());
         if (remark != null && !remark.trim().isEmpty()) {
             refundOrder.setAdminRemark(remark.trim());
         }
-        return initiateChannelRefund(refundOrder);
+        // 先冻结渠道资金，成功后再按签收回补库存：冻结不足会直接抛出，避免库存已回补而退款被拒导致库存虚增。
+        RefundInfo refundInfo = initiateChannelRefund(refundOrder);
+        restockWithGuard(refundNo, true);
+        return refundInfo;
     }
 
     private RefundInfo prepareRetry(String refundNo) {
