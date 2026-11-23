@@ -64,9 +64,15 @@ public interface OrderRepository {
                           String orderNoLike, Long userId, Date startTime, Date endTime);
 
     /**
-     * 待发货订单：已支付 + 待发货 + 无退款（refund_status 为空或 NONE），按支付时间升序。
+     * 待发货订单分页：已支付 + 待发货 + 无退款（refund_status 为空或 NONE），
+     * 按支付时间升序、id 升序保证稳定翻页。
      */
-    List<OrderInfo> listWaitShip();
+    List<OrderInfo> listWaitShipPage(int limit, long offset);
+
+    /**
+     * 待发货订单总数（与 {@link #listWaitShipPage} 口径一致）。
+     */
+    long countWaitShip();
 
     /**
      * 超时未支付扫描：legacy NOTPAY 且创建时间早于 cutoff，按创建时间升序（限量由仓储实现按数据库方言处理）。

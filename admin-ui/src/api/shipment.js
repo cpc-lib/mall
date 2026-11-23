@@ -4,7 +4,7 @@ export default {
   getAdminShipment: (orderNo) => request.get(`/api/admin/order/${orderNo}/shipment`),
   confirmReceipt: (orderNo) => request.post(`/api/order/${orderNo}/confirm-receipt`),
   cancelPaidOrder: (orderNo) => request.post(`/api/order/${orderNo}/cancel`),
-  waitShipList: () => request.get('/api/admin/order/wait-ship'),
+  waitShipList: (page, size) => request.get('/api/admin/order/wait-ship', { params: { page, size } }),
   shipOrder: (orderNo) => request.post(`/api/admin/order/${orderNo}/ship`),
   allOrders: (params) => request.get('/api/admin/order/all', { params }),
   forceClose: (orderNo) => request.post(`/api/admin/order/${orderNo}/force-close`),

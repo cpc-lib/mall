@@ -58,10 +58,11 @@ public class AdminOrderShipmentController {
         this.paymentSuccessService = paymentSuccessService;
     }
 
-    @Operation(summary = "待发货订单列表（已支付未发货）")
+    @Operation(summary = "待发货订单列表（已支付未发货，分页）")
     @GetMapping("/wait-ship")
-    public R<List<OrderInfo>> waitShipList() {
-        return R.ok(orderInfoService.listWaitShipOrders());
+    public R<PageVO<OrderInfo>> waitShipList(@RequestParam(value = "page", defaultValue = "1") int page,
+                                             @RequestParam(value = "size", defaultValue = "10") int size) {
+        return R.ok(orderInfoService.listWaitShipOrders(page, size));
     }
 
     @Operation(summary = "全部订单列表（管理员，可选状态/订单号/用户编号/下单时间范围筛选，分页）")

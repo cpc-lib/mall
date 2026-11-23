@@ -18,6 +18,7 @@ import cc.ivera.shared.domain.lock.DistributedLockTemplate;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import cc.ivera.shared.web.PageVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
@@ -251,8 +252,15 @@ public class OrderInfoServiceImpl implements OrderInfoService, OrderPaymentApi {
     }
 
     @Override
-    public List<OrderInfo> listWaitShipOrders() {
-        return orderRepository.listWaitShip();
+    public PageVO<OrderInfo> listWaitShipOrders(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<OrderInfo> result = new PageVO<>();
+        result.setTotal(orderRepository.countWaitShip());
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(orderRepository.listWaitShipPage(safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override

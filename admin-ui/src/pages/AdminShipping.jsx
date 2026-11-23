@@ -4,8 +4,18 @@ import shipmentApi from '@/api/shipment'
 
 export default function AdminShipping() {
   const [waitShip, setWaitShip] = useState([])
-  const load = () => { shipmentApi.waitShipList().then(r => setWaitShip(r.data || [])).catch(() => setWaitShip([])) }
-  useEffect(load, [])
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(10)
+  const [total, setTotal] = useState(0)
+  const load = (p = page, s = size) => {
+    shipmentApi.waitShipList(p, s).then(r => {
+      setWaitShip(r.data?.records || [])
+      setTotal(r.data?.total || 0)
+      setPage(r.data?.page || p)
+      setSize(r.data?.size || s)
+    }).catch(() => setWaitShip([]))
+  }
+  useEffect(() => { load(1) }, [])
   const ship = async orderNo => {
     const r = await shipmentApi.shipOrder(orderNo)
     message.success(`发货成功，运单号 ${r.data?.trackingNo || '-'}`); load()
@@ -20,7 +30,16 @@ export default function AdminShipping() {
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>订单发货</Typography.Title>
     <Card styles={{ body: { padding: '8px 20px 16px' } }}>
-      <Table rowKey="orderNo" dataSource={waitShip} columns={waitShipCols} />
+      <Table rowKey="orderNo" dataSource={waitShip} columns={waitShipCols}
+        pagination={{
+          current: page,
+          pageSize: size,
+          total,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          showTotal: t => `共 ${t} 条`,
+          onChange: (p, s) => load(p, s)
+        }} />
     </Card>
   </div>
 }

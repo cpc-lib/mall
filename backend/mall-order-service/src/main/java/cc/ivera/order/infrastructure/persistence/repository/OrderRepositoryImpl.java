@@ -113,14 +113,26 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     @Override
-    public List<OrderInfo> listWaitShip() {
-        return orderInfoMapper.selectList(new LambdaQueryWrapper<OrderInfoPO>()
-                .eq(OrderInfoPO::getPayStatus, PayStatus.PAID.getType())
-                .eq(OrderInfoPO::getFulfillmentStatus, FulfillmentStatus.WAIT_SHIP.getType())
-                .and(w -> w.isNull(OrderInfoPO::getRefundStatus)
-                    .or().eq(OrderInfoPO::getRefundStatus, OrderRefundStatus.NONE.getType()))
-                .orderByAsc(OrderInfoPO::getPaidTime))
+    public List<OrderInfo> listWaitShipPage(int limit, long offset) {
+        return orderInfoMapper.selectList(waitShipQuery()
+                .orderByAsc(OrderInfoPO::getPaidTime)
+                .orderByAsc(OrderInfoPO::getId)
+                .last("LIMIT " + limit + " OFFSET " + offset))
             .stream().map(OrderInfoPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public long countWaitShip() {
+        Long count = orderInfoMapper.selectCount(waitShipQuery());
+        return count == null ? 0L : count;
+    }
+
+    private LambdaQueryWrapper<OrderInfoPO> waitShipQuery() {
+        return new LambdaQueryWrapper<OrderInfoPO>()
+            .eq(OrderInfoPO::getPayStatus, PayStatus.PAID.getType())
+            .eq(OrderInfoPO::getFulfillmentStatus, FulfillmentStatus.WAIT_SHIP.getType())
+            .and(w -> w.isNull(OrderInfoPO::getRefundStatus)
+                .or().eq(OrderInfoPO::getRefundStatus, OrderRefundStatus.NONE.getType()));
     }
 
     @Override

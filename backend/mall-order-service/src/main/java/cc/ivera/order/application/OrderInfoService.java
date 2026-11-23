@@ -2,6 +2,7 @@ package cc.ivera.order.application;
 
 import cc.ivera.order.domain.enums.OrderStatus;
 import cc.ivera.order.domain.model.OrderInfo;
+import cc.ivera.shared.web.PageVO;
 
 import java.util.Date;
 import java.util.List;
@@ -36,9 +37,9 @@ public interface OrderInfoService {
     OrderInfo getOrderByOrderNo(String orderNo);
 
     /**
-     * 待发货订单：已支付 + 待发货 + 无退款，按支付时间升序（管理员待发货列表）。
+     * 待发货订单分页：已支付 + 待发货 + 无退款，按支付时间升序（管理员待发货列表）。
      */
-    List<OrderInfo> listWaitShipOrders();
+    PageVO<OrderInfo> listWaitShipOrders(int page, int size);
 
     /**
      * 超时未支付订单扫描：legacy NOTPAY 且创建时间早于 cutoff（定时兜底关单用）。

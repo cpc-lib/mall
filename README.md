@@ -48,7 +48,7 @@ interfaces → application → domain ← infrastructure
 ### 2.2 管理后台
 
 - 订单列表（服务端分页）、订单详情、状态筛选。
-- 待发货订单、模拟发货。
+- 待发货订单（服务端分页）、模拟发货。
 - 强制关单、渠道查单、标记线下已付款。
 - 支付尝试记录查看。
 - 商品 CRUD、上下架、单个/批量库存调整，商品列表支持服务端分页。
@@ -2224,7 +2224,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `CheckoutController` | `/api/checkout` | 下单（必填 `Idempotency-Key`）、订单详情/列表（`page`/`size` 服务端分页）、支付入口、用户查单 |
 | `OrderInfoController` | `/api/order-info` | 订单列表/渠道状态查询 |
 | `OrderShipmentController` | `/api/order` | 物流、确认收货 |
-| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单（`page`/`size` 服务端分页，返回 `total`）、待发货、发货、线下收款、强制关单、渠道查单、订单物流信息（`/{orderNo}/shipment`，管理端订单详情按需加载） |
+| `AdminOrderShipmentController` | `/api/admin/order` | 管理端全部订单（`page`/`size` 服务端分页，返回 `total`）、待发货（`page`/`size` 服务端分页，按支付时间升序）、发货、线下收款、强制关单、渠道查单、订单物流信息（`/{orderNo}/shipment`，管理端订单详情按需加载） |
 
 `OrderInternalController` 暴露 `/internal/order/**`，供支付/退款服务读取订单、冻结/释放退款额度、补库存守卫与关单。
 
