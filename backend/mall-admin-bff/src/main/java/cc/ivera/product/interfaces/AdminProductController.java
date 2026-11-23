@@ -1,5 +1,6 @@
 package cc.ivera.product.interfaces;
 
+import cc.ivera.api.product.ProductQueryApi;
 import cc.ivera.product.application.ProductService;
 import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.domain.model.Product;
@@ -36,10 +37,13 @@ import java.util.List;
 public class AdminProductController {
     private final ProductService productService;
     private final ProductStockService productStockService;
+    private final ProductQueryApi productQueryApi;
 
-    public AdminProductController(ProductService productService, ProductStockService productStockService) {
+    public AdminProductController(ProductService productService, ProductStockService productStockService,
+                                  ProductQueryApi productQueryApi) {
         this.productService = productService;
         this.productStockService = productStockService;
+        this.productQueryApi = productQueryApi;
     }
 
     @Operation(summary = "商品列表")
@@ -53,6 +57,12 @@ public class AdminProductController {
     public R<PageVO<Product>> page(@RequestParam(defaultValue = "1") int page,
                                    @RequestParam(defaultValue = "20") int size) {
         return R.ok(productService.page(page, size));
+    }
+
+    @Operation(summary = "按 id 批量查询商品（供库存导入结果补全商品名称）")
+    @PostMapping("/batch")
+    public R<List<Product>> batch(@RequestBody List<Long> ids) {
+        return R.ok(productQueryApi.findByIds(ids));
     }
 
     @Operation(summary = "商品详情（含最近20条库存流水）")

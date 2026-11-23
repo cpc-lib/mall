@@ -21,7 +21,7 @@ const deltaCell = v => v == null || v === 0
 const HEADER = ['商品ID', '商品名称', '调整量']
 
 export default function StockMaintenance() {
-  const [products, setProducts] = useState([])
+  const [titles, setTitles] = useState({})
   const [imports, setImports] = useState([])
   const [importPage, setImportPage] = useState(1)
   const [importSize, setImportSize] = useState(10)
@@ -37,7 +37,6 @@ export default function StockMaintenance() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
 
-  const loadProducts = () => stockApi.products().then(res => setProducts(res.data || [])).catch(() => {})
   const loadImports = (p = importPage, s = importSize) => stockApi.imports(p, s).then(res => {
     setImports(res.data?.records || [])
     setImportTotal(res.data?.total || 0)
@@ -46,7 +45,6 @@ export default function StockMaintenance() {
   }).catch(() => {})
 
   useEffect(() => {
-    loadProducts()
     loadImports()
     loadLogs(1)
     const onFocus = () => loadImports()
@@ -65,7 +63,7 @@ export default function StockMaintenance() {
     finally { setLoading(false) }
   }
 
-  const titleOf = id => products.find(p => p.id === id)?.title || '-'
+  const titleOf = id => titles[id] || '-'
 
   const selectedRecord = imports.find(r => r.id === selectedImportId) || null
 
@@ -77,7 +75,6 @@ export default function StockMaintenance() {
   const validateAoa = aoa => {
     const items = []
     const issues = []
-    const productIds = new Set(products.map(p => p.id))
     aoa.forEach((row, i) => {
       const rawId = row ? row[0] : null
       const rawDelta = row ? row[2] : null
@@ -85,7 +82,7 @@ export default function StockMaintenance() {
       if (rawId == null || rawId === '') return
       const line = i + 1
       const id = Number(rawId)
-      if (!Number.isInteger(id) || !productIds.has(id)) { issues.push(`第${line}行：商品ID ${rawId} 不存在`); return }
+      if (!Number.isInteger(id) || id <= 0) { issues.push(`第${line}行：商品ID ${rawId} 无效`); return }
       if (rawDelta == null || rawDelta === '') return
       const delta = Number(rawDelta)
       if (!Number.isInteger(delta) || delta === 0) { issues.push(`第${line}行：调整量 ${rawDelta} 无效（需非 0 整数）`); return }
@@ -116,14 +113,32 @@ export default function StockMaintenance() {
     return false
   }
 
-  const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet(
-      products.map(p => ({ 商品ID: p.id, 商品名称: p.title, 调整量: null })),
-      { header: HEADER }
-    )
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '库存调整')
-    XLSX.writeFile(wb, '批量库存调整模板.xlsx')
+  // 模板需要完整商品目录：仅在用户点击下载时按分页聚合，避免页面加载拉全量。
+  const loadAllProducts = async () => {
+    const size = 200
+    const first = await stockApi.productPage({ page: 1, size })
+    const all = [...(first.data?.records || [])]
+    const total = first.data?.total || all.length
+    for (let p = 2; all.length < total; p += 1) {
+      const r = await stockApi.productPage({ page: p, size })
+      const rows = r.data?.records || []
+      if (!rows.length) break
+      all.push(...rows)
+    }
+    return all
+  }
+
+  const downloadTemplate = async () => {
+    try {
+      const products = await loadAllProducts()
+      const ws = XLSX.utils.json_to_sheet(
+        products.map(p => ({ 商品ID: p.id, 商品名称: p.title, 调整量: null })),
+        { header: HEADER }
+      )
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, '库存调整')
+      XLSX.writeFile(wb, '批量库存调整模板.xlsx')
+    } catch (e) { message.error('模板生成失败，请稍后重试') }
   }
 
   const submitConfirm = () => {
@@ -139,9 +154,14 @@ export default function StockMaintenance() {
         try {
           const res = await stockApi.confirmImport(record.id)
           setBatchResult(res.data)
+          const ids = [...new Set((res.data?.results || []).map(v => v.productId).filter(v => v != null))]
+          if (ids.length) {
+            stockApi.productsByIds(ids)
+              .then(r => setTitles(Object.fromEntries((r.data || []).map(p => [p.id, p.title]))))
+              .catch(() => {})
+          }
           message.success(res.message || '确认入库完成')
           setSelectedImportId(null)
-          loadProducts()
           loadImports()
           loadLogs(1)
         } catch (e) { /* 拦截器已提示 */ }

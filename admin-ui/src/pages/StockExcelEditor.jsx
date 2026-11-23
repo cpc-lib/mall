@@ -45,7 +45,6 @@ export default function StockExcelEditor() {
   const { id } = useParams()
   const nav = useNavigate()
   const [meta, setMeta] = useState(null)
-  const [products, setProducts] = useState([])
   const [sheetReady, setSheetReady] = useState(false)
   const [saving, setSaving] = useState(false)
 
@@ -55,11 +54,8 @@ export default function StockExcelEditor() {
     let cancelled = false
     ;(async () => {
       let aoa = null
-      const productsRes = await stockApi.products().catch(() => ({ data: [] }))
       const metaRes = await stockApi.getImport(id).catch(() => ({ data: null }))
       if (cancelled) return
-      const productList = productsRes.data || []
-      setProducts(productList)
       const record = metaRes.data || null
       setMeta(record)
       try {
@@ -67,10 +63,7 @@ export default function StockExcelEditor() {
         const wb = XLSX.read(res.data, { type: 'base64' })
         aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null })
       } catch (e) {
-        aoa = [HEADER, ...productList.map(p => {
-          const it = ((record && record.items) || []).find(x => Number(x.productId) === p.id)
-          return [p.id, p.title, it ? it.delta : null]
-        })]
+        aoa = [HEADER, ...((record && record.items) || []).map(it => [it.productId, '', it.delta])]
       }
       if (cancelled) return
       window.luckysheet.create({
@@ -93,7 +86,6 @@ export default function StockExcelEditor() {
   const validateAoa = aoa => {
     const items = []
     const issues = []
-    const productIds = new Set(products.map(p => p.id))
     aoa.forEach((row, i) => {
       const rawId = row ? row[0] : null
       const rawDelta = row ? row[2] : null
@@ -101,7 +93,7 @@ export default function StockExcelEditor() {
       if (rawId == null || rawId === '') return
       const line = i + 1
       const pid = Number(rawId)
-      if (!Number.isInteger(pid) || !productIds.has(pid)) { issues.push(`第${line}行：商品ID ${rawId} 不存在`); return }
+      if (!Number.isInteger(pid) || pid <= 0) { issues.push(`第${line}行：商品ID ${rawId} 无效`); return }
       if (rawDelta == null || rawDelta === '') return
       const delta = Number(rawDelta)
       if (!Number.isInteger(delta) || delta === 0) { issues.push(`第${line}行：调整量 ${rawDelta} 无效（需非 0 整数）`); return }
