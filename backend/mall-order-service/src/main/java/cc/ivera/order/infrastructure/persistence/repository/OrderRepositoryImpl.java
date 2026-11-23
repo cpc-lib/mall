@@ -137,23 +137,16 @@ public class OrderRepositoryImpl implements OrderRepository {
 
     @Override
     public List<OrderInfo> listTimeoutNotPay(Date cutoff) {
+        // 纳入 PAYING：用户打开收银台后超时未付也必须被关单兜底（MQ 延迟关单失败时）
+        // 额外约束 order_status = WAIT_PAY 只关还在待支付生命周期的订单，避免误扫
         LambdaQueryWrapper<OrderInfoPO> q = new LambdaQueryWrapper<OrderInfoPO>()
             .eq(OrderInfoPO::getLegacyStatus, OrderStatus.NOTPAY.getType())
-            .eq(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType())
+            .in(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType(), PayStatus.PAYING.getType())
+            .eq(OrderInfoPO::getOrderStatus, OrderLifecycleStatus.WAIT_PAY.getType())
             .lt(OrderInfoPO::getCreateTime, cutoff)
             .orderByAsc(OrderInfoPO::getCreateTime)
             .last("limit 100");
-        List<OrderInfoPO> rows;
-        try {
-            rows = orderInfoMapper.selectList(q);
-        } catch (RuntimeException dmLimitSyntax) {
-            // DM8 对 LIMIT 语法兼容性依赖模式；退化为不带 LIMIT 的扫描，不改变业务时序。
-            rows = orderInfoMapper.selectList(new LambdaQueryWrapper<OrderInfoPO>()
-                .eq(OrderInfoPO::getLegacyStatus, OrderStatus.NOTPAY.getType())
-                .eq(OrderInfoPO::getPayStatus, PayStatus.UNPAID.getType())
-                .lt(OrderInfoPO::getCreateTime, cutoff)
-                .orderByAsc(OrderInfoPO::getCreateTime));
-        }
+        List<OrderInfoPO> rows = orderInfoMapper.selectList(q);
         return rows.stream().map(OrderInfoPOConverter::toDomain).collect(Collectors.toList());
     }
 

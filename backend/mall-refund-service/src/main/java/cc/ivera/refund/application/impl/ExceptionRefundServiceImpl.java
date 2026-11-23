@@ -134,7 +134,15 @@ public class ExceptionRefundServiceImpl implements ExceptionRefundService {
             RefundInfo refund = tx.execute(s -> {
                 RefundOrder exists = refundOrderRepository.findByPaymentNoAndApplyType(paymentNo, applyType);
                 if (exists != null) {
-                    log.info("异常冲正退款单已存在，幂等返回，paymentNo={}, refundNo={}", paymentNo, exists.getRefundNo());
+                    // 已存在退款单：仅 SUCCESS 时真正幂等返回；
+                    // PROCESSING/FAILED 继续走渠道退款——渠道幂等键（微信 out_refund_no / 支付宝 refund_id）保证不会重复退款，
+                    // 成功后将 settleChannelRefund 把第一次调用冻结的资金结转
+                    if (RefundOrderStatus.SUCCESS.getType().equals(exists.getStatus())) {
+                        log.info("异常冲正已成功，幂等返回，paymentNo={}, refundNo={}", paymentNo, exists.getRefundNo());
+                        return null;
+                    }
+                    log.info("异常冲正退款单已存在但未完成，继续渠道幂等调用，paymentNo={}, refundNo={}, status={}",
+                        paymentNo, exists.getRefundNo(), exists.getStatus());
                     return refundInfoRepository.findByRefundNo(exists.getRefundNo());
                 }
                 OrderInfo order = orderQueryApi.findByOrderNo(paymentOrder.getOrderNo());

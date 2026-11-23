@@ -77,17 +77,29 @@ public class RedissonDistributedLockTemplate implements DistributedLockTemplate 
             log.error("获取分布式锁被中断，lockKey={}", lockKey, e);
             throw new BizException("获取分布式锁被中断", e);
         } finally {
+            // 解耦锁释放与 FenceTokenHolder：无论 context 是否成功 acquire，
+            // 只要 tryLock 成功拿到了锁（locked=true），这里必须释放；
+            // 否则 leaseTime=-1 的 Watchdog 会每 10 秒自动续期，锁在当前 JVM 存活期间永久泄漏。
+            long heldMillis = 0L;
+            long fenceToken = 0L;
             if (context != null) {
-                long heldMillis = context.heldMillis();
+                heldMillis = context.heldMillis();
+                fenceToken = context.getFenceToken();
                 FenceTokenHolder.release();
-                if (locked && lock.isHeldByCurrentThread()) {
+            }
+            if (locked && lock.isHeldByCurrentThread()) {
+                try {
                     lock.unlock();
                     log.debug("释放分布式锁成功，lockKey={}", lockKey);
+                } catch (Exception unlockEx) {
+                    log.warn("释放分布式锁异常，lockKey={}", lockKey, unlockEx);
                 }
+            }
+            if (context != null) {
                 if (holdWarnMillis > 0 && heldMillis >= holdWarnMillis) {
                     log.warn("分布式锁持有时间过长，lockKey={}，heldMs={}，阈值={}", lockKey, heldMillis, holdWarnMillis);
                 }
-                lockAuditRecorder.record(EVENT_RELEASED, lockKey, context.getFenceToken(), heldMillis);
+                lockAuditRecorder.record(EVENT_RELEASED, lockKey, fenceToken, heldMillis);
             }
         }
     }

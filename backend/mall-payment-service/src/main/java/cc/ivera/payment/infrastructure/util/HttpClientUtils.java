@@ -3,19 +3,19 @@ package cc.ivera.payment.infrastructure.util;
 import org.apache.http.Consts;
 import org.apache.http.HttpEntity;
 import org.apache.http.NameValuePair;
+import org.apache.http.client.config.RequestConfig;
 import org.apache.http.client.entity.UrlEncodedFormEntity;
 import org.apache.http.client.methods.*;
 import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.message.BasicNameValuePair;
 import org.apache.http.ssl.SSLContexts;
 import org.apache.http.util.EntityUtils;
 
-import javax.net.ssl.SSLContext;
 import java.io.IOException;
-import java.security.GeneralSecurityException;
 import java.text.ParseException;
 import java.util.HashMap;
 import java.util.LinkedList;
@@ -24,8 +24,23 @@ import java.util.Map;
 
 /**
  * http请求客户端
+ * <p>
+ * 设计要点：
+ * - 单例连接池 {@link #SHARED_CLIENT}（最多 50 个连接，每个路由最多 10 个），避免每次请求新建 TCP+TLS。
+ * - 标准 SSL 验证：使用 JVM 默认 truststore，信任正规 CA（含微信支付、支付宝等公开证书）；
+ *   不再禁用 SSL 验证，杜绝 MITM 攻击支付通道的风险。
+ * - 统一超时：connectTimeout 5s、socketTimeout 30s、connectionRequestTimeout 2s，
+ *   防止对方无响应时无限阻塞。
  */
 public class HttpClientUtils {
+
+    private static final int CONNECT_TIMEOUT_MS = 5000;
+    private static final int SOCKET_TIMEOUT_MS = 30000;
+    private static final int CONNECT_REQUEST_TIMEOUT_MS = 2000;
+
+    /** 单例共享连接池客户端：标准 SSL + 连接池 + 超时 */
+    private static final CloseableHttpClient SHARED_CLIENT = createSharedClient();
+
     private String url;
     private Map<String, String> param;
     private int statusCode;
@@ -83,18 +98,18 @@ public class HttpClientUtils {
 
     public void get() throws IOException {
         if (param != null) {
-            StringBuilder url = new StringBuilder(this.url);
+            StringBuilder urlBuilder = new StringBuilder(this.url);
             boolean isFirst = true;
             for (String key : param.keySet()) {
                 if (isFirst) {
-                    url.append("?");
+                    urlBuilder.append("?");
                     isFirst = false;
                 } else {
-                    url.append("&");
+                    urlBuilder.append("&");
                 }
-                url.append(key).append("=").append(param.get(key));
+                urlBuilder.append(key).append("=").append(param.get(key));
             }
-            this.url = url.toString();
+            this.url = urlBuilder.toString();
         }
         HttpGet http = new HttpGet(url);
         execute(http);
@@ -107,39 +122,46 @@ public class HttpClientUtils {
         if (param != null) {
             List<NameValuePair> nvps = new LinkedList<>();
             for (String key : param.keySet()) {
-                nvps.add(new BasicNameValuePair(key, param.get(key))); // 参数
+                nvps.add(new BasicNameValuePair(key, param.get(key)));
             }
-            http.setEntity(new UrlEncodedFormEntity(nvps, Consts.UTF_8)); // 设置参数
+            http.setEntity(new UrlEncodedFormEntity(nvps, Consts.UTF_8));
         }
         if (xmlParam != null) {
             http.setEntity(new StringEntity(xmlParam, Consts.UTF_8));
         }
     }
 
-    private void execute(HttpUriRequest http) throws
-        IOException {
-        try (CloseableHttpClient httpClient = createHttpClient();
-             CloseableHttpResponse response = httpClient.execute(http)) {
+    private void execute(HttpRequestBase http) throws IOException {
+        try (CloseableHttpResponse response = SHARED_CLIENT.execute(http)) {
             if (response.getStatusLine() != null) {
                 statusCode = response.getStatusLine().getStatusCode();
             }
             HttpEntity entity = response.getEntity();
-            // 响应内容
             content = entity == null ? "" : EntityUtils.toString(entity, Consts.UTF_8);
-        } catch (GeneralSecurityException e) {
-            throw new IOException("创建HTTP客户端失败", e);
         }
     }
 
-    private CloseableHttpClient createHttpClient() throws GeneralSecurityException {
-        if (!isHttps) {
-            return HttpClients.createDefault();
-        }
-        SSLContext sslContext = SSLContexts.custom()
-            .loadTrustMaterial(null, (chain, authType) -> true)
+    /**
+     * 构建单例连接池客户端：标准 SSL + 连接池 + 统一超时。
+     * <p>
+     * SSL 使用 JVM 默认 truststore（加载 cacerts），不再信任所有证书。
+     * 若生产环境需导入微信支付/支付宝特殊 CA，通过 {@code keytool -importcert} 加到 cacerts 即可。
+     */
+    private static CloseableHttpClient createSharedClient() {
+        RequestConfig defaultConfig = RequestConfig.custom()
+            .setConnectTimeout(CONNECT_TIMEOUT_MS)
+            .setSocketTimeout(SOCKET_TIMEOUT_MS)
+            .setConnectionRequestTimeout(CONNECT_REQUEST_TIMEOUT_MS)
             .build();
-        SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(sslContext);
-        return HttpClients.custom().setSSLSocketFactory(sslsf).build();
+        PoolingHttpClientConnectionManager cm = new PoolingHttpClientConnectionManager();
+        cm.setMaxTotal(50);
+        cm.setDefaultMaxPerRoute(10);
+        SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(SSLContexts.createDefault());
+        return HttpClients.custom()
+            .setConnectionManager(cm)
+            .setSSLSocketFactory(sslsf)
+            .setDefaultRequestConfig(defaultConfig)
+            .build();
     }
 
     public int getStatusCode() {
