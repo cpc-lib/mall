@@ -27,6 +27,9 @@ export default function PaymentConfig() {
   const [activeTab, setActiveTab] = useState('channel')
   const [channelList, setChannelList] = useState([])
   const [appList, setAppList] = useState([])
+  const [appPage, setAppPage] = useState(1)
+  const [appSize, setAppSize] = useState(10)
+  const [appTotal, setAppTotal] = useState(0)
   const [channelDialogVisible, setChannelDialogVisible] = useState(false)
   const [appDialogVisible, setAppDialogVisible] = useState(false)
   const [channelForm] = Form.useForm()
@@ -40,16 +43,20 @@ export default function PaymentConfig() {
     })
   }, [])
 
-  const loadApps = useCallback(() => {
-    paymentConfigApi.listAllApps().then((response) => {
-      setAppList(response?.data || [])
+  const loadApps = (p = appPage, s = appSize) => {
+    paymentConfigApi.listAllApps(p, s).then((response) => {
+      const data = response?.data || {}
+      setAppList(data.records || [])
+      setAppTotal(data.total || 0)
+      setAppPage(data.page || p)
+      setAppSize(data.size || s)
     })
-  }, [])
+  }
 
   useEffect(() => {
     loadChannels()
-    loadApps()
-  }, [loadChannels, loadApps])
+    loadApps(1)
+  }, [loadChannels])
 
   const openChannelDialog = (row) => {
     setEditingChannel(row || null)
@@ -261,7 +268,7 @@ export default function PaymentConfig() {
                 <>
                   <Space style={{ marginBottom: 16 }}>
                     <Button type="primary" onClick={() => openAppDialog()}>新增应用</Button>
-                    <Button onClick={loadApps}>刷新</Button>
+                    <Button onClick={() => loadApps()}>刷新</Button>
                     <Button type="primary" onClick={reloadConfig}>重新加载配置缓存</Button>
                   </Space>
                   <Table
@@ -269,7 +276,15 @@ export default function PaymentConfig() {
                     dataSource={appList}
                     columns={appColumns}
                     bordered
-                    pagination={false}
+                    pagination={{
+                      current: appPage,
+                      pageSize: appSize,
+                      total: appTotal,
+                      showSizeChanger: true,
+                      pageSizeOptions: [10, 20, 50, 100],
+                      showTotal: t => `共 ${t} 条`,
+                      onChange: (p, s) => loadApps(p, s)
+                    }}
                   />
                 </>
               )

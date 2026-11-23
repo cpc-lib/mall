@@ -2,6 +2,7 @@ package cc.ivera.payment.application;
 
 import cc.ivera.payment.domain.model.PaymentApp;
 import cc.ivera.payment.application.dto.PaymentAppRequest;
+import cc.ivera.shared.web.PageVO;
 
 import java.util.List;
 
@@ -36,9 +37,9 @@ public interface PaymentAppService {
     List<PaymentApp> listEnabledApps();
 
     /**
-     * 获取所有应用，配置管理页面使用。
+     * 获取所有应用（分页），配置管理页面使用。
      */
-    List<PaymentApp> listAllApps();
+    PageVO<PaymentApp> listAllApps(int page, int size);
 
     /**
      * 根据渠道ID获取启用的应用列表

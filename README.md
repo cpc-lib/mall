@@ -58,7 +58,7 @@ interfaces → application → domain ← infrastructure
 - 退款申请列表（服务端分页）、受理、拒绝、已发货商品去向判定（丢失/全部回收）、退货签收、渠道重试、状态同步、差价退款。
 - 用户列表、启用/禁用、用户详情。
 - 密码重置申请列表（服务端分页，待处理优先）、受理/拒绝、管理员直接重置密码。
-- 支付渠道和支付应用配置维护、缓存刷新。
+- 支付渠道和支付应用配置维护（应用列表服务端分页）、缓存刷新。
 - 微信交易账单 XLSX 上传、同步对账、差异查看、重跑、人工标记处理。
 
 ## 3. 交易系统核心设计
@@ -2251,7 +2251,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `WxPayController` | `/api/wx-pay` |
 | `WxPayV2Controller` | `/api/wx-pay-v2` |
 | `AliPayController` | `/api/ali-pay` |
-| `PaymentAppController` | `/api/payment-app` |
+| `PaymentAppController` | `/api/payment-app` | 支付应用配置；`/list-all` 服务端分页（`page`/`size`，默认 1/10，上限 200） |
 | `PaymentChannelController` | `/api/payment-channel` |
 | `PaymentConfigController` | `/api/payment-config` |
 

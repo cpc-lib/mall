@@ -7,6 +7,7 @@ import cc.ivera.payment.domain.repository.PaymentAppRepository;
 import cc.ivera.payment.domain.repository.PaymentChannelRepository;
 import cc.ivera.payment.application.dto.PaymentAppRequest;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -48,8 +49,15 @@ public class PaymentAppServiceImpl implements PaymentAppService {
     }
 
     @Override
-    public List<PaymentApp> listAllApps() {
-        return paymentAppRepository.listAll();
+    public PageVO<PaymentApp> listAllApps(int page, int size) {
+        int safePage = Math.max(page, 1);
+        int safeSize = Math.min(Math.max(size, 1), 200);
+        PageVO<PaymentApp> result = new PageVO<>();
+        result.setTotal(paymentAppRepository.countAll());
+        result.setPage(safePage);
+        result.setSize(safeSize);
+        result.setRecords(paymentAppRepository.listAllPage(safeSize, (long) (safePage - 1) * safeSize));
+        return result;
     }
 
     @Override

@@ -23,7 +23,15 @@ public interface PaymentAppRepository {
 
     List<PaymentApp> listEnabled();
 
-    List<PaymentApp> listAll();
+    /**
+     * 全部应用总数（配置管理页分页使用）。
+     */
+    long countAll();
+
+    /**
+     * 全部应用分页，排序与列表一致：sort_order 升序、update_time 倒序。
+     */
+    List<PaymentApp> listAllPage(int limit, long offset);
 
     List<PaymentApp> listEnabledByChannelId(Long channelId);
 }

@@ -68,8 +68,15 @@ public class PaymentAppRepositoryImpl implements PaymentAppRepository {
     }
 
     @Override
-    public List<PaymentApp> listAll() {
-        return list(new LambdaQueryWrapper<PaymentAppPO>());
+    public long countAll() {
+        Long total = paymentAppMapper.selectCount(null);
+        return total == null ? 0L : total;
+    }
+
+    @Override
+    public List<PaymentApp> listAllPage(int limit, long offset) {
+        return list(new LambdaQueryWrapper<PaymentAppPO>()
+            .last("LIMIT " + limit + " OFFSET " + offset));
     }
 
     @Override

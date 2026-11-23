@@ -8,10 +8,11 @@ export default {
     })
   },
 
-  listAllApps() {
+  listAllApps(page, size) {
     return request({
       url: '/api/payment-app/list-all',
-      method: 'get'
+      method: 'get',
+      params: { page, size }
     })
   },
 

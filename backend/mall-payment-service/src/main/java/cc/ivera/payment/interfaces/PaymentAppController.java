@@ -10,6 +10,7 @@ import cc.ivera.payment.application.dto.PaymentStatusRequest;
 import cc.ivera.payment.application.vo.PaymentAppViewVO;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.exception.ErrorCode;
+import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import io.swagger.v3.oas.annotations.Operation;
@@ -51,11 +52,18 @@ public class PaymentAppController {
         return R.ok(buildAppViewList(paymentAppService.listEnabledApps(), true));
     }
 
-    @Operation(summary = "获取全部支付应用列表（配置管理页使用）")
+    @Operation(summary = "获取全部支付应用列表（配置管理页使用，分页）")
     @GetMapping("/list-all")
-    public R<List<PaymentAppViewVO>> listAllApps() {
-        log.info("获取全部支付应用列表");
-        return R.ok(buildAppViewList(paymentAppService.listAllApps(), false));
+    public R<PageVO<PaymentAppViewVO>> listAllApps(@RequestParam(defaultValue = "1") int page,
+                                                   @RequestParam(defaultValue = "10") int size) {
+        log.info("获取全部支付应用列表，page={}, size={}", page, size);
+        PageVO<PaymentApp> result = paymentAppService.listAllApps(page, size);
+        PageVO<PaymentAppViewVO> vo = new PageVO<>();
+        vo.setTotal(result.getTotal());
+        vo.setPage(result.getPage());
+        vo.setSize(result.getSize());
+        vo.setRecords(buildAppViewList(result.getRecords(), false));
+        return R.ok(vo);
     }
 
     @Operation(summary = "根据渠道ID获取启用的支付应用列表")
