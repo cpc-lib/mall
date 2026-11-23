@@ -81,3 +81,6 @@ payment:
     base-url: ${PAYMENT_SERVICE_BASE_URL:}
   refund:
     status-sync-delay-ms: 60000 # MQ 退款状态同步延迟；BFF 声明队列参数时读取，必须与 refund-service 保持一致
+
+local-message:
+  relay-enabled: false # Outbox 中继已按领域拆分到 order/refund/payment 服务，BFF 不再扫描 t_local_message

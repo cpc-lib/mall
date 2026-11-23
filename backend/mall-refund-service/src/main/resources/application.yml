@@ -90,7 +90,8 @@ product:
     base-url: ${PRODUCT_SERVICE_BASE_URL:}
 
 local-message:
-  relay-enabled: false # 同库阶段由 user-bff 统一中继 Outbox，避免双发布
+  relay-enabled: true
+  relay-biz-types: REFUND_SYNC # 仅中继本域产生的 Outbox 消息
 
 management:
   tracing:

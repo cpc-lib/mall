@@ -72,14 +72,16 @@ public class LocalMessageServiceImpl implements LocalMessageService {
     }
 
     @Override
-    public void publishPending() {
+    public void publishPending(List<String> bizTypes) {
+        List<String> scopedTypes = (bizTypes == null || bizTypes.isEmpty()) ? null : bizTypes;
         List<LocalMessage> messages = localMessageMapper.selectPendingMessages(
-            LocalMessage.STATUS_PENDING, new Date(), SCAN_LIMIT);
+            LocalMessage.STATUS_PENDING, new Date(), scopedTypes, SCAN_LIMIT);
         for (LocalMessage message : messages) {
             publishOne(message);
         }
         if (!messages.isEmpty()) {
-            log.info("本地消息表兜底扫描完成，本轮处理 {} 条待投递消息", messages.size());
+            log.info("本地消息表兜底扫描完成，bizTypes={}，本轮处理 {} 条待投递消息",
+                scopedTypes == null ? "ALL" : scopedTypes, messages.size());
         }
     }
 

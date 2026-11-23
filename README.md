@@ -348,7 +348,7 @@ mall/
 │   ├── mall-product-service/         # 商品与库存服务（8084）：商品、库存四桶、预占、流水、Excel 导入
 │   ├── mall-user-service/            # 用户领域服务（8083）：认证、会话、地址、区划、用户管理
 │   ├── mall-cart-service/            # 购物车领域服务（8089）：购物车条目持久化与商品快照聚合
-│   ├── mall-user-bff/                # 用户端 BFF（8081），承载用户/商品/购物车入口与 Outbox 中继
+│   ├── mall-user-bff/                # 用户端 BFF（8081），承载用户/商品/购物车入口
 │   ├── mall-admin-bff/               # 管理端 BFF（8082），不启动 MQ/定时任务
 │   ├── mall-gateway/                 # 网关（8080）：路由与 CORS
 │   ├── docs/
@@ -669,7 +669,7 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `mall-payment-service` | 8086 | 支付单与成交事实、微信 V2/V3、支付宝、支付渠道/应用配置；支付表唯一写者，不消费 MQ、不扫描 Outbox |
 | `mall-refund-service` | 8087 | 退款申请/单/明细、渠道退款编排、退款状态同步；退款表唯一写者，消费退款 MQ 并执行退款扫描 |
 | `mall-bill-service` | 8088 | 微信交易账单导入、渠道账与平台支付/退款账逐笔核对、差异查询与人工处理；账单表唯一写者，不消费 MQ、不执行定时任务 |
-| `mall-user-bff` | 8081 | 用户/商品/购物车等剩余 Controller；仅保留 Outbox 中继，不再承载订单与对账 |
+| `mall-user-bff` | 8081 | 用户/商品/购物车等剩余 Controller；不再承载订单、对账与 Outbox 中继 |
 | `mall-admin-bff` | 8082 | 管理侧剩余 Controller；`spring.rabbitmq.listener.simple.auto-startup=false`，不消费 MQ |
 | `mall-gateway` | 8080 | 统一入口与 CORS；退款/取消 → refund-service；`/api/admin/order/**` 与订单前台路径 → order-service；`/api/reconciliation/**` → bill-service；`/api/admin/**` → admin-bff；支付回调/配置/收银台 → payment-service；其余 → user-bff；CORS 允许来源由 `CORS_ALLOWED_ORIGINS` 控制，默认 `http://localhost:3000,http://localhost:3002` |
 
@@ -954,7 +954,7 @@ flowchart TB
     end
 
     subgraph BFF["BFF 层"]
-        UBFF["mall-user-bff :8081<br/>用户端 Controller + Outbox 中继"]
+        UBFF["mall-user-bff :8081<br/>用户端 Controller"]
         ABFF["mall-admin-bff :8082<br/>管理端 Controller<br/>不启动 MQ / Scheduler"]
     end
 
@@ -1044,9 +1044,10 @@ flowchart TB
 （`PaymentOrderRemoteAdapter` 等），退款领域实现独立在 `mall-refund-service`（`OrderRefundRemoteAdapter` 等），
 账单核对独立在 `mall-bill-service`（`PaymentLedgerRemoteAdapter`、`RefundLedgerRemoteAdapter` 读取平台账本）。
 后台任务（`@Scheduled` / `@RabbitListener`）按领域归属执行：订单关单消费、支付事件消费、超时扫描、物流模拟与下单幂等记录清理在
-`mall-order-service`，Outbox 中继只在 `mall-user-bff`，退款冲正与退款状态同步在 `mall-refund-service`；用户服务、商品服务、
-账单服务不引入 AMQP、不开启 Scheduling，支付服务配置 `spring.rabbitmq.listener.simple.auto-startup=false` 与
-`local-message.relay-enabled=false`，退款服务与订单服务消费各自队列但不执行 Outbox 扫描。P3–P7 阶段同库同 schema，
+`mall-order-service`（并中继 `ORDER_CLOSE`、`PAYMENT_LATE_ARRIVED`），退款冲正与退款状态同步在 `mall-refund-service`
+（并中继 `REFUND_SYNC`），支付事件由 `mall-payment-service` 中继（`PAYMENT_SUCCEEDED`、`DUPLICATE_PAYMENT_DETECTED`）；
+`mall-user-bff` 不再执行 Outbox 中继；用户服务、商品服务、账单服务不引入 AMQP、不开启 Scheduling，支付服务配置
+`spring.rabbitmq.listener.simple.auto-startup=false`（只发布不消费）。P3–P7 阶段同库同 schema，
 公开 `/api/**` 契约不变；回滚时部署拆分前制品并停止对应领域服务即可，数据库无需回滚。
 
 前端：
@@ -1095,7 +1096,7 @@ mall/
 │   ├── mall-product-service/     # 商品/库存领域服务（8084），独立商品实现与数据访问
 │   ├── mall-user-service/        # 用户领域服务（8083），独立用户实现及数据访问
 │   ├── mall-cart-service/        # 购物车领域服务（8089），独立购物车实现及数据访问
-│   ├── mall-user-bff/            # 用户端 BFF（8081），承载用户/商品/购物车入口与 Outbox 中继
+│   ├── mall-user-bff/            # 用户端 BFF（8081），承载用户/商品/购物车入口
 │   ├── mall-admin-bff/           # 管理端 BFF（8082），不启动 MQ/定时任务
 │   ├── mall-gateway/             # 网关（8080）
 │   ├── docs/
@@ -1474,7 +1475,7 @@ flowchart TD
 - `t_payment_order`、`t_payment_info`、`t_payment_deal`、`t_payment_app`、`t_payment_channel` 只由支付服务写入。
 - 支付回调、支付配置、收银台渠道下单路由经网关直连支付服务；退款申请、退款通知与退款查询由退款服务提供，避免 payment → refund 反向依赖。
 - 支付服务不依赖 `mall-core`，也不引入退款上下文；渠道退款唯一入口仍是 `PaymentChannelRefundApi`，只是由本地适配器换为远程适配器。
-- 支付服务不消费 MQ、不扫描 `t_local_message`；支付事件 Outbox 投递仍只在 `mall-user-bff` 进程执行。
+- 支付服务不消费 MQ，但按领域中继自己产生的支付事件 Outbox（`PAYMENT_SUCCEEDED`、`DUPLICATE_PAYMENT_DETECTED`）；`mall-user-bff` 不再执行 Outbox 中继。
 
 #### 15.6.7 服务注册与 Feign 远程调用
 
@@ -1941,7 +1942,7 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 |---|---|---|
 | `TimeoutOrderCloseScheduler` | `mall-order-service` | DB 最终一致性兜底：按 `payment.order.timeout-scan-ms` 周期扫描超时 `NOTPAY` 订单，重新走渠道反查/必要时关单/CAS 本地状态；单笔失败不阻塞同批其它订单 |
 | `RefundStatusSyncScheduler` | `mall-refund-service` | DB 最终一致性兜底：按 `payment.refund.status-sync-scan-ms` 周期扫描 `APPROVED + PROCESSING` 退款，复用 `queryRefundStatus`；单笔失败不阻塞同批其它退款 |
-| `LocalMessageSendJob` | `mall-user-bff` | 每 30 秒扫描 PENDING Outbox 并重投 |
+| `LocalMessageSendJob` | `mall-order-service` / `mall-refund-service` / `mall-payment-service` | 每 30 秒只扫描本域 `relay-biz-types` 的 PENDING Outbox 并重投；锁键按应用名隔离 |
 | `MockLogisticsSimulationJob` | `mall-order-service` | 模拟物流状态推进 |
 | `AutoReceiptScheduler` | `mall-order-service` | 每批最多 200 条扫描送达超时且仍待收货、无退款的运单，复用手动确认收货的锁/CAS/库存结转链路；单笔失败不阻塞同批其它运单 |
 | `OrderRequestCleanupScheduler` | `mall-order-service` | 按 `order.request.clean-scan-ms` 周期清理过期 `t_order_request` 幂等记录（每批最多 500 条）；单批失败只记录日志 |
@@ -1956,13 +1957,15 @@ DB Scheduler = 最终一致性兜底
 两者不是互相替代。
 
 这些后台任务按领域归属启用：`mall-order-service` 带 `@EnableScheduling` / `@EnableRabbit`，执行订单关单消费、支付事件消费、
-超时关单扫描、物流模拟、送达超时自动确认收货与下单幂等记录清理；`mall-user-bff` 只保留 `LocalMessageSendJob` 执行 Outbox 中继；
-`mall-refund-service` 同样开启 Scheduling 与 Rabbit 监听，执行退款冲正消费、退款状态同步消费与
-`RefundStatusSyncScheduler`，但配置 `local-message.relay-enabled=false`，退款状态同步消息仍由 `mall-user-bff` 中继发布。
-`mall-admin-bff` 刻意不开启这两个注解，并通过 `spring.rabbitmq.listener.simple.auto-startup=false` 关闭 MQ 监听，
-避免重复消费或重复执行定时扫描（`@RabbitListener` 由 Spring Boot 自动注册，仅去掉 `@EnableRabbit` 不足以阻止消费）。
-`mall-payment-service` 同样关闭 `spring.rabbitmq.listener.simple.auto-startup`，并配置
-`local-message.relay-enabled=false`，只提供支付 HTTP 能力与 `PaymentEventRabbitConfig` 拓扑声明，不执行 Outbox 扫描。
+超时关单扫描、物流模拟、送达超时自动确认收货与下单幂等记录清理，并中继 `ORDER_CLOSE`、`PAYMENT_LATE_ARRIVED`；
+`mall-refund-service` 同样开启 Scheduling 与 Rabbit 监听，执行退款冲正消费、退款状态同步消费与 `RefundStatusSyncScheduler`，
+并中继 `REFUND_SYNC`；`mall-payment-service` 开启 `@EnableScheduling` 但关闭 `spring.rabbitmq.listener.simple.auto-startup`，
+只发布支付事件并中继 `PAYMENT_SUCCEEDED`、`DUPLICATE_PAYMENT_DETECTED`，不消费队列。
+Outbox 中继按领域拆分后，`LocalMessageSendJob` 在各域服务内只扫描 `local-message.relay-biz-types` 指定的 biz_type，
+锁键按应用名隔离（`scheduler:local-message-send:{spring.application.name}`），避免多进程共用单键导致其它域消息长期得不到投递；
+`mall-user-bff`、`mall-admin-bff` 与 `mall-bill-service` 配置 `local-message.relay-enabled=false`，不再扫描 `t_local_message`。
+`mall-admin-bff` 刻意不开启 `@EnableScheduling` / `@EnableRabbit`，并通过 `spring.rabbitmq.listener.simple.auto-startup=false`
+关闭 MQ 监听，避免重复消费或重复执行定时扫描。
 
 ### 15.12 支付渠道配置
 
@@ -2338,7 +2341,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `spring.application.name` | 决定 Nacos 注册服务名（`mall-user-service`、`mall-order-service` 等）与配置 Data ID 前缀 |
 | `spring.cloud.nacos.discovery.namespace` / `group` | 注册与配置使用的 namespace / group，默认空 / `DEFAULT_GROUP` |
 | `spring.rabbitmq.listener.simple.auto-startup` | `mall-admin-bff`、`mall-payment-service` 与 `mall-bill-service` 设为 `false`，关闭该进程的 MQ 监听；退款服务保持开启以消费退款队列；用户服务、商品服务与账单服务不消费 MQ |
-| `local-message.relay-enabled` | `mall-payment-service`、`mall-refund-service` 与 `mall-bill-service` 设为 `false`，关闭各自进程的 Outbox 扫描；默认 `true`，投递任务只在 user-bff 实际执行 |
+| `local-message.relay-enabled` | 按领域开启：`mall-order-service`、`mall-refund-service`、`mall-payment-service` 为 `true`，`mall-user-bff`、`mall-admin-bff`、`mall-bill-service` 为 `false`；配合 `local-message.relay-biz-types` 只中继本域 biz_type |
 | `spring.datasource.*` | DM8 |
 | `spring.data.redis.*` | Redis |
 | `spring.rabbitmq.*` | RabbitMQ 连接、confirm、returns、MANUAL ACK、Retry |

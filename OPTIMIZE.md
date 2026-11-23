@@ -401,6 +401,15 @@
   3. **异步 Confirm 回调**：使用 `correlationData.getFuture().whenCompleteAsync(...)` 替代同步 `.get(5000, ...)`，避免阻塞 HTTP 线程。
   4. **按领域归属扫描或加锁（中期演进）**：在 `LocalMessageSendJob.publishPendingMessages` 上增加非阻塞分布式锁防止多实例并发重投；后续可按 `biz_type` 过滤，由 `order / payment / refund` 各自扫描本领域的 Outbox 消息，让 `mall-user-bff` 与 `mall-admin-bff` 彻底成为无状态 BFF（同步更新 `AGENTS.md` 与 `README.md`）。
 
+**处理进展（2026-11-23）**：第 1～3 条已完成；第 4 条已按领域拆分落地：
+
+- `LocalMessageService.publishPending(List<String> bizTypes)`，Mapper 增加 `biz_type in (...)` 过滤（空列表=全部，保持兼容）。
+- `LocalMessageSendJob` 读取 `local-message.relay-biz-types`，锁键改为 `scheduler:local-message-send:{spring.application.name}`，避免多进程共用单键时每轮只有一个进程能扫描、其它域消息饿死。
+- 三域分别中继：`mall-order-service` → `ORDER_CLOSE,PAYMENT_LATE_ARRIVED`；`mall-refund-service` → `REFUND_SYNC`；`mall-payment-service` → `PAYMENT_SUCCEEDED,DUPLICATE_PAYMENT_DETECTED`。
+- `mall-user-bff` / `mall-admin-bff` / `mall-bill-service` 设 `relay-enabled=false`；`mall-user-bff` 移除 `@EnableScheduling`。
+- 新增 `mall-infra` 单测 `LocalMessageSendJobTest`（biz_type 过滤、按应用名隔离锁键、抢锁失败跳过）。
+- 遗留：`mall-user-bff` 的 DM8/Redis 传递依赖来自 `mall-core`，真正无状态化需拆 `mall-core` 的 infra 依赖，另立重构项。
+
 ---
 
 ### P1-7：V2 退款主链路与异常支付冲正链路漏发 `REFUND_SYNC` 延迟状态同步消息

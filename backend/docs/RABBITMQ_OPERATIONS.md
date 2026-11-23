@@ -62,16 +62,24 @@ Consumer reliability (Spring AMQP listener, applies to all `@RabbitListener` con
   Delivery retries use exponential backoff (3^n seconds, max 5 attempts) then `FAILED` for manual compensation;
   `LocalMessageSendJob` rescans `PENDING` every 30s. Manual compensation: fix the fault, then set `status='PENDING'`,
   `next_retry_time=CURRENT_TIMESTAMP` for `FAILED` rows — redelivery is safe (consumers are idempotent).
-- Process ownership after P6: order-close consumers, payment-event consumers, order `@Scheduled` jobs (timeout scan, logistics
-  mock, saga recovery) and the order MQ topology run only in `mall-order-service`. Only the `LocalMessageSendJob` outbox relay
-  runs in `mall-user-bff`. Refund reversal consumers (`payment.duplicate.refund.queue`, `payment.late.refund.queue`),
-  `RefundStatusSyncConsumer` and `RefundStatusSyncScheduler` run only in `mall-refund-service`, which keeps
-  `local-message.relay-enabled=false` so refund status-sync messages are still published by the user-bff relay.
-  `mall-order-service` also keeps `local-message.relay-enabled=false`. `mall-admin-bff` and `mall-payment-service` set
-  `spring.rabbitmq.listener.simple.auto-startup=false`; `mall-payment-service` additionally sets
-  `local-message.relay-enabled=false`, so it declares the payment event topology for local operations but neither consumes
-  queues nor scans `t_local_message`. Do not enable listeners or the relay in payment-service, or duplicate order/payment
-  consumers in user-bff, without first removing the duplicate-consumer risk.
+- Process ownership: order-close consumers, payment-event consumers, order `@Scheduled` jobs (timeout scan, logistics
+  mock, auto receipt, order-request cleanup) and the order MQ topology run only in `mall-order-service`, which also relays
+  its own outbox messages (`ORDER_CLOSE`, `PAYMENT_LATE_ARRIVED`). Refund reversal consumers
+  (`payment.duplicate.refund.queue`, `payment.late.refund.queue`), `RefundStatusSyncConsumer` and
+  `RefundStatusSyncScheduler` run only in `mall-refund-service`, which relays its own `REFUND_SYNC` outbox messages.
+  `mall-payment-service` sets `spring.rabbitmq.listener.simple.auto-startup=false` (it publishes but does not consume) and
+  relays its own `PAYMENT_SUCCEEDED` / `DUPLICATE_PAYMENT_DETECTED` messages; `mall-admin-bff` and `mall-bill-service` keep
+  listeners and scheduling disabled. Do not duplicate order/payment consumers in another process without first removing the
+  duplicate-consumer risk.
+- Outbox relay is sharded by domain: every service runs `LocalMessageSendJob` with `local-message.relay-biz-types` limited to
+  its own biz types, and the lock key is `scheduler:local-message-send:{spring.application.name}`. Never share one global lock
+  key between services — with a shared key only one process can scan per round and the other domains starve. `mall-user-bff`,
+  `mall-admin-bff` and `mall-bill-service` set `local-message.relay-enabled=false`. A publisher-confirm ack only guarantees
+  arrival at the exchange; unroutable messages are logged by `RabbitReliabilityConfig` but the outbox row is still marked
+  `SENT`, so every relaying service must have the target exchange declared (all services scan `cc.ivera`, so
+  `PaymentEventRabbitConfig` from `mall-api-payment` provides the payment topology).
+- Availability note: because each domain only relays its own messages, while a domain service is down its pending outbox rows
+  wait until it recovers instead of being drained by another process.
 - Durability: exchanges and queues are declared durable; Spring AMQP messages default to PERSISTENT delivery mode.
 - Manual compensation endpoints: `POST /api/admin/order/{orderNo}/force-close` (admin "强制关单" button) and the admin
   refund status query (triggers channel sync).

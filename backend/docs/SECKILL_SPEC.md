@@ -393,7 +393,7 @@ seckill.event.failure.exchange
 
 - MANUAL ACK：业务完成 → 去重回写 → `basicAck`；异常向外抛，不提前 ACK/NACK。
 - 重试耗尽进入 Failure Queue；Parking Lot 不自动回灌。
-- 中继只由 `mall-user-bff` 执行；`mall-seckill-service` 设 `local-message.relay-enabled=false`。
+- Outbox 中继按领域拆分；`mall-seckill-service` 自行中继自己的 `SECKILL_*` 消息（`local-message.relay-biz-types` 限定），锁键按应用名隔离。
 
 ## 9. Redis 契约
 
@@ -469,7 +469,7 @@ Lua 返回值：
 - [ ] 网关新增路由顺序正确：`/api/admin/seckill/**`、`/api/seckill/**` 位于更宽泛规则之前。
 - [ ] Nacos 新增 `mall-seckill-service.yaml`，服务注册与配置导入正常。
 - [ ] RabbitMQ 新拓扑声明成功；未修改既有队列参数。
-- [ ] `mall-seckill-service` 的 `local-message.relay-enabled=false`。
+- [ ] `mall-seckill-service` 的 `local-message.relay-biz-types` 只包含自身 `SECKILL_*` 类型。
 - [ ] 管理端完成发布校验、预热、下线验证。
 - [ ] AC-05～AC-16 全部通过；AC-20 普通交易回归通过。
 - [ ] `mvn clean test`、`user-ui` 构建、`admin-ui` 构建通过。

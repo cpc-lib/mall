@@ -62,7 +62,8 @@ payment:
     expire-minutes: 3
 
 local-message:
-  relay-enabled: false
+  relay-enabled: true
+  relay-biz-types: PAYMENT_SUCCEEDED,DUPLICATE_PAYMENT_DETECTED # 支付服务只中继自己产生的支付事件
 
 logging:
   level:

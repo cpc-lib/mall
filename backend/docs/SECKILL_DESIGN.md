@@ -29,7 +29,7 @@
 | 并发权威是 Redis 锁 + fence 围栏 | AGENTS 5.6 | 秒杀不额外造锁体系；Redis 预扣是闸门，不是锁 |
 | 只有拥有方写表 | AGENTS 1 | 活动/场次/配额/请求表只由 `mall-seckill-service` 写；商品库存仍只由 `mall-product-service` 写 |
 | MQ = MANUAL ACK + Spring Retry + Failure DLQ | AGENTS 6 | 秒杀异步落单复用同一套可靠性语义 |
-| Outbox 中继只由 `mall-user-bff` 执行 | AGENTS 6 | 秒杀服务只写 `t_local_message`，不开启 relay |
+| Outbox 中继按领域拆分 | AGENTS 6 | 秒杀服务只中继自己的 `SECKILL_*` 消息，锁键按应用名隔离 |
 | `schema.sql` 是唯一结构权威 | AGENTS 7 | 新表只加到 `backend/env/sql/dm8/schema.sql` |
 | 同库同 schema、服务化拆分但未分库 | README 第 15 章 | 跨服务调用走 `/internal/**` + Feign，本地事务不跨服务 |
 
@@ -385,7 +385,7 @@ seckill.event.failure.exchange
   `t_consumer_dedupe('seckill.order-created', orderNo)`。
 - Outbox 业务类型新增到 `cc.ivera.shared.domain.mq.LocalMessageBizType`：
   `SECKILL_ORDER_REQUESTED`、`SECKILL_ORDER_CREATED`；消息体放 `mall-api-seckill`，由 `mall-infra` 引用；
-  中继仍只由 `mall-user-bff` 执行，`mall-seckill-service` 配置 `local-message.relay-enabled=false`。
+  中继由 `mall-seckill-service` 自行执行，`local-message.relay-biz-types` 只包含 `SECKILL_*`。
 - 失败队列只排障，不自动回灌；Parking Lot 人工隔离，不配置消费者。
 - DB 调度器是最终兜底，与 Failure Queue 并存，不互相替代。
 
@@ -516,11 +516,12 @@ seckill:
   order-create-max-retry: 3
 
 local-message:
-  relay-enabled: false   # 中继统一由 mall-user-bff 执行
+  relay-enabled: true
+  relay-biz-types: SECKILL_ORDER_REQUESTED,SECKILL_ORDER_CREATED   # 只中继本域消息，锁键按应用名隔离
 ```
 
 - 增加 `backend/nacos/config/mall-seckill-service.yaml`，与其它服务一致的 Nacos 导入方式。
-- 秒杀服务开启 `@EnableScheduling` 与 `@EnableRabbit`（自有用例的调度与消费），不开启 Outbox 中继。
+- 秒杀服务开启 `@EnableScheduling` 与 `@EnableRabbit`（自有用例的调度与消费），并只中继自己的 `SECKILL_*` Outbox 消息。
 - `seckill.enabled=false` 时接口直接返回「活动未开放」，用于紧急回滚。
 
 ## 14. 前端改造

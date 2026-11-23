@@ -33,6 +33,9 @@ spring:
             connect-timeout: 3000
             read-timeout: 30000
 
+local-message:
+  relay-enabled: false # Outbox 中继已按领域拆分到 order/refund/payment 服务，BFF 不再扫描 t_local_message
+
 management:
   tracing:
     sampling:

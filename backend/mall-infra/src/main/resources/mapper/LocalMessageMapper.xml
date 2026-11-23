@@ -14,6 +14,12 @@
     from t_local_message
     where status = #{status}
     and next_retry_time &lt;= #{now}
+    <if test="bizTypes != null and bizTypes.size() > 0">
+      and biz_type in
+      <foreach collection="bizTypes" item="bizType" open="(" separator="," close=")">
+        #{bizType}
+      </foreach>
+    </if>
     order by create_time asc, id asc
     limit #{limit}
   </select>

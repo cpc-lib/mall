@@ -78,7 +78,7 @@ spring:
               predicates:
                 - Path=/api/checkout/**,/api/order-info/**,/api/order/**
 
-            # 其余业务入口 → user-bff；user-bff 仅保留 Outbox 中继，MQ 消费与领域扫描在各领域服务内
+            # 其余业务入口 → user-bff；Outbox 中继与领域扫描在各业务服务内按领域执行
             - id: mall-user-bff
               uri: ${MALL_USER_BFF_URI:lb://mall-user-bff}
               predicates:

@@ -1,5 +1,7 @@
 package cc.ivera.shared.domain.mq;
 
+import java.util.List;
+
 /**
  * 本地消息表（事务性发件箱）服务。
  *
@@ -17,8 +19,10 @@ public interface LocalMessageService {
 
     /**
      * 定时兜底：扫描 PENDING 且到达重试时间的消息重新投递（指数回避，重试超限置 FAILED）。
+     *
+     * @param bizTypes 仅扫描这些业务类型；为空表示不限制（兼容单进程统一中继）
      */
-    void publishPending();
+    void publishPending(List<String> bizTypes);
 
     /**
      * 消费成功回调：消费者监听器成功处理后回写 CONSUMED（幂等，仅 PENDING/SENT 可流转）。

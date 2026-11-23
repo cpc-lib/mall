@@ -62,7 +62,7 @@ backend/                            # Maven 聚合父工程（packaging=pom）
 ├── mall-payment-service/           # 支付领域服务（8086）：支付单/成交、微信/支付宝、渠道与应用配置
 ├── mall-refund-service/            # 退款领域服务（8087）：退款单/明细、渠道退款、状态同步
 ├── mall-bill-service/              # 账单领域服务（8088）：微信交易账单导入、账账核对、差异处理
-├── mall-user-bff/                  # 用户端 BFF（8081）：用户侧 Controller；唯一启用 Outbox 中继
+├── mall-user-bff/                  # 用户端 BFF（8081）：用户侧 Controller，不承载 Outbox 中继
 ├── mall-admin-bff/                 # 管理端 BFF（8082）：管理侧 Controller；关闭 MQ 监听，不跑定时任务
 ├── mall-gateway/                   # 网关（8080）：路由与 CORS
 ├── docs/                           # DM8 与 RabbitMQ 运维手册
@@ -166,7 +166,7 @@ mvn -pl mall-order-service spring-boot:run   # 8085：订单/物流领域服务 
 mvn -pl mall-payment-service spring-boot:run # 8086：支付领域服务，不启动 MQ/定时任务
 mvn -pl mall-refund-service spring-boot:run  # 8087：退款领域服务 + 退款消费与状态同步扫描
 mvn -pl mall-bill-service spring-boot:run    # 8088：账单核对领域服务，不启动 MQ/定时任务
-mvn -pl mall-user-bff spring-boot:run        # 8081：用户侧入口 + Outbox 中继
+mvn -pl mall-user-bff spring-boot:run        # 8081：用户侧入口
 mvn -pl mall-admin-bff spring-boot:run       # 8082：管理侧入口，不启动 MQ/定时任务
 mvn -pl mall-gateway spring-boot:run         # 8080：统一入口与 CORS
 ```
@@ -185,11 +185,11 @@ mvn -pl mall-gateway spring-boot:run         # 8080：统一入口与 CORS
 
 用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与 BFF 端口可用 `SERVER_PORT` 覆盖；网关路由默认使用 `lb://mall-xxx-service`，可用 `MALL_USER_BFF_URI`（默认 `lb://mall-user-bff`）、`MALL_ADMIN_BFF_URI`（默认 `lb://mall-admin-bff`）等 `MALL_*_URI` 覆盖为直连地址；Feign 用 `USER_SERVICE_BASE_URL`、`CART_SERVICE_BASE_URL`、`PRODUCT_SERVICE_BASE_URL`、`ORDER_SERVICE_BASE_URL`、`PAYMENT_SERVICE_BASE_URL`、`REFUND_SERVICE_BASE_URL` 指定直连地址，默认留空走服务发现。
 
-后端须在 DM8 容器健康检查通过后再启动。`mall-core` 是库，不单独启动；后台任务按领域归属执行：订单关单、支付事件消费、超时扫描、物流模拟、Seata 下单 Saga 与幂等记录清理在 `mall-order-service`，退款冲正、退款状态同步与其扫描在 `mall-refund-service`，Outbox 中继只在 `mall-user-bff`；`mall-admin-bff`、`mall-payment-service`、`mall-bill-service` 不开启 MQ 与 Scheduling。各进程同库同 schema，无需增量 SQL。
+后端须在 DM8 容器健康检查通过后再启动。`mall-core` 是库，不单独启动；后台任务按领域归属执行：订单关单、支付事件消费、超时扫描、物流模拟、Seata 下单 Saga 与幂等记录清理在 `mall-order-service`，退款冲正、退款状态同步与其扫描在 `mall-refund-service`；Outbox 中继按领域拆分到 `mall-order-service`、`mall-refund-service`、`mall-payment-service`，各自只中继本域 biz_type；`mall-user-bff`、`mall-admin-bff`、`mall-bill-service` 不跑定时任务，`mall-admin-bff`、`mall-payment-service`、`mall-bill-service` 不开启 MQ 监听。各进程同库同 schema，无需增量 SQL。
 
 ## 测试
 
-后端当前不包含自动化测试代码（所有模块的 `src/test` 已移除），变更验证以编译通过为准：
+后端包含最小单测基线：`mall-refund-service`（`RefundPolicyTest`、`RefundDomainArchitectureTest`）、`mall-order-service`（`AutoReceiptSchedulerTest`）、`mall-cart-service`（`CartServiceImplTest`）、`mall-infra`（`LocalMessageSendJobTest`），均不启动 Spring 上下文、不依赖 DM8；其余模块以编译通过为准：
 
 ```powershell
 $env:JAVA_HOME='D:\develop\java\jdk21.0.11_10'   # Maven 必须运行在 JDK 21 上
