@@ -5,6 +5,7 @@ import { PRODUCT_STATUS_COLOR, OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL } 
 
 export default function AdminProducts() {
   const [products, setProducts] = useState([])
+  const [productLoading, setProductLoading] = useState(false)
   const [productPage, setProductPage] = useState(1)
   const [productSize, setProductSize] = useState(20)
   const [productTotal, setProductTotal] = useState(0)
@@ -23,20 +24,22 @@ export default function AdminProducts() {
   const LOG_PAGE_SIZE = 8
 
   const loadProducts = (nextPage = productPage, nextSize = productSize) => {
+    setProductLoading(true)
     stockApi.productPage({ page: nextPage, size: nextSize }).then(r => {
       const data = r.data || {}
       setProducts(data.records || [])
       setProductTotal(data.total || 0)
       setProductPage(data.page || nextPage)
       setProductSize(data.size || nextSize)
-    })
+    }).catch(() => { /* 拦截器已提示 */ })
+      .finally(() => setProductLoading(false))
   }
   useEffect(() => { loadProducts(1, 20) }, [])
   const loadDetail = async () => {
     if (!detailId) return
     setDetailLoading(true)
     try { const res = await stockApi.getProduct(detailId); setDetail(res.data) }
-    catch (e) { message.error('加载失败') }
+    catch (e) { /* 拦截器已提示 */ }
     finally { setDetailLoading(false) }
   }
   const loadLogs = async (page = 1) => {
@@ -48,7 +51,7 @@ export default function AdminProducts() {
       setLogTotal(res.data?.total || 0)
       setLogPage(page)
     }
-    catch (e) { message.error('库存流水加载失败') }
+    catch (e) { /* 拦截器已提示 */ }
     finally { setLogLoading(false) }
   }
   useEffect(() => { if (detailId) { setDetail(null); setDrawerDelta(null); setLogs([]); loadDetail(); loadLogs(1) } }, [detailId])
@@ -65,12 +68,12 @@ export default function AdminProducts() {
   const drawerAdjust = async () => {
     if (!drawerDelta || drawerDelta === 0) return message.warning('请输入调整量')
     try { await stockApi.adjustStock(detailId, drawerDelta); message.success('库存已调整'); setDrawerDelta(null); await loadDetail(); loadProducts(); loadLogs(1) }
-    catch (e) { message.error(e.response?.data?.message || '调整失败') }
+    catch (e) { /* 拦截器已提示 */ }
   }
   const drawerToggle = async () => {
     const ns = p.productStatus === 'ENABLED' ? 'DISABLED' : 'ENABLED'
     try { await stockApi.setStatus(detailId, ns); message.success(ns === 'ENABLED' ? '已上架' : '已下架'); await loadDetail(); loadProducts() }
-    catch (e) { message.error(e.response?.data?.message || '操作失败') }
+    catch (e) { /* 拦截器已提示 */ }
   }
 
   const productCols = [
@@ -107,7 +110,7 @@ export default function AdminProducts() {
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>商品库存</Typography.Title>
     <Card>
     <Button type="primary" style={{ marginBottom: 16 }} onClick={() => setPcVisible(true)}>新增商品</Button>
-    <Table rowKey="id" dataSource={products} columns={productCols}
+    <Table rowKey="id" dataSource={products} columns={productCols} loading={productLoading}
       pagination={{
         current: productPage,
         pageSize: productSize,

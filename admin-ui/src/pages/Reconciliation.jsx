@@ -276,7 +276,7 @@ export default function Reconciliation() {
   }
 
   const stats = {
-    total: importList.length,
+    total: importTotal,
     reconciled: importList.filter((i) => i.status === 'RECONCILED').length,
     failed: importList.filter((i) => i.status === 'FAILED').length,
     discrepancies: importList.reduce((s, i) => s + (i.discrepancyCount || 0), 0)
@@ -547,17 +547,17 @@ export default function Reconciliation() {
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic title="已对账批次" value={stats.reconciled} valueStyle={{ color: '#3f8600' }} />
+              <Statistic title="本页已对账批次" value={stats.reconciled} valueStyle={{ color: '#3f8600' }} />
             </Card>
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic title="对账失败批次" value={stats.failed} valueStyle={{ color: '#cf1322' }} />
+              <Statistic title="本页对账失败批次" value={stats.failed} valueStyle={{ color: '#cf1322' }} />
             </Card>
           </Col>
           <Col span={6}>
             <Card>
-              <Statistic title="差异总数" value={stats.discrepancies} valueStyle={{ color: '#fa8c16' }} />
+              <Statistic title="本页差异数" value={stats.discrepancies} valueStyle={{ color: '#fa8c16' }} />
             </Card>
           </Col>
         </Row>

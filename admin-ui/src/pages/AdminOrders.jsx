@@ -6,6 +6,7 @@ import { PAY_LABEL, FULFILLMENT_LABEL, PAY_COLOR, PAYMENT_STATUS_COLOR, ORDER_RE
 
 export default function AdminOrders() {
   const [allOrders, setAllOrders] = useState([])
+  const [listLoading, setListLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(20)
   const [total, setTotal] = useState(0)
@@ -38,6 +39,7 @@ export default function AdminOrders() {
       params.startTime = dateRange[0].format('YYYY-MM-DD')
       params.endTime = dateRange[1].format('YYYY-MM-DD')
     }
+    setListLoading(true)
     shipmentApi.allOrders(params).then(r => {
       const data = r.data || {}
       const list = data.records || []
@@ -50,6 +52,7 @@ export default function AdminOrders() {
         return list.find(x => x.order.orderNo === prev.order.orderNo) || prev
       })
     }).catch(() => { setAllOrders([]); setTotal(0) })
+      .finally(() => setListLoading(false))
   }
   useEffect(() => { loadAllOrders(1, 20) }, [])
   const forceClose = async orderNo => { Modal.confirm({ title: '强制关单', content: '将关闭未支付订单并释放预占库存，确认操作？', onOk: async () => { await shipmentApi.forceClose(orderNo); message.success('订单已强制关闭'); loadAllOrders() } }) }
@@ -199,6 +202,7 @@ export default function AdminOrders() {
       dataSource={allOrders}
       columns={allOrderCols}
       size="small"
+      loading={listLoading}
       pagination={{
         current: page,
         pageSize: size,

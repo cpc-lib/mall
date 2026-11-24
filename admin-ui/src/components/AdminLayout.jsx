@@ -44,7 +44,7 @@ export default function AdminLayout() {
           电商商城平台 · 管理后台
         </span>
         <Space>
-          <Button type="text" onClick={() => nav('/')}>前台首页</Button>
+          <Button type="text" onClick={() => window.open(import.meta.env.VITE_USER_UI_URL || 'http://localhost:3000', '_blank', 'noopener')}>前台首页</Button>
           <span style={{ color: 'rgba(0,0,0,.65)' }}>{user?.username || '-'}</span>
           <Button type="text" onClick={openPwdModal}>修改密码</Button>
           <Button type="text" onClick={logout}>退出登录</Button>

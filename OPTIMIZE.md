@@ -831,6 +831,8 @@
      - `AdminOrders.jsx:197`、`AdminProducts.jsx:110`、`AdminRefunds.jsx:81`、`AdminResetRequests.jsx:52`、`AdminShipping.jsx:33`、`PaymentConfig.jsx:254,275`、`StockMaintenance.jsx:217`
    - **问题**：`request.js` 响应拦截器已经对所有错误弹出了 `message.error`，而各页面组件的 `catch` 块又重复调用了一次 `message.error`，导致每次报错右上角同时弹出两条错误提示；此外上述 7 个页面的 `<Table>` 组件均未绑定 `loading` 状态，还要为 `StockMaintenance.jsx:203` 的“下载模板”按钮补充 `loading` 防抖。
 
+**处理进展（2026-11-25）**：1–4 项已完成。`RouteGuard.RequireAdmin` 对非管理员 Token 先 `clearAuth()` 再跳 `/login`，消除 `/ ↔ /admin/orders` 重定向死循环；`Login.jsx` 移除非管理员登录时的 `saveAuth`；`AdminLayout` 的“前台首页”改为 `window.open(VITE_USER_UI_URL || http://localhost:3000)`；`Reconciliation` 首卡改用 `importTotal`，后三张卡片标注为“本页”口径；移除 `AdminProducts`、`AdminRefunds`、`UserList` 页面 `catch` 中的重复 `message.error`（`StockMaintenance` 仅在无 HTTP 响应时提示本地解析/生成失败），并为 `AdminOrders`、`AdminProducts`、`AdminRefunds`、`AdminResetRequests`、`AdminShipping`、`PaymentConfig`、`StockMaintenance` 的列表补齐 `loading`，为“下载模板”按钮增加 `templateLoading` 防抖。`npm run build` 通过。
+
 ---
 
 ### P4-4：双端网络层（`request.js`）生产环境 `baseURL` 兜底与并发 401 晚到响应竞态优化

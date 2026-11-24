@@ -4,16 +4,19 @@ import shipmentApi from '@/api/shipment'
 
 export default function AdminShipping() {
   const [waitShip, setWaitShip] = useState([])
+  const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(10)
   const [total, setTotal] = useState(0)
   const load = (p = page, s = size) => {
+    setLoading(true)
     shipmentApi.waitShipList(p, s).then(r => {
       setWaitShip(r.data?.records || [])
       setTotal(r.data?.total || 0)
       setPage(r.data?.page || p)
       setSize(r.data?.size || s)
     }).catch(() => setWaitShip([]))
+      .finally(() => setLoading(false))
   }
   useEffect(() => { load(1) }, [])
   const ship = async orderNo => {
@@ -30,7 +33,7 @@ export default function AdminShipping() {
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>订单发货</Typography.Title>
     <Card styles={{ body: { padding: '8px 20px 16px' } }}>
-      <Table rowKey="orderNo" dataSource={waitShip} columns={waitShipCols}
+      <Table rowKey="orderNo" dataSource={waitShip} columns={waitShipCols} loading={loading}
         pagination={{
           current: page,
           pageSize: size,

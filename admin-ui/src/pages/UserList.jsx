@@ -44,7 +44,7 @@ export default function UserList() {
       await authApi.adminResetPassword({ userId: detail.id, newPassword: resetPwd })
       message.success('密码已重置，该用户旧 Token 已失效，登录锁定已解除')
       setResetPwd('')
-    } catch (e) { message.error(e?.response?.data?.message || '重置失败') }
+    } catch (e) { /* 拦截器已提示 */ }
   }
 
   const toggleStatus = (u) => {

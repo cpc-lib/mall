@@ -26,7 +26,9 @@ const defaultAppForm = () => ({
 export default function PaymentConfig() {
   const [activeTab, setActiveTab] = useState('channel')
   const [channelList, setChannelList] = useState([])
+  const [channelLoading, setChannelLoading] = useState(false)
   const [appList, setAppList] = useState([])
+  const [appLoading, setAppLoading] = useState(false)
   const [appPage, setAppPage] = useState(1)
   const [appSize, setAppSize] = useState(10)
   const [appTotal, setAppTotal] = useState(0)
@@ -38,19 +40,23 @@ export default function PaymentConfig() {
   const [editingApp, setEditingApp] = useState(null)
 
   const loadChannels = useCallback(() => {
+    setChannelLoading(true)
     paymentConfigApi.listAllChannels().then((response) => {
       setChannelList(response?.data || [])
-    })
+    }).catch(() => { /* 拦截器已提示 */ })
+      .finally(() => setChannelLoading(false))
   }, [])
 
   const loadApps = (p = appPage, s = appSize) => {
+    setAppLoading(true)
     paymentConfigApi.listAllApps(p, s).then((response) => {
       const data = response?.data || {}
       setAppList(data.records || [])
       setAppTotal(data.total || 0)
       setAppPage(data.page || p)
       setAppSize(data.size || s)
-    })
+    }).catch(() => { /* 拦截器已提示 */ })
+      .finally(() => setAppLoading(false))
   }
 
   useEffect(() => {
@@ -256,6 +262,7 @@ export default function PaymentConfig() {
                     dataSource={channelList}
                     columns={channelColumns}
                     bordered
+                    loading={channelLoading}
                     pagination={false}
                   />
                 </>
@@ -276,6 +283,7 @@ export default function PaymentConfig() {
                     dataSource={appList}
                     columns={appColumns}
                     bordered
+                    loading={appLoading}
                     pagination={{
                       current: appPage,
                       pageSize: appSize,

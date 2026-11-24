@@ -22,6 +22,8 @@ const HEADER = ['商品ID', '商品名称', '调整量']
 export default function StockMaintenance() {
   const [titles, setTitles] = useState({})
   const [imports, setImports] = useState([])
+  const [importLoading, setImportLoading] = useState(false)
+  const [templateLoading, setTemplateLoading] = useState(false)
   const [importPage, setImportPage] = useState(1)
   const [importSize, setImportSize] = useState(10)
   const [importTotal, setImportTotal] = useState(0)
@@ -36,12 +38,16 @@ export default function StockMaintenance() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
 
-  const loadImports = (p = importPage, s = importSize) => stockApi.imports(p, s).then(res => {
-    setImports(res.data?.records || [])
-    setImportTotal(res.data?.total || 0)
-    setImportPage(res.data?.page || p)
-    setImportSize(res.data?.size || s)
-  }).catch(() => {})
+  const loadImports = (p = importPage, s = importSize) => {
+    setImportLoading(true)
+    return stockApi.imports(p, s).then(res => {
+      setImports(res.data?.records || [])
+      setImportTotal(res.data?.total || 0)
+      setImportPage(res.data?.page || p)
+      setImportSize(res.data?.size || s)
+    }).catch(() => {})
+      .finally(() => setImportLoading(false))
+  }
 
   useEffect(() => {
     loadImports()
@@ -108,7 +114,8 @@ export default function StockMaintenance() {
       setSelectedImportId(created.data?.id ?? null)
       message.success(`已导入 ${items.length} 个商品并生成导入记录，请核对后点击确认入库`)
     } catch (e) {
-      message.error(e?.response?.data?.message || 'Excel 解析失败，请使用模板格式')
+      // 接口错误已由拦截器提示；这里只补充本地解析失败提示
+      if (!e?.response) message.error('Excel 解析失败，请使用模板格式')
     }
     return false
   }
@@ -129,6 +136,7 @@ export default function StockMaintenance() {
   }
 
   const downloadTemplate = async () => {
+    setTemplateLoading(true)
     try {
       const XLSX = await import('xlsx')
       const products = await loadAllProducts()
@@ -139,7 +147,12 @@ export default function StockMaintenance() {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, '库存调整')
       XLSX.writeFile(wb, '批量库存调整模板.xlsx')
-    } catch (e) { message.error('模板生成失败，请稍后重试') }
+    } catch (e) {
+      // 接口错误已由拦截器提示；这里只补充本地生成失败提示
+      if (!e?.response) message.error('模板生成失败，请稍后重试')
+    } finally {
+      setTemplateLoading(false)
+    }
   }
 
   const submitConfirm = () => {
@@ -201,7 +214,7 @@ export default function StockMaintenance() {
           {selectedRecord
             ? <span style={{ color: '#1677ff' }}>已选：#{selectedRecord.id} {selectedRecord.fileName}（{selectedRecord.itemCount} 条）</span>
             : <span style={{ color: '#8c8c8c' }}>未选择记录</span>}
-          <Button onClick={downloadTemplate}>下载模板</Button>
+          <Button loading={templateLoading} onClick={downloadTemplate}>下载模板</Button>
           <Upload accept=".xlsx,.xls" showUploadList={false} beforeUpload={handleExcel}>
             <Button>导入 Excel</Button>
           </Upload>
@@ -215,7 +228,7 @@ export default function StockMaintenance() {
             message={`Excel 导入：成功匹配 ${importReport.applied} 行${importReport.issues.length ? `，${importReport.issues.length} 行被跳过` : ''}`}
             description={importReport.issues.length ? importReport.issues.map((t, i) => <div key={i}>{t}</div>) : undefined} />
         )}
-        <Table rowKey="id" dataSource={imports} size="small" scroll={{ y: 320 }}
+        <Table rowKey="id" dataSource={imports} size="small" loading={importLoading} scroll={{ y: 320 }}
           pagination={{
             current: importPage,
             pageSize: importSize,

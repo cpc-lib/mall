@@ -5,6 +5,7 @@ import { FULFILLMENT_LABEL, REFUND_STATUS_LABEL, REFUND_STATUS_COLOR, REFUND_TYP
 
 export default function AdminRefunds() {
   const [refunds, setRefunds] = useState([])
+  const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState(null)
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(20)
@@ -13,6 +14,7 @@ export default function AdminRefunds() {
   const [goodsDisposition, setGoodsDisposition] = useState('')
   const [acceptRemark, setAcceptRemark] = useState('')
   const load = (nextPage = page, nextSize = size) => {
+    setLoading(true)
     refundApi.all(nextPage, nextSize).then(r => {
       const data = r.data || {}
       const list = data.records || []
@@ -21,7 +23,8 @@ export default function AdminRefunds() {
       setPage(data.page || nextPage)
       setSize(data.size || nextSize)
       setDetail(prev => prev ? (list.find(x => x.apply.refundNo === prev.apply.refundNo) || prev) : null)
-    })
+    }).catch(() => { /* 拦截器已提示 */ })
+      .finally(() => setLoading(false))
   }
   useEffect(load, [])
   const openDetail = v => setDetail(v)
@@ -55,7 +58,7 @@ export default function AdminRefunds() {
       const r = await refundApi.queryStatus(refundNo)
       message.destroy('rq')
       message.success(`查询完成，状态：${r.data?.apply?.status || '-'}`); load()
-    } catch (e) { message.destroy('rq'); message.error('查询失败：' + (e?.message || '渠道接口异常')) }
+    } catch (e) { message.destroy('rq') /* 拦截器已提示渠道异常 */ }
   }
   const refundCols = [
     { title: '退款号', render: (_, v) => <a onClick={() => openDetail(v)}>{v.apply.refundNo}</a> },
@@ -78,7 +81,7 @@ export default function AdminRefunds() {
   return <div>
     <Typography.Title level={4} style={{ marginTop: 0, marginBottom: 16 }}>退款受理</Typography.Title>
     <Card styles={{ body: { padding: '8px 20px 16px' } }}>
-      <Table rowKey={v => v.apply.refundNo} dataSource={refunds} columns={refundCols}
+      <Table rowKey={v => v.apply.refundNo} dataSource={refunds} columns={refundCols} loading={loading}
         pagination={{
           current: page,
           pageSize: size,

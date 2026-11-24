@@ -13,7 +13,6 @@ export default function Login() {
     try {
       const r = await authApi.login(values)
       if (r.data?.user?.role !== 'ROLE_ADMIN') {
-        saveAuth(r.data)
         clearAuth()
         message.error('仅管理员可登录本系统')
         return
