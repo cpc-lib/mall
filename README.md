@@ -643,6 +643,7 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `SEATA_SAGA_ENABLED` | 是否启用 Saga 状态机，默认 `true` |
 | `order.request.clean-scan-ms` | 过期下单幂等记录清理周期，默认 `60000ms` |
 | `order.request.ttl-hours` | 下单幂等记录 `t_order_request` 保留时长，默认 24 小时 |
+| `local-message.clean-scan-ms` | 已消费 Outbox（7 天）与消费去重（30 天）清理周期，默认 `600000ms` |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | `RefundStatusSyncScheduler` DB 兜底扫描周期，默认 60000ms |
 | `refund.status-sync-enabled` | 退款状态同步兜底扫描总开关，默认 `true`；多实例部署时可只在一台开启 |
@@ -1958,6 +1959,7 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 | `MockLogisticsSimulationJob` | `mall-order-service` | 模拟物流状态推进 |
 | `AutoReceiptScheduler` | `mall-order-service` | 每批最多 200 条扫描送达超时且仍待收货、无退款的运单，复用手动确认收货的锁/CAS/库存结转链路；单笔失败不阻塞同批其它运单 |
 | `OrderRequestCleanupScheduler` | `mall-order-service` | 按 `order.request.clean-scan-ms` 周期清理过期 `t_order_request` 幂等记录（每批最多 500 条）；单批失败只记录日志 |
+| `LocalMessageCleanupScheduler` | `mall-order-service` / `mall-refund-service` / `mall-payment-service` | 按 `local-message.clean-scan-ms` 周期分批（每批最多 500 条）清理 `CONSUMED` 且超过 7 天的 `t_local_message`、超过 30 天的 `t_consumer_dedupe`；全局锁 `scheduler:local-message-cleanup` 保证每轮只有一个实例执行，单批失败只记录日志 |
 
 注意：
 
@@ -1976,6 +1978,8 @@ DB Scheduler = 最终一致性兜底
 Outbox 中继按领域拆分后，`LocalMessageSendJob` 在各域服务内只扫描 `local-message.relay-biz-types` 指定的 biz_type，
 锁键按应用名隔离（`scheduler:local-message-send:{spring.application.name}`），避免多进程共用单键导致其它域消息长期得不到投递；
 `mall-user-bff`、`mall-admin-bff` 与 `mall-bill-service` 配置 `local-message.relay-enabled=false`，不再扫描 `t_local_message`。
+`LocalMessageCleanupScheduler` 复用同一开关，仅在开启 Outbox 中继的域服务内生效，以全局锁串行执行，避免多进程重复清理。
+Seata 状态机存储（`seata_state_machine_inst` / `seata_state_inst`）由 Seata 引擎持有时序，暂不引入应用侧重删，待后续按官方机制评估归档。
 `mall-admin-bff` 刻意不开启 `@EnableScheduling` / `@EnableRabbit`，并通过 `spring.rabbitmq.listener.simple.auto-startup=false`
 关闭 MQ 监听，避免重复消费或重复执行定时扫描。
 

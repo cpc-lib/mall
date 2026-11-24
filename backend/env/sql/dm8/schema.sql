@@ -316,6 +316,9 @@ CREATE INDEX idx_product_status_pay_type ON t_order_info (product_id, order_stat
 CREATE INDEX idx_product_payment_status_time ON t_order_info (product_id, payment_type, order_status, create_time);
 CREATE INDEX idx_payment_app ON t_order_info (payment_app_id, create_time);
 CREATE INDEX idx_order_lifecycle ON t_order_info (user_id, order_status, pay_status, fulfillment_status);
+CREATE INDEX idx_order_user_create_time ON t_order_info (user_id, create_time DESC);
+CREATE INDEX idx_order_wait_ship ON t_order_info (pay_status, fulfillment_status, refund_status, paid_time, id);
+CREATE INDEX idx_order_timeout_scan ON t_order_info (order_status, pay_status, create_time);
 
 CREATE
 OR REPLACE TRIGGER trg_order_info_uptime
@@ -386,7 +389,7 @@ END;
 CREATE TABLE t_product
 (
     id              BIGINT IDENTITY(1, 1) NOT NULL,
-    title           VARCHAR(20),
+    title           VARCHAR(256)                NOT NULL,
     price           INT         DEFAULT 1         NOT NULL,
     available_stock INT         DEFAULT 100       NOT NULL,
     locked_stock    INT         DEFAULT 0         NOT NULL,
@@ -487,6 +490,7 @@ ON COLUMN t_refund_info.fence_token IS '围栏令牌：Redis全局锁单调递�
 
 CREATE INDEX idx_refund_order_approval_status ON t_refund_info (order_no, approval_status);
 CREATE INDEX idx_refund_info_order_refund_status ON t_refund_info (order_no, refund_status);
+CREATE INDEX idx_refund_info_sync_scan ON t_refund_info (approval_status, refund_status, create_time);
 
 CREATE
 OR REPLACE TRIGGER trg_refund_info_uptime
@@ -665,6 +669,7 @@ CREATE INDEX idx_refund_order_order_no ON t_refund_order (order_no);
 CREATE INDEX idx_refund_order_user_id ON t_refund_order (user_id);
 CREATE INDEX idx_refund_order_status ON t_refund_order (status);
 CREATE INDEX idx_refund_order_status_success_time ON t_refund_order (status, success_time);
+CREATE INDEX idx_refund_order_payment_apply ON t_refund_order (payment_no, apply_type);
 
 COMMENT
 ON TABLE t_refund_order IS '退款单：资金退款主线，由 V1 t_refund_apply 演进；异常支付冲正（重复/晚到）也落本表但不占售后额度';
@@ -917,7 +922,7 @@ CREATE TABLE t_inventory_transaction
     CONSTRAINT pk_inventory_transaction PRIMARY KEY (id),
     CONSTRAINT uk_inventory_biz_no UNIQUE (biz_no)
 );
-CREATE INDEX idx_inventory_tx_product ON t_inventory_transaction (product_id);
+CREATE INDEX idx_inventory_tx_product_time ON t_inventory_transaction (product_id, create_time DESC, id DESC);
 CREATE INDEX idx_inventory_tx_order_no ON t_inventory_transaction (order_no);
 CREATE INDEX idx_inventory_tx_refund_no ON t_inventory_transaction (refund_no);
 CREATE INDEX idx_inventory_tx_status_time ON t_inventory_transaction (operation_status, create_time);
@@ -964,7 +969,7 @@ CREATE TABLE t_stock_import
     file_name    VARCHAR(255),
     item_count   INT                           NOT NULL,
     status       VARCHAR(16) DEFAULT 'PENDING' NOT NULL,
-    items_json   VARCHAR(4000)                 NOT NULL,
+    items_json   CLOB                          NOT NULL,
     storage_type VARCHAR(16) DEFAULT 'LOCAL'   NOT NULL,
     file_path    VARCHAR(512),
     create_time  TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
@@ -1014,6 +1019,8 @@ CREATE TABLE t_order_shipment
 );
 CREATE INDEX idx_shipment_order_no ON t_order_shipment (order_no);
 CREATE INDEX idx_shipment_status_delivered_time ON t_order_shipment (status, delivered_time);
+CREATE INDEX idx_shipment_status_shipped_time ON t_order_shipment (status, shipped_time);
+CREATE INDEX idx_shipment_status_transit_time ON t_order_shipment (status, in_transit_time);
 
 COMMENT
 ON TABLE t_order_shipment IS '物流单：通过 LogisticsProvider 接口对接（当前为模拟物流商），定时任务模拟运输推进，用户确认或送达超时自动确认收货后履约完成';
@@ -8523,7 +8530,6 @@ CREATE TABLE t_cart_item
     CONSTRAINT pk_cart_item PRIMARY KEY (id),
     CONSTRAINT uk_cart_user_product UNIQUE (user_id, product_id)
 );
-CREATE INDEX idx_cart_item_user ON t_cart_item (user_id);
 
 -- 初始化完成后显式提交数据
 COMMIT;
