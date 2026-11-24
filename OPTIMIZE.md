@@ -804,6 +804,8 @@
    - **问题**：`Cart.jsx` 保存新地址时未传 `provinceCode`、`cityCode`、`districtCode`，导致在购物车页创建的地址后续到 `/addresses` 页面点击编辑时，省市区级联选择器无法回显。
    - **优化方案**：在 `Cart.jsx:84-90` 中补齐 `provinceCode: province || '', cityCode: city || '', districtCode: district || ''`（或抽离共用的 `<AddressFormModal>` 组件）。
 
+**处理进展（2026-11-25）**：已完成 1–5 项。`OrdersV2.jsx` 微信扫码弹窗改为按单号轮询 `checkoutApi.payQuery`（不受分页位置影响，且会触发渠道查单同步）；物流轮询依赖收敛为 `[hasShipped, page]` 且页面隐藏时跳过；支付宝支付在 `await` 前同步 `window.open` 并在被拦截时给出提示；`RefundApplications.jsx` 移除进入/翻页时预拉 100 笔订单，改为 `beginEdit` 时按单号 `checkoutApi.get` 获取明细，第 101+ 笔订单可正常编辑；`Cart.jsx` 新建地址补齐 `provinceCode/cityCode/districtCode`。`npm run test:logic` 与 `npm run build` 通过。
+
 ---
 
 ### P4-3：`admin-ui` 路由死循环、错误导航、统计口径失真与双重错误弹窗修复

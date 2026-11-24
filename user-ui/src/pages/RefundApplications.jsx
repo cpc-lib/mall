@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Empty, Input, InputNumber, message, Modal, Pagination, Tag } from 'antd'
 import refundApi from '@/api/refundApply'
 import checkoutApi from '@/api/checkout'
@@ -7,7 +7,7 @@ import { REFUND_STATUS_COLOR, REFUND_STATUS_LABEL, REFUND_TYPE_LABEL } from '@/u
 
 export default function RefundApplications() {
   const [list, setList] = useState([])
-  const [orders, setOrders] = useState([])
+  const [editItems, setEditItems] = useState({})
   const [page, setPage] = useState(1)
   const size = 10
   const [total, setTotal] = useState(0)
@@ -15,21 +15,28 @@ export default function RefundApplications() {
   const [editing, setEditing] = useState(null)
   const [reason, setReason] = useState('')
   const [quantities, setQuantities] = useState({})
-  // 退款单只用于补全订单明细快照，取最近一页订单即可覆盖当前可见的退款申请
   const load = async (nextPage = pageRef.current) => {
-    const [r, o] = await Promise.all([refundApi.mine(nextPage, size), checkoutApi.list({ page: 1, size: 100 })])
+    const r = await refundApi.mine(nextPage, size)
     const data = r.data || {}
     pageRef.current = data.page || nextPage
     setList(data.records || [])
     setTotal(data.total || 0)
     setPage(data.page || nextPage)
-    setOrders(o.data?.records || [])
   }
   useEffect(() => { load(1) }, [])
-  const orderItemMap = useMemo(() => { const m = new Map(); orders.forEach(o => o.items?.forEach(i => m.set(Number(i.id), i))); return m }, [orders])
-  const beginEdit = row => { setEditing(row); setReason(row.apply.reason || ''); const next = {}; row.items.forEach(i => { next[i.orderItemId] = i.refundQty }); setQuantities(next) }
+  // 仅在编辑时按单号拉取该笔订单明细，避免进入/翻页时预拉前 100 笔订单导致更早订单无法编辑
+  const beginEdit = async row => {
+    setEditing(row); setReason(row.apply.reason || '')
+    const next = {}
+    row.items.forEach(i => { next[i.orderItemId] = i.refundQty })
+    setQuantities(next); setEditItems({})
+    try {
+      const r = await checkoutApi.get(row.apply.orderNo)
+      setEditItems(Object.fromEntries((r.data?.items || []).map(i => [Number(i.id), i])))
+    } catch { /* 拦截器已提示；缺少明细时仅能沿用原数量提交 */ }
+  }
   const maxFor = item => {
-    const orderItem = orderItemMap.get(Number(item.orderItemId))
+    const orderItem = editItems[Number(item.orderItemId)]
     if (!orderItem) return Number(item.refundQty || 0)
     return availableRefundQuantityExcluding(orderItem, item.refundQty)
   }
@@ -41,7 +48,7 @@ export default function RefundApplications() {
   }
   const cancel = async refundNo => { await refundApi.cancel(refundNo); message.success('退款申请已撤销'); await load() }
   const editTotal = editing?.items.reduce((sum, i) => {
-    const orderItem = orderItemMap.get(Number(i.orderItemId))
+    const orderItem = editItems[Number(i.orderItemId)]
     return sum + (orderItem ? refundAmountEstimate(orderItem, quantities[i.orderItemId] || 0) : 0)
   }, 0) || 0
   return <div className="tb-page">

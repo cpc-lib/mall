@@ -33,19 +33,20 @@ export default function OrdersV2() {
     setPage(data.page || nextPage)
   }
   useEffect(() => { load(1) }, [])
+  const hasShipped = orders.some(d => d.order.fulfillmentStatus === 'SHIPPED')
   useEffect(() => {
-    const hasShipped = orders.some(d => d.order.fulfillmentStatus === 'SHIPPED')
     if (!hasShipped) return
-    const timer = setInterval(() => load(), 15000)
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') load()
+    }, 15000)
     return () => clearInterval(timer)
-  }, [orders])
+  }, [hasShipped, page])
   useEffect(() => {
     if (!wxCode) return
     const timer = setInterval(async () => {
       try {
-        const o = await checkoutApi.list({ page: 1, size })
-        const hit = (o.data?.records || []).find(x => x.order.orderNo === wxCode.orderNo)
-        if (hit?.order?.payStatus === 'PAID') {
+        const r = await checkoutApi.payQuery(wxCode.orderNo)
+        if (r.data?.payStatus === 'PAID') {
           clearInterval(timer)
           setWxCode(null)
           message.success('支付成功')
@@ -57,8 +58,15 @@ export default function OrdersV2() {
   }, [wxCode])
   const pay = async d => {
     if (d.order.paymentType === '支付宝') {
-      const r = await checkoutApi.alipay(d.order.orderNo)
-      const w = window.open('', '_blank'); if (w) { w.document.open(); w.document.write(r.data?.html || ''); w.document.close() }
+      // 必须在 await 前同步打开窗口，否则浏览器会判定弹窗非用户手势触发而静默拦截
+      const w = window.open('', '_blank')
+      if (!w) { message.warning('浏览器已拦截支付窗口，请允许本站弹出窗口后重试'); return }
+      try {
+        const r = await checkoutApi.alipay(d.order.orderNo)
+        w.document.open(); w.document.write(r.data?.html || ''); w.document.close()
+      } catch (e) {
+        w.close()
+      }
     } else {
       const r = await checkoutApi.wxpay(d.order.orderNo)
       const codeUrl = r.data?.codeUrl || r.data?.code_url

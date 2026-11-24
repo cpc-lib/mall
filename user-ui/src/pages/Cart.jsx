@@ -83,6 +83,7 @@ export default function Cart() {
     const [province, city, district] = v.region || []
     const payload = {
       receiverName: v.receiverName, receiverPhone: v.receiverPhone, detail: v.detail,
+      provinceCode: province || '', cityCode: city || '', districtCode: district || '',
       province: regions.find(p => p.value === province)?.label || province || '',
       city: regions.find(p => p.value === province)?.children?.find(c => c.value === city)?.label || city || '',
       district: regions.find(p => p.value === province)?.children?.find(c => c.value === city)?.children?.find(d => d.value === district)?.label || district || '',
