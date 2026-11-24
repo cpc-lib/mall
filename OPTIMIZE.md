@@ -526,6 +526,8 @@
   3. 对跨服务 `listByChannelAndOrderNos`、`listByChannelAndChannelOrderNos`、`listByPaymentNos`、`listByRefundNos` 的参数集合按每批 500 个 ID 分片（Chunking）查询后合并。
   4. 在 `BillRecordMapper.xml` 和 `BillReconcileDiscrepancyMapper.xml` 中编写 `SELECT record_type, COUNT(*), COALESCE(SUM(total_amount),0), COALESCE(SUM(refund_amount),0) FROM t_bill_record WHERE import_id = #{importId} GROUP BY record_type` 聚合 SQL，避免在 `getSummary` 中加载全量流水与 `raw_line` CLOB。
 
+**处理进展（2026-11-24）**：第 1～4 条已完成。`WxTradeBillParser.parseXlsx` 改为 `OPCPackage + XSSFReader + XSSFSheetXMLHandler` 纯 SAX 事件驱动，按单元格引用还原列位并保持日期单元格 `yyyy-MM-dd HH:mm:ss` 口径；批次流水与差异单改为单条多值 `INSERT`、每 500 条一批，主键回调不再逐行依赖；`PaymentLedgerRemoteAdapter` / `RefundLedgerRemoteAdapter` 的四个集合查询按 500 个单号分片后合并；新增 `BillRecordMapper.summarizeByImport` 按 `record_type` 在库内汇总笔数与金额（退款只统计 `SUCCESS/REFUND/REVOKED`），`getSummary` 的差异总数与 OPEN 数改为 `COUNT(*)`，对账比对查询也不再读取 `raw_line` CLOB。对账口径、批次状态与差异类型均未改变，JDK 21 下全量 `mvn -o clean test` 通过。
+
 ---
 
 ### P2-4：无界全表查询与动态 SQL 拼接治理

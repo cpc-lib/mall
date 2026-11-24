@@ -14,6 +14,8 @@ import java.util.stream.Collectors;
 @Repository
 public class BillReconcileDiscrepancyRepositoryImpl implements BillReconcileDiscrepancyRepository {
 
+    private static final int BATCH_SIZE = 500;
+
     private final BillReconcileDiscrepancyMapper discrepancyMapper;
 
     public BillReconcileDiscrepancyRepositoryImpl(BillReconcileDiscrepancyMapper discrepancyMapper) {
@@ -27,6 +29,18 @@ public class BillReconcileDiscrepancyRepositoryImpl implements BillReconcileDisc
         discrepancy.setId(po.getId());
         discrepancy.setCreateTime(po.getCreateTime());
         discrepancy.setUpdateTime(po.getUpdateTime());
+    }
+
+    @Override
+    public void saveBatch(List<BillReconcileDiscrepancy> discrepancies) {
+        if (discrepancies == null || discrepancies.isEmpty()) {
+            return;
+        }
+        List<BillReconcileDiscrepancyPO> records = discrepancies.stream()
+            .map(BillReconcileDiscrepancyPOConverter::toPO).collect(Collectors.toList());
+        for (int from = 0; from < records.size(); from += BATCH_SIZE) {
+            discrepancyMapper.insertBatch(records.subList(from, Math.min(from + BATCH_SIZE, records.size())));
+        }
     }
 
     @Override

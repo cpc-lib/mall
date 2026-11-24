@@ -10,6 +10,7 @@ import cc.ivera.bill.domain.model.BillReconcileDiscrepancy;
 import cc.ivera.bill.domain.model.BillReconcileDrilldown;
 import cc.ivera.bill.domain.model.BillReconcileSummary;
 import cc.ivera.bill.domain.model.BillRecord;
+import cc.ivera.bill.domain.model.BillRecordSummary;
 import cc.ivera.bill.domain.model.BillVerificationItem;
 import cc.ivera.bill.domain.repository.BillImportRepository;
 import cc.ivera.bill.domain.repository.BillReconcileDiscrepancyRepository;
@@ -197,17 +198,17 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         billImport.setDiscrepancyCount(0);
         billImport.setStatus(BillImportStatus.IMPORTED.getType());
 
-        // 事务1：批次 + 流水入库
+        // 事务1：批次 + 流水入库（流水按批多值插入）
         transactionTemplate.executeWithoutResult(status -> {
             billImportRepository.save(billImport);
-            for (BillRecord record : parsed.getPayRecords()) {
+            List<BillRecord> records = new ArrayList<>(
+                parsed.getPayRecords().size() + parsed.getRefundRecords().size());
+            records.addAll(parsed.getPayRecords());
+            records.addAll(parsed.getRefundRecords());
+            for (BillRecord record : records) {
                 record.setImportId(billImport.getId());
-                billRecordRepository.save(record);
             }
-            for (BillRecord record : parsed.getRefundRecords()) {
-                record.setImportId(billImport.getId());
-                billRecordRepository.save(record);
-            }
+            billRecordRepository.saveBatch(records);
         });
 
         // 事务2：自动对账（失败标记 FAILED，批次与流水保留，可重新对账）
@@ -257,7 +258,7 @@ public class BillReconcileServiceImpl implements BillReconcileService {
             throw new BizException("账单导入批次不存在");
         }
 
-        List<BillRecord> records = billRecordRepository.listByImport(importId, null);
+        List<BillRecord> records = billRecordRepository.listForReconcile(importId);
         List<BillRecord> payRecords = filterByType(records, BillRecordType.PAY);
         List<BillRecord> refundRecords = filterByType(records, BillRecordType.REFUND);
 
@@ -293,9 +294,7 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         transactionTemplate.executeWithoutResult(status -> {
             // 重跑前先按 import_id 删除旧差异单，保证结果确定、不重复。
             discrepancyRepository.deleteByImport(importId);
-            for (BillReconcileDiscrepancy discrepancy : uniqueDiscrepancies.values()) {
-                discrepancyRepository.save(discrepancy);
-            }
+            discrepancyRepository.saveBatch(new ArrayList<>(uniqueDiscrepancies.values()));
 
             billImport.setMatchedCount(finalMatchedCount);
             billImport.setDiscrepancyCount(uniqueDiscrepancies.size());
@@ -641,13 +640,12 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         boolean checkPay = billKind != BillKind.REFUND;
         boolean checkRefund = billKind != BillKind.SUCCESS;
 
-        List<BillRecord> records = billRecordRepository.listByImport(billImport.getId(), null);
-        List<BillRecord> channelPays = checkPay
-            ? filterByType(records, BillRecordType.PAY) : Collections.emptyList();
-        List<BillRecord> channelRefunds = checkRefund
-            ? filterByType(records, BillRecordType.REFUND).stream()
-                .filter(this::isChannelRefundSettled).collect(Collectors.toList())
-            : Collections.emptyList();
+        // 渠道账在数据库内聚合，避免把全量流水（含 raw_line CLOB）加载到内存
+        BillRecordSummary channelSummary = billRecordRepository.summarizeByImport(billImport.getId());
+        long channelPayCount = checkPay ? channelSummary.getPayCount() : 0L;
+        long channelPayAmount = checkPay ? channelSummary.getPayAmount() : 0L;
+        long channelRefundCount = checkRefund ? channelSummary.getRefundCount() : 0L;
+        long channelRefundAmount = checkRefund ? channelSummary.getRefundAmount() : 0L;
 
         Date dayStart = atStartOfDay(billImport.getBillDate());
         Date dayEnd = atStartOfNextDay(billImport.getBillDate());
@@ -657,32 +655,28 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         List<RefundOrder> localRefunds = checkRefund
             ? listLocalWxSuccessRefunds(dayStart, dayEnd) : Collections.emptyList();
 
-        long channelPayAmount = channelPays.stream().map(BillRecord::getTotalAmount)
-            .filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
         long localPayAmount = localPays.stream().map(PaymentOrder::getPaidAmount)
-            .filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
-        long channelRefundAmount = channelRefunds.stream().map(BillRecord::getRefundAmount)
             .filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
         long localRefundAmount = localRefunds.stream().map(RefundOrder::getRefundAmount)
             .filter(Objects::nonNull).mapToLong(Integer::longValue).sum();
         long channelNet = channelPayAmount - channelRefundAmount;
         long localNet = localPayAmount - localRefundAmount;
 
-        List<BillReconcileDiscrepancy> allDiscrepancies = discrepancyRepository.listByImport(
+        int discrepancyCount = (int) discrepancyRepository.countByImport(
             billImport.getId(), null, null, null);
-        int openCount = (int) allDiscrepancies.stream()
-            .filter(d -> BillDiscrepancyStatus.OPEN.getType().equals(d.getStatus())).count();
+        int openCount = (int) discrepancyRepository.countByImport(
+            billImport.getId(), null, null, BillDiscrepancyStatus.OPEN.getType());
 
         BillReconcileSummary summary = new BillReconcileSummary();
         summary.setImportNo(billImport.getImportNo());
         summary.setBillDate(billImport.getBillDate());
         summary.setChannelCode(billImport.getChannelCode());
         summary.setBillKind(billImport.getBillKind());
-        summary.setChannelPayCount(channelPays.size());
+        summary.setChannelPayCount((int) channelPayCount);
         summary.setLocalPayCount(localPays.size());
         summary.setChannelPayAmount(channelPayAmount);
         summary.setLocalPayAmount(localPayAmount);
-        summary.setChannelRefundCount(channelRefunds.size());
+        summary.setChannelRefundCount((int) channelRefundCount);
         summary.setLocalRefundCount(localRefunds.size());
         summary.setChannelRefundAmount(channelRefundAmount);
         summary.setLocalRefundAmount(localRefundAmount);
@@ -690,10 +684,10 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         summary.setLocalNetAmount(localNet);
         summary.setNetDifference(channelNet - localNet);
         summary.setMatchedCount(billImport.getMatchedCount() == null ? 0 : billImport.getMatchedCount());
-        summary.setDiscrepancyCount(allDiscrepancies.size());
+        summary.setDiscrepancyCount(discrepancyCount);
         summary.setOpenDiscrepancyCount(openCount);
-        summary.setBalanced(channelPays.size() == localPays.size()
-            && channelRefunds.size() == localRefunds.size()
+        summary.setBalanced(channelPayCount == localPays.size()
+            && channelRefundCount == localRefunds.size()
             && channelPayAmount == localPayAmount
             && channelRefundAmount == localRefundAmount
             && channelNet == localNet

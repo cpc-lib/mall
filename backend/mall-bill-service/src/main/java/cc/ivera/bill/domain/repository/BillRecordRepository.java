@@ -1,6 +1,7 @@
 package cc.ivera.bill.domain.repository;
 
 import cc.ivera.bill.domain.model.BillRecord;
+import cc.ivera.bill.domain.model.BillRecordSummary;
 
 import java.util.List;
 
@@ -15,9 +16,24 @@ public interface BillRecordRepository {
     void save(BillRecord billRecord);
 
     /**
+     * 批量新建流水：单条 INSERT 多值按批提交，不逐行回填主键。
+     */
+    void saveBatch(List<BillRecord> billRecords);
+
+    /**
      * 批次明细列表：importId 必填，recordType 非空时按记录类型过滤，按 id 升序。
      */
     List<BillRecord> listByImport(Long importId, String recordType);
+
+    /**
+     * 对账比对用批次明细：不读取 raw_line CLOB，按 id 升序。
+     */
+    List<BillRecord> listForReconcile(Long importId);
+
+    /**
+     * 批次流水聚合：按记录类型汇总笔数与金额，避免加载全量流水。
+     */
+    BillRecordSummary summarizeByImport(Long importId);
 
     /**
      * 差异下钻定位渠道流水：按业务单号或渠道流水号任一相等匹配，空白条件不参与，

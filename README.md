@@ -242,7 +242,7 @@ payment.refund.status-sync.release.queue
 
 ## 5. 账账核对
 
-管理员上传微信支付下载的交易账单 XLSX（`.xlsx`）后，系统同步执行“渠道交易账 vs 平台交易账”的双向账账核对，不走 MQ。前端和后端都只接受 `.xlsx`，后端使用 Apache POI 读取真实 Excel 工作簿，不把 CSV 改后缀伪装成 XLSX：
+管理员上传微信支付下载的交易账单 XLSX（`.xlsx`）后，系统同步执行“渠道交易账 vs 平台交易账”的双向账账核对，不走 MQ。前端和后端都只接受 `.xlsx`，后端使用 Apache POI 事件模型（`OPCPackage` + `XSSFReader` + `XSSFSheetXMLHandler`）流式读取真实 Excel 工作簿，不把 CSV 改后缀伪装成 XLSX：
 
 ```text
 渠道账：t_bill_record（微信交易账单）
@@ -2149,6 +2149,8 @@ idx_refund_order_status_success_time(status, success_time)
 ```
 
 退款来源支付渠道通过 `payment_no` 集合批量查询，避免逐退款 N+1。对账在上传后同步执行，不经过 RabbitMQ。
+
+账单解析不构建整本工作簿 DOM；批次流水与差异单按每批 500 条多值插入；跨服务渠道账/平台账集合查询按 500 个单号分片后合并。批次汇总由 `t_bill_record` 按 `record_type` 聚合 SQL 完成（退款只统计已结算状态），差异总数与 `OPEN` 数走 `COUNT(*)`；对账比对查询不读取 `raw_line` CLOB，只有核验下钻按需读取原始行。
 
 #### 15.14.6 核验下钻
 

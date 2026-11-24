@@ -8,15 +8,20 @@ import cc.ivera.shared.domain.exception.ErrorCode;
 import cc.ivera.shared.web.R;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
 /**
  * 退款账远程适配器：账单上下文通过 refund-service 内部契约读取平台退款账。
+ * 跨服务集合查询按 {@value #IN_BATCH_SIZE} 个退款单号分片，避免超大 IN 列表。
  */
 @Component
 public class RefundLedgerRemoteAdapter implements RefundLedgerQueryApi {
+
+    private static final int IN_BATCH_SIZE = 500;
 
     private final RefundLedgerFeignClient client;
 
@@ -26,7 +31,16 @@ public class RefundLedgerRemoteAdapter implements RefundLedgerQueryApi {
 
     @Override
     public List<RefundOrder> listByRefundNos(Collection<String> refundNos) {
-        return unwrap(client.listByRefundNos(String.join(",", refundNos)));
+        List<RefundOrder> result = new ArrayList<>();
+        if (refundNos == null || refundNos.isEmpty()) {
+            return result;
+        }
+        List<String> all = new ArrayList<>(refundNos);
+        for (int from = 0; from < all.size(); from += IN_BATCH_SIZE) {
+            List<String> chunk = all.subList(from, Math.min(from + IN_BATCH_SIZE, all.size()));
+            result.addAll(unwrap(client.listByRefundNos(String.join(",", chunk))));
+        }
+        return result;
     }
 
     @Override

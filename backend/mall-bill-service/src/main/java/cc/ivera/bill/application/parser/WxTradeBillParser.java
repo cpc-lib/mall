@@ -4,17 +4,21 @@ import cc.ivera.bill.domain.enums.BillRecordType;
 import cc.ivera.bill.domain.model.BillRecord;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
-import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ooxml.util.SAXHelper;
+import org.apache.poi.openxml4j.opc.OPCPackage;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.FormulaEvaluator;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.xssf.eventusermodel.XSSFReader;
+import org.apache.poi.xssf.eventusermodel.XSSFSheetXMLHandler;
+import org.apache.poi.xssf.model.SharedStrings;
+import org.apache.poi.xssf.model.StylesTable;
+import org.apache.poi.xssf.usermodel.XSSFComment;
 import org.springframework.util.StringUtils;
+import org.xml.sax.InputSource;
+import org.xml.sax.XMLReader;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -44,6 +48,29 @@ public final class WxTradeBillParser {
     /** 微信交易账单按中国标准时间切日，避免部署主机时区影响账账核对归属日。 */
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
+    /**
+     * SAX 流式读取使用的单元格格式化器：日期单元格统一输出 yyyy-MM-dd HH:mm:ss，
+     * 与原先按 DateUtil.isCellDateFormatted 分支的显示口径保持一致。
+     */
+    private static final DataFormatter BILL_FORMATTER = new DataFormatter(Locale.CHINA) {
+        @Override
+        public String formatRawCellContents(double value, int formatIndex, String formatString,
+                                            boolean use1904Windowing) {
+            if (DateUtil.isADateFormat(formatIndex, formatString) && DateUtil.isValidExcelDate(value)) {
+                return DateUtil.getLocalDateTime(value, use1904Windowing).format(TIME_FORMATTER);
+            }
+            return super.formatRawCellContents(value, formatIndex, formatString, use1904Windowing);
+        }
+
+        @Override
+        public String formatRawCellContents(double value, int formatIndex, String formatString) {
+            if (DateUtil.isADateFormat(formatIndex, formatString) && DateUtil.isValidExcelDate(value)) {
+                return DateUtil.getLocalDateTime(value).format(TIME_FORMATTER);
+            }
+            return super.formatRawCellContents(value, formatIndex, formatString);
+        }
+    };
+
     // ==================== 账单表头列名 ====================
     private static final String COL_TRADE_TIME = "交易时间";
     private static final String COL_WX_ORDER_NO = "微信订单号";
@@ -65,7 +92,7 @@ public final class WxTradeBillParser {
     private static final String STATUS_REVOKED = "REVOKED";
 
     /**
-     * 解析微信下载的 XLSX 交易账单。
+     * 解析微信下载的 XLSX 交易账单（SAX 事件驱动，不构建整本工作簿 DOM）。
      *
      * <p>真实账单可能在表头前带标题/说明行，因此逐 Sheet、逐行查找包含“交易时间 + 微信订单号”的表头；
      * 找到后仅解析该 Sheet。单元格按显示文本读取，日期单元格统一格式化为 yyyy-MM-dd HH:mm:ss，
@@ -77,45 +104,110 @@ public final class WxTradeBillParser {
             return result;
         }
 
-        try (XSSFWorkbook workbook = new XSSFWorkbook(new ByteArrayInputStream(content))) {
-            DataFormatter formatter = new DataFormatter(Locale.CHINA);
-            FormulaEvaluator evaluator = workbook.getCreationHelper().createFormulaEvaluator();
-
-            for (int sheetIndex = 0; sheetIndex < workbook.getNumberOfSheets(); sheetIndex++) {
-                Sheet sheet = workbook.getSheetAt(sheetIndex);
-                Map<String, Integer> headerIndex = null;
-
-                for (Row row : sheet) {
-                    result.setTotalLines(result.getTotalLines() + 1);
-                    List<String> fields = normalizeWorkbookRow(rowValues(row, formatter, evaluator));
-                    if (isBlankRow(fields)) {
-                        continue;
-                    }
-
-                    if (headerIndex == null) {
-                        Map<String, Integer> header = mapHeader(fields);
-                        if (header.containsKey(COL_TRADE_TIME) && header.containsKey(COL_WX_ORDER_NO)) {
-                            headerIndex = header;
-                            result.setBillKind(detectBillKind(header));
-                        }
-                        continue;
-                    }
-
-                    parseDataRow(result, fields, headerIndex, channelCode, billDate,
-                        String.join("\t", fields));
+        try (OPCPackage pkg = OPCPackage.open(new ByteArrayInputStream(content))) {
+            XSSFReader reader = new XSSFReader(pkg);
+            StylesTable styles = reader.getStylesTable();
+            if (styles == null) {
+                styles = new StylesTable();
+            }
+            SharedStrings strings = reader.getSharedStringsTable();
+            Iterator<InputStream> sheets = reader.getSheetsData();
+            while (sheets.hasNext()) {
+                XMLReader parser = SAXHelper.newXMLReader();
+                SheetContentsHandlerImpl handler = new SheetContentsHandlerImpl(result, channelCode, billDate);
+                parser.setContentHandler(new XSSFSheetXMLHandler(
+                    styles, strings, handler, BILL_FORMATTER, false));
+                try (InputStream sheet = sheets.next()) {
+                    parser.parse(new InputSource(sheet));
                 }
-
-                if (headerIndex != null) {
+                if (handler.headerFound()) {
                     return result;
                 }
             }
         } catch (BizException e) {
             throw e;
-        } catch (IOException | RuntimeException e) {
+        } catch (Exception e) {
             throw new BizException("账单文件格式不正确：无法读取微信交易账单 XLSX", e);
         }
 
         throw new BizException("账单文件格式不正确：未找到微信交易账单表头");
+    }
+
+    /**
+     * 逐行回调：按表头识别账单，表头后的行交给同一套按列名解析逻辑。
+     */
+    private final class SheetContentsHandlerImpl implements XSSFSheetXMLHandler.SheetContentsHandler {
+
+        private final ParsedBill result;
+        private final String channelCode;
+        private final String billDate;
+        private final List<String> fields = new ArrayList<>();
+        private Map<String, Integer> headerIndex;
+        private boolean headerFound;
+
+        private SheetContentsHandlerImpl(ParsedBill result, String channelCode, String billDate) {
+            this.result = result;
+            this.channelCode = channelCode;
+            this.billDate = billDate;
+        }
+
+        private boolean headerFound() {
+            return headerFound;
+        }
+
+        @Override
+        public void startRow(int rowNum) {
+            fields.clear();
+        }
+
+        @Override
+        public void cell(String cellReference, String formattedValue, XSSFComment comment) {
+            int index = columnIndex(cellReference, fields.size());
+            while (fields.size() < index) {
+                fields.add("");
+            }
+            String value = formattedValue == null ? "" : formattedValue;
+            if (fields.size() == index) {
+                fields.add(value);
+            } else {
+                fields.set(index, value);
+            }
+        }
+
+        @Override
+        public void endRow(int rowNum) {
+            result.setTotalLines(result.getTotalLines() + 1);
+            List<String> values = normalizeWorkbookRow(new ArrayList<>(fields));
+            if (isBlankRow(values)) {
+                return;
+            }
+            if (headerIndex == null) {
+                Map<String, Integer> header = mapHeader(values);
+                if (header.containsKey(COL_TRADE_TIME) && header.containsKey(COL_WX_ORDER_NO)) {
+                    headerIndex = header;
+                    headerFound = true;
+                    result.setBillKind(detectBillKind(header));
+                }
+                return;
+            }
+            parseDataRow(result, values, headerIndex, channelCode, billDate, String.join("\t", values));
+        }
+    }
+
+    /**
+     * 单元格引用（如 AB12）转 0 基列下标；无引用时退回当前列顺序。
+     */
+    private int columnIndex(String cellReference, int fallback) {
+        if (!StringUtils.hasText(cellReference)) {
+            return fallback;
+        }
+        int index = 0;
+        int cursor = 0;
+        while (cursor < cellReference.length() && Character.isLetter(cellReference.charAt(cursor))) {
+            index = index * 26 + (Character.toUpperCase(cellReference.charAt(cursor)) - 'A' + 1);
+            cursor++;
+        }
+        return cursor == 0 ? fallback : index - 1;
     }
 
     /**
@@ -254,18 +346,6 @@ public final class WxTradeBillParser {
         return header;
     }
 
-    private List<String> rowValues(Row row, DataFormatter formatter, FormulaEvaluator evaluator) {
-        int lastCell = row == null ? -1 : row.getLastCellNum();
-        if (lastCell <= 0) {
-            return Collections.emptyList();
-        }
-        List<String> values = new ArrayList<>(lastCell);
-        for (int i = 0; i < lastCell; i++) {
-            values.add(cellText(row.getCell(i), formatter, evaluator));
-        }
-        return values;
-    }
-
     private List<String> normalizeWorkbookRow(List<String> fields) {
         if (fields == null || fields.size() != 1 || !StringUtils.hasText(fields.get(0))) {
             return fields;
@@ -279,20 +359,6 @@ public final class WxTradeBillParser {
             return Arrays.asList(only.split("\\t", -1));
         }
         return fields;
-    }
-
-    private String cellText(Cell cell, DataFormatter formatter, FormulaEvaluator evaluator) {
-        if (cell == null) {
-            return "";
-        }
-        try {
-            if (DateUtil.isCellDateFormatted(cell)) {
-                return cell.getLocalDateTimeCellValue().format(TIME_FORMATTER);
-            }
-            return formatter.formatCellValue(cell, evaluator);
-        } catch (RuntimeException e) {
-            return formatter.formatCellValue(cell);
-        }
     }
 
     private boolean isBlankRow(List<String> fields) {

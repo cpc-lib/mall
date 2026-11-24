@@ -39,6 +39,25 @@
     <include refid="discrepancyFilter"/>
   </select>
 
+  <!-- 批量插入差异单：单条 INSERT 多值，create_time/update_time 由表默认值填充 -->
+  <insert id="insertBatch">
+    insert into t_bill_reconcile_discrepancy (
+      import_id, bill_date, biz_type, discrepancy_type, biz_no, channel_serial_no,
+      local_biz_no, local_ledger_no, local_serial_no, channel_amount, local_amount,
+      channel_status, local_status, status, resolve_remark, resolved_time, resolved_by
+    ) values
+    <foreach collection="list" item="item" separator=",">
+      (#{item.importId}, #{item.billDate}, #{item.bizType}, #{item.discrepancyType},
+       #{item.bizNo,jdbcType=VARCHAR}, #{item.channelSerialNo,jdbcType=VARCHAR},
+       #{item.localBizNo,jdbcType=VARCHAR}, #{item.localLedgerNo,jdbcType=VARCHAR},
+       #{item.localSerialNo,jdbcType=VARCHAR},
+       #{item.channelAmount,jdbcType=INTEGER}, #{item.localAmount,jdbcType=INTEGER},
+       #{item.channelStatus,jdbcType=VARCHAR}, #{item.localStatus,jdbcType=VARCHAR},
+       #{item.status}, #{item.resolveRemark,jdbcType=VARCHAR},
+       #{item.resolvedTime,jdbcType=TIMESTAMP}, #{item.resolvedBy,jdbcType=VARCHAR})
+    </foreach>
+  </insert>
+
   <!-- 批次差异分页：id 升序，limit/offset 由调用方按页计算 -->
   <select id="selectPageByImport"
           resultType="cc.ivera.bill.infrastructure.persistence.po.BillReconcileDiscrepancyPO">

@@ -10,16 +10,21 @@ import cc.ivera.shared.domain.exception.ErrorCode;
 import cc.ivera.shared.web.R;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
 /**
  * 支付账远程适配器：账单上下文通过 payment-service 内部契约读取平台支付账，
  * 保留订单 1:N 支付尝试语义，禁止按 order_no 聚合。
+ * 跨服务集合查询按 {@value #IN_BATCH_SIZE} 个单号分片，避免超大 IN 列表。
  */
 @Component
 public class PaymentLedgerRemoteAdapter implements PaymentOrderQueryApi {
+
+    private static final int IN_BATCH_SIZE = 500;
 
     private final PaymentLedgerFeignClient client;
 
@@ -39,12 +44,20 @@ public class PaymentLedgerRemoteAdapter implements PaymentOrderQueryApi {
 
     @Override
     public List<PaymentOrder> listByChannelAndOrderNos(String channel, Collection<String> orderNos) {
-        return unwrap(client.listByChannelAndOrderNos(orderNosRequest(channel, orderNos)));
+        List<PaymentOrder> result = new ArrayList<>();
+        for (List<String> chunk : chunks(orderNos)) {
+            result.addAll(unwrap(client.listByChannelAndOrderNos(orderNosRequest(channel, chunk))));
+        }
+        return result;
     }
 
     @Override
     public List<PaymentOrder> listByChannelAndChannelOrderNos(String channel, Collection<String> channelOrderNos) {
-        return unwrap(client.listByChannelAndChannelOrderNos(orderNosRequest(channel, channelOrderNos)));
+        List<PaymentOrder> result = new ArrayList<>();
+        for (List<String> chunk : chunks(channelOrderNos)) {
+            result.addAll(unwrap(client.listByChannelAndChannelOrderNos(orderNosRequest(channel, chunk))));
+        }
+        return result;
     }
 
     @Override
@@ -58,7 +71,11 @@ public class PaymentLedgerRemoteAdapter implements PaymentOrderQueryApi {
 
     @Override
     public List<PaymentOrder> listByPaymentNos(Collection<String> paymentNos) {
-        return unwrap(client.listByPaymentNos(orderNosRequest(null, paymentNos)));
+        List<PaymentOrder> result = new ArrayList<>();
+        for (List<String> chunk : chunks(paymentNos)) {
+            result.addAll(unwrap(client.listByPaymentNos(orderNosRequest(null, chunk))));
+        }
+        return result;
     }
 
     @Override
@@ -77,6 +94,18 @@ public class PaymentLedgerRemoteAdapter implements PaymentOrderQueryApi {
         request.setChannel(channel);
         request.setOrderNos(orderNos);
         return request;
+    }
+
+    private List<List<String>> chunks(Collection<String> values) {
+        if (values == null || values.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> all = new ArrayList<>(values);
+        List<List<String>> chunks = new ArrayList<>((all.size() + IN_BATCH_SIZE - 1) / IN_BATCH_SIZE);
+        for (int from = 0; from < all.size(); from += IN_BATCH_SIZE) {
+            chunks.add(all.subList(from, Math.min(from + IN_BATCH_SIZE, all.size())));
+        }
+        return chunks;
     }
 
     private <T> T unwrap(R<T> response) {

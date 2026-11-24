@@ -26,6 +26,11 @@ public interface BillReconcileDiscrepancyMapper extends BaseMapper<BillReconcile
                                     @Param("discrepancyType") String discrepancyType,
                                     @Param("status") String status);
 
+    /**
+     * 批量插入差异单（单条 INSERT 多值）。
+     */
+    int insertBatch(@Param("list") List<BillReconcileDiscrepancyPO> discrepancies);
+
     List<BillReconcileDiscrepancyPO> selectPageByImport(@Param("importId") Long importId,
                                                         @Param("bizType") String bizType,
                                                         @Param("discrepancyType") String discrepancyType,

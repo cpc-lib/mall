@@ -15,6 +15,11 @@ public interface BillReconcileDiscrepancyRepository {
     void save(BillReconcileDiscrepancy discrepancy);
 
     /**
+     * 批量新建差异单：单条 INSERT 多值按批提交，不逐行回填主键。
+     */
+    void saveBatch(List<BillReconcileDiscrepancy> discrepancies);
+
+    /**
      * 按主键更新（MP NOT_NULL 策略）。
      */
     void update(BillReconcileDiscrepancy discrepancy);
