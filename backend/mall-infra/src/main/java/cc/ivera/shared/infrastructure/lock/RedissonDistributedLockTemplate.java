@@ -7,12 +7,14 @@ import cc.ivera.shared.domain.lock.FenceTokenHolder;
 import cc.ivera.shared.domain.lock.LockAuditRecorder;
 import cc.ivera.shared.domain.lock.LockContext;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RAtomicLong;
 import org.redisson.api.RLock;
+import org.redisson.api.RScript;
 import org.redisson.api.RedissonClient;
+import org.redisson.client.codec.StringCodec;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
+import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
@@ -21,8 +23,12 @@ import java.util.function.Supplier;
 @Slf4j
 public class RedissonDistributedLockTemplate implements DistributedLockTemplate {
 
-    private static final String FENCE_KEY_PREFIX = "lock:fence:";
-    private static final long FENCE_TTL_DAYS = 30L;
+    private static final String FENCE_KEY = "lock:fence:seq";
+    private static final String FENCE_SEED_SCRIPT =
+        "redis.call('set', KEYS[1], ARGV[1], 'nx') "
+            + "redis.call('expire', KEYS[1], ARGV[2]) "
+            + "return redis.call('incr', KEYS[1])";
+    private static final long FENCE_TTL_SECONDS = TimeUnit.DAYS.toSeconds(30L);
     private static final long DEFAULT_HOLD_WARN_MILLIS = 5000L;
     private static final String EVENT_ACQUIRED = "ACQUIRED";
     private static final String EVENT_RELEASED = "RELEASED";
@@ -53,6 +59,7 @@ public class RedissonDistributedLockTemplate implements DistributedLockTemplate 
 
         RLock lock = redissonClient.getLock(lockKey);
         boolean locked = false;
+        long threadId = Thread.currentThread().getId();
         LockContext context = null;
 
         try {
@@ -87,7 +94,7 @@ public class RedissonDistributedLockTemplate implements DistributedLockTemplate 
                 fenceToken = context.getFenceToken();
                 FenceTokenHolder.release();
             }
-            if (locked && lock.isHeldByCurrentThread()) {
+            if (locked && lock.isHeldByThread(threadId)) {
                 try {
                     lock.unlock();
                     log.debug("释放分布式锁成功，lockKey={}", lockKey);
@@ -112,10 +119,10 @@ public class RedissonDistributedLockTemplate implements DistributedLockTemplate 
      * 首次使用时以当前毫秒时间初始化，避免回退到历史已写入的小令牌区间。
      */
     private long nextFenceToken() {
-        RAtomicLong counter = redissonClient.getAtomicLong(FENCE_KEY_PREFIX + "seq");
-        counter.compareAndSet(0L, System.currentTimeMillis());
-        long token = counter.incrementAndGet();
-        counter.expire(FENCE_TTL_DAYS, TimeUnit.DAYS);
-        return token;
+        Long token = redissonClient.getScript(StringCodec.INSTANCE).eval(
+            RScript.Mode.READ_WRITE, FENCE_SEED_SCRIPT, RScript.ReturnType.INTEGER,
+            Collections.singletonList(FENCE_KEY),
+            String.valueOf(System.currentTimeMillis()), String.valueOf(FENCE_TTL_SECONDS));
+        return token == null ? 0L : token;
     }
 }

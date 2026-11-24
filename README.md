@@ -1598,8 +1598,9 @@ fence 围栏 CAS、`biz_no` 幂等与数据库唯一键兜底。
 不同锁键交叉嵌套仍有争锁等待超时风险，应尽量保持单一入口加锁。
 
 锁审计由 `LockAuditRecorder` 端口 + `RedisLockAuditRecorder` 实现：每次 `ACQUIRED` / `RELEASED` / `ACQUIRE_FAILED`
-追加到 Redis Stream `lock:audit`（字段 `ts/event/lockKey/fenceToken/heldMs/thread`），用近似 `MAXLEN ~ 1000`
-加 7 天 TTL 限制体积，不落库、不参与业务判断；审计写入异常只记 WARN，不影响临界区与锁释放。
+追加到 Redis Stream `lock:audit`（字段 `ts/event/lockKey/fenceToken/heldMs/thread`），单次 `RBatch` 管道把
+`XADD`（内置 `MAXLEN ~ 1000` 近似裁剪）与 7 天 TTL 合并为 1 次网络往返限制体积，不落库、不参与业务判断；
+审计写入异常只记 WARN，不影响临界区与锁释放。
 锁不建持久化实例表、不做后台强放锁：锁是瞬态互斥资源，崩溃后由 Redisson 租约到期释放，强制释放会破坏互斥。
 
 以下场景仍保留编程式 `execute`：锁键依赖方法体内解析结果（微信/支付宝异步通知、账单文件解析）、锁只覆盖方法内某个分支
@@ -1614,7 +1615,7 @@ flowchart TD
     C --> D["tryLock(waitTimeMillis, -1, MILLISECONDS)<br/>leaseTime=-1 → 启用 watchdog 自动续期"]
     D --> E{"waitTimeMillis 内是否拿到锁"}
     E -->|"否"| E1["log.warn + 抛 BizException<br/>系统繁忙，请勿重复提交"]
-    E -->|"是"| F["Redis INCR lock:fence:前缀+lockKey<br/>得到单调递增 fenceToken<br/>并设置 30 天 TTL"]
+    E -->|"是"| F["Redis Lua 单次 RTT：<br/>SET lock:fence:seq 毫秒初值(NX)<br/>+ EXPIRE 30 天 + INCR<br/>得到单调递增 fenceToken"]
     F --> G["FenceTokenHolder.set(fenceToken)<br/>ThreadLocal 绑定当前线程"]
     G --> H["supplier.get() 执行临界区业务<br/>抢锁 → 业务事务"]
     H --> H1["Mapper 围栏 CAS<br/>SET fence_token = newToken<br/>WHERE ... AND fence_token 小于 newToken"]
@@ -1624,7 +1625,7 @@ flowchart TD
     I --> K["finally 统一清理"]
     J --> K
     K --> K1["FenceTokenHolder.clear()<br/>解除 ThreadLocal 绑定"]
-    K1 --> K2{"locked 且 isHeldByCurrentThread()"}
+    K1 --> K2{"locked 且 isHeldByThread(threadId)"}
     K2 -->|"是"| K3["lock.unlock()<br/>释放锁，watchdog 停止续期"]
     K2 -->|"否"| K4["不释放<br/>锁已过期或非本线程持有"]
     K3 --> L["返回业务结果 / 抛出原异常"]
@@ -1634,7 +1635,7 @@ flowchart TD
 要点：
 
 - `tryLock` 使用 `leaseTime = -1`，持有期间由 Redisson watchdog 自动续期（默认 `lockWatchdogTimeout` 30s，每 1/3 周期续期），调用方不指定过期时间。
-- 加锁成功后才 `INCR lock:fence:seq` 生成**全局**围栏令牌，`EXPIRE` 30 天（首次使用以当前毫秒时间初始化）；令牌全局单调递增，保证后拿锁者一定拥有更大令牌。同一聚合会被不同业务键的锁先后推进（支付→发货→收货→退款受理），令牌必须跨键可比，否则新锁拿到的令牌可能小于行上已有令牌，合法 CAS 会被静默丢弃。
+- 加锁成功后才用**单条 Lua 脚本**（`SET lock:fence:seq 毫秒初值 NX` + `EXPIRE 30 天` + `INCR`）生成**全局**围栏令牌，一次 RTT 完成初始化、续期与自增；令牌全局单调递增，保证后拿锁者一定拥有更大令牌。同一聚合会被不同业务键的锁先后推进（支付→发货→收货→退款受理），令牌必须跨键可比，否则新锁拿到的令牌可能小于行上已有令牌，合法 CAS 会被静默丢弃。
 - 业务事务内的 Repository 从 `FenceTokenHolder.get()` 读取令牌并传给 Mapper，由 Mapper 追加 `SET fence_token = newToken` 与 `WHERE ... AND fence_token <= newToken`。用 `<=` 是因为同一把锁内会连续推进多次状态（如退款单创建后立即定价、受理后立即发起渠道退款），首次 UPDATE 已将行令牌写成当前令牌；陈旧持有者的令牌更小，仍会被拒绝。
 - 未持锁时 `FenceTokenHolder.get()` 返回 `null`，围栏条件自动跳过，不影响无锁场景的正常更新。
 - 含 `fence_token` 列的核心聚合表：`t_order_info`、`t_payment_order`、`t_refund_order`、`t_refund_info`、`t_bill_import`。

@@ -7,26 +7,27 @@ import cc.ivera.user.application.UserAdminService;
 import cc.ivera.user.application.dto.UserStatusRequest;
 import cc.ivera.user.application.vo.UserVO;
 import cc.ivera.user.domain.model.UserAccount;
+import cc.ivera.user.domain.repository.AuthSessionRepository;
 import cc.ivera.user.domain.repository.UserAccountRepository;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 public class UserAdminServiceImpl implements UserAdminService {
-    private static final String REFRESH_PREFIX = "auth:refresh:";
     private static final String VERSION_PREFIX = "auth:token_version:";
 
     private final UserAccountRepository userRepository;
     private final StringRedisTemplate redisTemplate;
+    private final AuthSessionRepository authSessionRepository;
 
-    public UserAdminServiceImpl(UserAccountRepository userRepository, StringRedisTemplate redisTemplate) {
+    public UserAdminServiceImpl(UserAccountRepository userRepository, StringRedisTemplate redisTemplate,
+                                AuthSessionRepository authSessionRepository) {
         this.userRepository = userRepository;
         this.redisTemplate = redisTemplate;
+        this.authSessionRepository = authSessionRepository;
     }
 
     @Override
@@ -51,7 +52,7 @@ public class UserAdminServiceImpl implements UserAdminService {
         UserAccount user = userRepository.findById(id);
         if (user == null) throw new BizException("用户不存在");
         UserVO result = toRow(user);
-        result.setOnline(scanOnlineUserIds().contains(user.getId()));
+        result.setOnline(!authSessionRepository.listByUser(user.getId()).isEmpty());
         return result;
     }
 
@@ -67,8 +68,10 @@ public class UserAdminServiceImpl implements UserAdminService {
             user.setUserStatus(status);
             userRepository.update(user);
         }
-        if (CommonStatus.DISABLED.getType().equals(status))
+        if (CommonStatus.DISABLED.getType().equals(status)) {
             redisTemplate.opsForValue().increment(VERSION_PREFIX + user.getId());
+            authSessionRepository.deleteAll(user.getId());
+        }
         UserVO result = new UserVO();
         result.setId(user.getId());
         result.setUsername(user.getUsername());
@@ -86,28 +89,5 @@ public class UserAdminServiceImpl implements UserAdminService {
         result.setCreateTime(user.getCreateTime());
         result.setUpdateTime(user.getUpdateTime());
         return result;
-    }
-
-    private Set<Long> scanOnlineUserIds() {
-        Set<Long> onlineIds = new HashSet<>();
-        try {
-            Set<String> keys = redisTemplate.keys(REFRESH_PREFIX + "*");
-            if (keys != null) {
-                List<String> values = redisTemplate.opsForValue().multiGet(keys);
-                if (values != null) {
-                    for (String value : values) {
-                        if (value != null) {
-                            String[] parts = value.split(":", 2);
-                            try {
-                                onlineIds.add(Long.valueOf(parts[0]));
-                            } catch (Exception ignored) {
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return onlineIds;
     }
 }

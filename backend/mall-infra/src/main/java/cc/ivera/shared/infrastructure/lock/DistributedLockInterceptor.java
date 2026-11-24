@@ -10,12 +10,15 @@ import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * {@link DistributedLock} 拦截器：复用 {@link DistributedLockTemplate}，保证注解方式与编程式加锁
@@ -29,6 +32,8 @@ public class DistributedLockInterceptor implements MethodInterceptor {
     private final DistributedLockTemplate distributedLockTemplate;
 
     private final ExpressionParser expressionParser = new SpelExpressionParser();
+
+    private final ConcurrentMap<String, Expression> expressionCache = new ConcurrentHashMap<>();
 
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
@@ -72,7 +77,7 @@ public class DistributedLockInterceptor implements MethodInterceptor {
             context.setVariable("p" + i, args[i]);
             context.setVariable("a" + i, args[i]);
         }
-        Object value = expressionParser.parseExpression(expression).getValue(context);
+        Object value = expressionCache.computeIfAbsent(expression, expressionParser::parseExpression).getValue(context);
         return value == null ? null : String.valueOf(value);
     }
 

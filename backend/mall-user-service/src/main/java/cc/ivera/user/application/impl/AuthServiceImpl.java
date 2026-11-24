@@ -210,9 +210,8 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private long ensureVersion(Long userId) {
-        String key = VERSION_PREFIX + userId;
-        redisTemplate.opsForValue().setIfAbsent(key, "0");
-        String value = redisTemplate.opsForValue().get(key);
+        // key 不存在时默认版本号即为 0，无需先 SETNX 再 GET
+        String value = redisTemplate.opsForValue().get(VERSION_PREFIX + userId);
         return value == null ? 0L : Long.parseLong(value);
     }
 

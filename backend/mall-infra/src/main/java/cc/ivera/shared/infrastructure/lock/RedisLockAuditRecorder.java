@@ -2,10 +2,11 @@ package cc.ivera.shared.infrastructure.lock;
 
 import cc.ivera.shared.domain.lock.LockAuditRecorder;
 import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RStream;
+import org.redisson.api.RBatch;
+import org.redisson.api.RStreamAsync;
 import org.redisson.api.RedissonClient;
 import org.redisson.api.stream.StreamAddArgs;
-import org.redisson.api.stream.StreamTrimArgs;
+import org.redisson.client.codec.StringCodec;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.stereotype.Component;
 
@@ -47,13 +48,20 @@ public class RedisLockAuditRecorder implements LockAuditRecorder {
             fields.put("heldMs", String.valueOf(heldMillis));
             fields.put("thread", Thread.currentThread().getName());
 
-            RStream<String, String> stream = redissonClient.getStream(STREAM_KEY);
-            stream.add(StreamAddArgs.entries(fields));
-            // 近似裁剪（MAXLEN ~ N LIMIT N）：避免每次写入都阻塞截断大量历史条目
-            stream.trimNonStrict(StreamTrimArgs.maxLen(MAX_LENGTH).limit(MAX_LENGTH));
-            stream.expire(TTL);
+            append(fields);
         } catch (RuntimeException e) {
             log.warn("分布式锁审计写入失败，event={}，lockKey={}", event, lockKey, e);
         }
+    }
+
+    /**
+     * 单次批量管道完成 XADD（含 MAXLEN ~ 裁剪）与 TTL 续期，避免 3 次串行 RTT。
+     */
+    private void append(Map<String, String> fields) {
+        RBatch batch = redissonClient.createBatch();
+        RStreamAsync<String, String> stream = batch.getStream(STREAM_KEY, StringCodec.INSTANCE);
+        stream.addAsync(StreamAddArgs.entries(fields).trimNonStrict().maxLen(MAX_LENGTH).noLimit());
+        stream.expireAsync(TTL);
+        batch.execute();
     }
 }

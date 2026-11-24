@@ -28,6 +28,10 @@ public class RedisAuthSessionRepository implements AuthSessionRepository {
     private static final String USER_SESSIONS_PREFIX = "auth:user_sessions:";
     private static final String REFRESH_PREFIX = "auth:refresh:";
     private static final String REFRESH_USED_PREFIX = "auth:refresh_used:";
+    private static final DefaultRedisScript<String> CONSUME_REFRESH_SCRIPT =
+        new DefaultRedisScript<>(
+            "local v=redis.call('GET',KEYS[1]); if v then redis.call('DEL',KEYS[1]); end; return v",
+            String.class);
 
     private final StringRedisTemplate redisTemplate;
 
@@ -121,10 +125,7 @@ public class RedisAuthSessionRepository implements AuthSessionRepository {
 
     @Override
     public String consumeRefresh(String tokenHash) {
-        DefaultRedisScript<String> script = new DefaultRedisScript<>();
-        script.setResultType(String.class);
-        script.setScriptText("local v=redis.call('GET',KEYS[1]); if v then redis.call('DEL',KEYS[1]); end; return v");
-        return redisTemplate.execute(script, Collections.singletonList(REFRESH_PREFIX + tokenHash));
+        return redisTemplate.execute(CONSUME_REFRESH_SCRIPT, Collections.singletonList(REFRESH_PREFIX + tokenHash));
     }
 
     @Override

@@ -23,12 +23,28 @@ import java.util.stream.Collectors;
 public class RegionController {
     private final RegionService regionService;
 
+    private volatile List<Map<String, Object>> cachedTree;
+
     public RegionController(RegionService regionService) {
         this.regionService = regionService;
     }
 
     @GetMapping("/tree")
     public R<List<Map<String, Object>>> tree() {
+        List<Map<String, Object>> local = cachedTree;
+        if (local == null) {
+            synchronized (this) {
+                local = cachedTree;
+                if (local == null) {
+                    local = buildTree();
+                    cachedTree = local;
+                }
+            }
+        }
+        return R.ok(local);
+    }
+
+    private List<Map<String, Object>> buildTree() {
         List<Region> all = regionService.listAllOrdered();
         // 构建树
         Map<Long, List<Region>> byParent = all.stream().collect(Collectors.groupingBy(r -> r.getParentId()));
@@ -37,7 +53,7 @@ public class RegionController {
             if (r.getParentId() != 0) continue;
             root.add(build(r, byParent));
         }
-        return R.ok(root);
+        return root;
     }
 
     private Map<String, Object> build(Region node, Map<Long, List<Region>> byParent) {

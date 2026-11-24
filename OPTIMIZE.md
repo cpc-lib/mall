@@ -581,6 +581,12 @@
      - `RedisAuthSessionRepository.consumeRefresh` 每次调用都 `new DefaultRedisScript<>()`，导致 Spring Data Redis 每次重新计算脚本 SHA1；应提取为 `private static final DefaultRedisScript<String> CONSUME_REFRESH_SCRIPT` 常量。
      - `RegionServiceImpl.listAllOrdered`（`RegionServiceImpl.java:19-21`）与 `RegionController.tree`（`RegionController.java:30-54`）每次请求都从 DM8 全表拉取 ~3,420 条静态省市区记录并跨 Feign 传输重建树；应增加内存缓存（`volatile List<Map<String, Object>> cachedTree`）。
 
+**处理进展（2026-11-24）**：三类均已落地。
+
+1. 锁路径 RTT 收敛：`RedissonDistributedLockTemplate.nextFenceToken` 改为单条 Lua（`SET lock:fence:seq 毫秒初值 NX` + `EXPIRE 30 天` + `INCR`），由 3 次命令降为 1 次 RTT；`RedisLockAuditRecorder` 用 `RBatch` 把 `XADD`（`.trimNonStrict().maxLen(1000).noLimit()`）与 TTL 管道化为 1 次 RTT，替代原 `add + trimNonStrict + expire` 三次串行；释放判定改用 `lock.isHeldByThread(Thread.currentThread().getId())`，避免远程 `isHeldByCurrentThread()` 的额外 `HEXISTS`；`DistributedLockInterceptor` 用 `ConcurrentHashMap` 缓存已编译的 SpEL `Expression`，不再每次反射解析 AST。
+2. `UserAdminServiceImpl` 移除 `redisTemplate.keys("auth:refresh:*")` 全库阻塞扫描；`detail` 改用 `authSessionRepository.listByUser(userId)` 判在线；`setStatus` 禁用用户时在递增 `auth:token_version` 之外追加 `authSessionRepository.deleteAll(userId)`，同步清理 `auth:session:*` 与 `auth:refresh:*`。
+3. `AuthServiceImpl.ensureVersion` 去掉 `SETNX` 预置，仅 `GET`（`null` 视为 `0`），鉴权热路径 Redis 请求减半；`RedisAuthSessionRepository.consumeRefresh` 的 `DefaultRedisScript` 提为 `static final` 常量，避免每次重建并重算 SHA1；`RegionServiceImpl.listAllOrdered` 与 `RegionController.tree` 增加 `volatile` 双重检查内存缓存，静态省市区数据只在首次加载/建树一次。仅调整 Redis 访问与缓存，不改变锁语义、围栏令牌单调性与会话失效口径。
+
 ---
 
 ### P2-6：数据库 `schema.sql` 字段容量缺陷、缺失索引与历史数据归档优化

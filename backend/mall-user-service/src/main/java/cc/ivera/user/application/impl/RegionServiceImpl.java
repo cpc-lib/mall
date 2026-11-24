@@ -11,12 +11,24 @@ import java.util.List;
 public class RegionServiceImpl implements RegionService {
     private final RegionRepository regionRepository;
 
+    private volatile List<Region> cachedRegions;
+
     public RegionServiceImpl(RegionRepository regionRepository) {
         this.regionRepository = regionRepository;
     }
 
     @Override
     public List<Region> listAllOrdered() {
-        return regionRepository.listAllOrdered();
+        List<Region> local = cachedRegions;
+        if (local == null) {
+            synchronized (this) {
+                local = cachedRegions;
+                if (local == null) {
+                    local = regionRepository.listAllOrdered();
+                    cachedRegions = local;
+                }
+            }
+        }
+        return local;
     }
 }
