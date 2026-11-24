@@ -77,6 +77,11 @@ public class OrderInternalController {
         return R.ok(orderInternalApiAdapter.findByOrderNo(orderNo));
     }
 
+    @PostMapping("/refund/batch")
+    public R<List<OrderInfo>> getRefundOrders(@RequestBody List<String> orderNos) {
+        return R.ok(orderInternalApiAdapter.findByOrderNos(orderNos));
+    }
+
     @GetMapping("/refund/{orderNo}/items")
     public R<List<OrderItem>> listRefundItems(@PathVariable String orderNo) {
         return R.ok(orderInternalApiAdapter.listItemsByOrderNo(orderNo));

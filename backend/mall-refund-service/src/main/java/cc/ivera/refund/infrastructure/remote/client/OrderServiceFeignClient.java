@@ -23,6 +23,9 @@ public interface OrderServiceFeignClient {
     @GetMapping("/internal/order/refund/{orderNo}")
     R<OrderInfo> findByOrderNo(@PathVariable("orderNo") String orderNo);
 
+    @PostMapping("/internal/order/refund/batch")
+    R<List<OrderInfo>> findByOrderNos(@RequestBody List<String> orderNos);
+
     @GetMapping("/internal/order/refund/{orderNo}/items")
     R<List<OrderItem>> listItemsByOrderNo(@PathVariable("orderNo") String orderNo);
 

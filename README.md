@@ -1462,6 +1462,9 @@ flowchart TD
   （`OrderRefundQuotaApi.addRestockedQty`），与退款本地事务同库提交；商品服务只执行库存条件 UPDATE 与流水幂等。
 - 下单远程预占成功后，若本地事务回滚，`CheckoutServiceImpl` 通过 `TransactionSynchronization.afterCompletion`
   补偿释放预占，避免库存长期滞留 locked 桶。
+- 管理端批量调库存只发起一次 Feign（`/internal/product/stock/batch-adjust`），由商品服务逐条独立事务执行：
+  成功项写 `MANUAL_ADJUST` 流水，失败项写 `FAILED` 流水，单条失败不影响其余明细。
+- 购物车勾选查询与清空各由单条 SQL 完成（`selected` 为 NULL 视为已勾选），列表只批量取一次商品快照。
 
 #### 15.6.6 支付服务远程边界（P4b）
 
@@ -1743,6 +1746,12 @@ LATE_PAYMENT
 
 原则：**退款成功不等于库存回补。** 是否回补由货物是否实际回仓决定。对于 `SHIPPED + REFUND_ONLY`，管理员受理前必须通过 `goodsDisposition=LOST/RECOVERED` 明确商品去向；后端先完成对应库存结转，再进入渠道退款。`t_refund_order.goods_disposition` 持久化该人工判定，供管理端展示与审计。
 
+#### 15.9.3.1 列表读取批量组装
+
+退款/售后列表按页批量组装，不再按单 N+1：明细用一次 `IN` 查询（`RefundItemRepository.listByRefundNos`），
+订单快照用一次 `OrderQueryApi.findByOrderNos`（内部 `/internal/order/refund/batch`），失败原因只对 `FAILED`
+单做一次 `IN` 查询（`RefundInfoRepository.listByRefundNos`）。
+
 #### 15.9.4 渠道退款契约（P4a）
 
 退款域不再直接依赖支付域内部的渠道实现，统一经：
@@ -1979,6 +1988,7 @@ t_payment_app
 ```
 
 `PaymentConfigLoader` 负责加载/缓存支付配置；管理后台可以维护渠道与应用，`/api/payment-config/reload` 用于刷新缓存。
+应用配置直接复用已加载的启用渠道缓存，`sortOrder` 随应用配置一起缓存，默认应用选择不再逐次查库。
 支付配置的持久化、缓存与渠道密钥只归属 `mall-payment-service`；BFF 通过 `PaymentConfigGateway` 远程契约读取。
 
 支付商户参数不应再散落成新的本地 properties 文件。敏感配置不得在新增代码或文档中硬编码真实生产值。

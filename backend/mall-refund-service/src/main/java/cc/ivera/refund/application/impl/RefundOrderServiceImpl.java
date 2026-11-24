@@ -936,10 +936,17 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     }
 
     private RefundApplyVO detail(RefundOrder refundOrder) {
+        boolean failed = RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus());
+        return detail(refundOrder, itemsOf(refundOrder.getRefundNo()),
+            orderQueryApi.findByOrderNo(refundOrder.getOrderNo()),
+            failed ? refundInfoRepository.findByRefundNo(refundOrder.getRefundNo()) : null);
+    }
+
+    private RefundApplyVO detail(RefundOrder refundOrder, List<RefundItem> items, OrderInfo order,
+                                 RefundInfo failedInfo) {
         RefundApplyVO vo = new RefundApplyVO();
         vo.setApply(refundOrder);
-        vo.setItems(itemsOf(refundOrder.getRefundNo()));
-        OrderInfo order = orderQueryApi.findByOrderNo(refundOrder.getOrderNo());
+        vo.setItems(items);
         if (order != null) {
             vo.setFulfillmentStatus(order.getFulfillmentStatus());
             vo.setGoodsDispositionRequired(
@@ -947,19 +954,41 @@ public class RefundOrderServiceImpl implements RefundOrderService {
                     && RefundType.REFUND_ONLY.getType().equals(refundOrder.getRefundType())
                     && FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus()));
         }
-        if (RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus())) {
-            RefundInfo info = refundInfoRepository.findByRefundNo(refundOrder.getRefundNo());
-            if (info != null) {
-                vo.setFailReason(info.getContentReturn());
-            }
+        if (failedInfo != null) {
+            vo.setFailReason(failedInfo.getContentReturn());
         }
         return vo;
     }
 
+    /**
+     * 列表页批量组装：明细、订单快照、失败原因各一次查询/一次远程调用，避免按单 N+1。
+     */
     private List<RefundApplyVO> details(List<RefundOrder> list) {
         List<RefundApplyVO> result = new ArrayList<>();
+        if (list.isEmpty()) {
+            return result;
+        }
+        List<String> refundNos = list.stream().map(RefundOrder::getRefundNo).distinct().collect(Collectors.toList());
+        Map<String, List<RefundItem>> itemsByRefundNo = refundItemRepository.listByRefundNos(refundNos).stream()
+            .collect(Collectors.groupingBy(RefundItem::getRefundNo));
+
+        List<String> orderNos = list.stream().map(RefundOrder::getOrderNo).filter(Objects::nonNull)
+            .distinct().collect(Collectors.toList());
+        Map<String, OrderInfo> ordersByOrderNo = orderQueryApi.findByOrderNos(orderNos).stream()
+            .collect(Collectors.toMap(OrderInfo::getOrderNo, order -> order, (first, second) -> first));
+
+        List<String> failedRefundNos = list.stream()
+            .filter(refundOrder -> RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus()))
+            .map(RefundOrder::getRefundNo).distinct().collect(Collectors.toList());
+        Map<String, RefundInfo> failedInfos = failedRefundNos.isEmpty() ? Map.of()
+            : refundInfoRepository.listByRefundNos(failedRefundNos).stream()
+                .collect(Collectors.toMap(RefundInfo::getRefundNo, info -> info, (first, second) -> first));
+
         for (RefundOrder refundOrder : list) {
-            result.add(detail(refundOrder));
+            result.add(detail(refundOrder,
+                itemsByRefundNo.getOrDefault(refundOrder.getRefundNo(), List.of()),
+                ordersByOrderNo.get(refundOrder.getOrderNo()),
+                failedInfos.get(refundOrder.getRefundNo())));
         }
         return result;
     }

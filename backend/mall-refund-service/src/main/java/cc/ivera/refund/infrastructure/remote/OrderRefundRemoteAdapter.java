@@ -10,6 +10,7 @@ import cc.ivera.order.domain.model.OrderItem;
 import cc.ivera.refund.infrastructure.remote.client.OrderServiceFeignClient;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +30,14 @@ public class OrderRefundRemoteAdapter extends AbstractRefundRemoteAdapter
     @Override
     public OrderInfo findByOrderNo(String orderNo) {
         return unwrap(client.findByOrderNo(orderNo));
+    }
+
+    @Override
+    public List<OrderInfo> findByOrderNos(Collection<String> orderNos) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return List.of();
+        }
+        return unwrap(client.findByOrderNos(List.copyOf(orderNos)));
     }
 
     @Override

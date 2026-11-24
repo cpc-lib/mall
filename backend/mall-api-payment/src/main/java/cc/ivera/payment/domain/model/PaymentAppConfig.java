@@ -30,6 +30,11 @@ public class PaymentAppConfig {
      */
     private String channelCode;
 
+    /**
+     * 应用排序号（来自 t_payment_app.sort_order）
+     */
+    private Integer sortOrder;
+
     // ========== 微信支付配置 ==========
 
     /**
@@ -154,6 +159,14 @@ public class PaymentAppConfig {
 
     public void setChannelCode(String channelCode) {
         this.channelCode = channelCode;
+    }
+
+    public Integer getSortOrder() {
+        return sortOrder;
+    }
+
+    public void setSortOrder(Integer sortOrder) {
+        this.sortOrder = sortOrder;
     }
 
     public String getAppid() {

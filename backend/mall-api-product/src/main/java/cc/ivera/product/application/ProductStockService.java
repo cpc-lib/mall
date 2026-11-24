@@ -1,5 +1,7 @@
 package cc.ivera.product.application;
 
+import cc.ivera.product.application.dto.ProductStockBatchAdjustRequest;
+import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.shared.web.PageVO;
@@ -28,6 +30,15 @@ public interface ProductStockService {
      * error_message 记录申请调整量与拒绝原因。
      */
     void recordFailedAdjustment(Long productId, int delta, String reason);
+
+    /**
+     * 批量库存调整（逐条独立事务）：成功项生效并落 MANUAL_ADJUST 流水，失败项记录 FAILED 流水，
+     * 单条失败不影响其余明细。
+     *
+     * @param items 调整明细
+     * @return 逐条结果与成功/失败计数
+     */
+    BatchAdjustResultVO batchAdjust(List<ProductStockBatchAdjustRequest.Item> items);
 
     /**
      * 商品最近 limit 条库存流水（详情页展示，按 create_time desc, id desc）

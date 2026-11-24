@@ -12,6 +12,7 @@ import cc.ivera.order.domain.repository.OrderRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -30,6 +31,11 @@ public class OrderInternalApiAdapter implements OrderQueryApi, OrderRefundQuotaA
     @Override
     public OrderInfo findByOrderNo(String orderNo) {
         return orderRepository.findByOrderNo(orderNo);
+    }
+
+    @Override
+    public List<OrderInfo> findByOrderNos(Collection<String> orderNos) {
+        return orderRepository.findByOrderNos(orderNos);
     }
 
     @Override

@@ -3,6 +3,7 @@ package cc.ivera.order.domain.repository;
 import cc.ivera.order.domain.model.OrderInfo;
 import cc.ivera.order.domain.model.OrderItem;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
@@ -23,6 +24,11 @@ public interface OrderRepository {
     void saveItem(OrderItem item);
 
     OrderInfo findByOrderNo(String orderNo);
+
+    /**
+     * 批量按订单号查询（IN 查询），空集合返回空列表。
+     */
+    List<OrderInfo> findByOrderNos(Collection<String> orderNos);
 
     /**
      * 归属校验查询：订单号 + 用户编号精确匹配，不存在返回 null。

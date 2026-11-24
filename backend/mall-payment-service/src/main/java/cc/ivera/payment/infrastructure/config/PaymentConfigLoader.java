@@ -91,10 +91,17 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
 
     private void loadApps() {
         appConfigCache.clear();
+        // 直接复用已加载的启用渠道，避免逐个应用查库
+        Map<Long, PaymentChannel> channelsById = channelCache.values().stream()
+            .collect(Collectors.toMap(PaymentChannel::getId, channel -> channel, (first, second) -> first));
         List<PaymentApp> apps = paymentAppRepository.listEnabled();
         for (PaymentApp app : apps) {
             try {
-                PaymentAppConfig config = convertToConfig(app);
+                PaymentChannel channel = channelsById.get(app.getChannelId());
+                if (channel == null) {
+                    continue;
+                }
+                PaymentAppConfig config = convertToConfig(app, channel);
                 if (StringUtils.hasText(config.getChannelCode()) && channelCache.containsKey(config.getChannelCode())) {
                     appConfigCache.put(app.getId(), config);
                     log.debug("加载支付应用: {} ({})", app.getAppName(), app.getAppCode());
@@ -106,13 +113,17 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
     }
 
     private PaymentAppConfig convertToConfig(PaymentApp app) {
+        return convertToConfig(app, paymentChannelRepository.findById(app.getChannelId()));
+    }
+
+    private PaymentAppConfig convertToConfig(PaymentApp app, PaymentChannel channel) {
         PaymentAppConfig config = new PaymentAppConfig();
         config.setAppId(app.getId());
         config.setAppName(app.getAppName());
         config.setAppCode(app.getAppCode());
         config.setChannelId(app.getChannelId());
+        config.setSortOrder(app.getSortOrder());
 
-        PaymentChannel channel = paymentChannelRepository.findById(app.getChannelId());
         if (channel == null) {
             throw new BizException("支付应用未关联有效渠道，appId=" + app.getId());
         }
@@ -193,14 +204,9 @@ public class PaymentConfigLoader implements PaymentConfigGateway {
         }
         return appConfigCache.values().stream()
             .filter(config -> channelCode.equals(config.getChannelCode()))
-            .sorted((left, right) -> {
-                PaymentApp leftApp = paymentAppRepository.findById(left.getAppId());
-                PaymentApp rightApp = paymentAppRepository.findById(right.getAppId());
-                Integer leftOrder = leftApp == null ? 0 : leftApp.getSortOrder();
-                Integer rightOrder = rightApp == null ? 0 : rightApp.getSortOrder();
-                return Integer.compare(leftOrder == null ? 0 : leftOrder, rightOrder == null ? 0 : rightOrder);
-            })
-            .findFirst()
+            .min((left, right) -> Integer.compare(
+                left.getSortOrder() == null ? 0 : left.getSortOrder(),
+                right.getSortOrder() == null ? 0 : right.getSortOrder()))
             .orElse(null);
     }
 

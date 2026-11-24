@@ -9,7 +9,6 @@ import cc.ivera.product.application.dto.ProductCreateRequest;
 import cc.ivera.product.application.dto.ProductStatusRequest;
 import cc.ivera.product.application.dto.ProductStockAdjustRequest;
 import cc.ivera.product.application.dto.ProductStockBatchAdjustRequest;
-import cc.ivera.product.application.vo.BatchAdjustItemVO;
 import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.application.vo.ProductDetailVO;
 import cc.ivera.shared.domain.enums.CommonStatus;
@@ -22,7 +21,6 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -94,31 +92,9 @@ public class AdminProductController {
     public R<BatchAdjustResultVO> batchAdjustStock(@Valid @RequestBody ProductStockBatchAdjustRequest req) {
         List<ProductStockBatchAdjustRequest.Item> items = req.getItems();
         if (items == null || items.isEmpty()) throw new BizException("批量明细不能为空");
-        List<BatchAdjustItemVO> results = new ArrayList<>();
-        int successCount = 0;
-        for (ProductStockBatchAdjustRequest.Item item : items) {
-            BatchAdjustItemVO row = new BatchAdjustItemVO();
-            row.setProductId(item.getProductId());
-            row.setDelta(item.getDelta());
-            try {
-                Product product = productStockService.adjustOne(item.getProductId(), item.getDelta());
-                row.setSuccess(true);
-                row.setStock(product.getStock());
-                row.setMessage(item.getDelta() > 0 ? "补货成功" : "库存已扣减");
-                successCount++;
-            } catch (BizException e) {
-                productStockService.recordFailedAdjustment(item.getProductId(), item.getDelta(), e.getMessage());
-                row.setSuccess(false);
-                row.setMessage(e.getMessage());
-            }
-            results.add(row);
-        }
-        BatchAdjustResultVO body = new BatchAdjustResultVO();
-        body.setTotal(items.size());
-        body.setSuccessCount(successCount);
-        body.setFailCount(items.size() - successCount);
-        body.setResults(results);
-        return R.ok(body).setMessage("批量调整完成：成功 " + successCount + " 条，失败 " + (items.size() - successCount) + " 条");
+        // 循环下沉到 mall-product-service，单次 Feign 完成全部明细（每条独立事务）
+        BatchAdjustResultVO body = productStockService.batchAdjust(items);
+        return R.ok(body).setMessage("批量调整完成：成功 " + body.getSuccessCount() + " 条，失败 " + body.getFailCount() + " 条");
     }
 
     @Operation(summary = "上架/下架")

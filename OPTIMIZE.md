@@ -506,6 +506,8 @@
    - **问题**：尽管 `PaymentConfigLoader` 维护了内存 `appConfigCache`，但 `getDefaultAppConfigByChannelCode` 在 `.sorted((left, right) -> ...)` 比较器内部每次都执行 `paymentAppRepository.findById(left.getAppId())` 查数据库读取 `sortOrder`！导致每次按渠道获取默认支付配置都会触发多次数据库查询。
    - **优化方案**：在 `PaymentAppConfig` 模型中增加 `Integer sortOrder` 字段，加载缓存时一并填入，排序时直接比较内存字段；同时在 `loadApps()` 中直接复用 `channelCache` 而非逐个调用 `paymentChannelRepository.findById`。
 
+**处理进展（2026-11-24）**：第 1～5 条已完成。退款列表改为「明细 1 次 IN + 订单 1 次批量 Feign + 失败单 1 次 IN」；下单准备已在 P2-1 改为 `findByIds` 批量取商品；购物车新增 `findSelectedByUserId` / `deleteSelectedByUserId` 单条 SQL，`selected` 为 NULL 仍视为已勾选；管理端批量调库存下沉为 `/internal/product/stock/batch-adjust` 一次 Feign，商品服务逐条独立事务，`adjustOne` 用调整前快照计算库存省去二次查询；支付配置缓存补 `sortOrder` 并复用渠道缓存，默认应用选择不再查库。REST 响应结构、失败流水语义与库存/退款不变量均未改变，JDK 21 下全量 `mvn -o clean test` 通过。
+
 ---
 
 ### P2-3：对账服务 `mall-bill-service` 大文件解析内存峰值、逐行插入与全量内存汇总优化

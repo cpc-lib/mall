@@ -30,7 +30,10 @@ public class CartServiceImpl implements CartService {
 
     @Override
     public List<CartItemVO> list(Long userId) {
-        List<CartItem> items = cartRepository.findAll(userId);
+        return toVOList(cartRepository.findAll(userId));
+    }
+
+    private List<CartItemVO> toVOList(List<CartItem> items) {
         if (items.isEmpty()) {
             return new ArrayList<>();
         }
@@ -98,15 +101,11 @@ public class CartServiceImpl implements CartService {
 
     @Override
     public List<CartItemVO> selected(Long userId) {
-        List<CartItemVO> list = list(userId);
-        list.removeIf(vo -> !Boolean.TRUE.equals(vo.getSelected()));
-        return list;
+        return toVOList(cartRepository.findSelectedByUserId(userId));
     }
 
     @Override
     public void clearSelected(Long userId) {
-        for (CartItemVO vo : selected(userId)) {
-            remove(userId, vo.getProductId());
-        }
+        cartRepository.deleteSelectedByUserId(userId);
     }
 }

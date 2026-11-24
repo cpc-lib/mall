@@ -19,6 +19,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -61,6 +62,16 @@ public class OrderRepositoryImpl implements OrderRepository {
     public OrderInfo findByOrderNo(String orderNo) {
         return OrderInfoPOConverter.toDomain(orderInfoMapper.selectOne(new LambdaQueryWrapper<OrderInfoPO>()
             .eq(OrderInfoPO::getOrderNo, orderNo)));
+    }
+
+    @Override
+    public List<OrderInfo> findByOrderNos(Collection<String> orderNos) {
+        if (orderNos == null || orderNos.isEmpty()) {
+            return List.of();
+        }
+        return orderInfoMapper.selectList(new LambdaQueryWrapper<OrderInfoPO>()
+                .in(OrderInfoPO::getOrderNo, orderNos))
+            .stream().map(OrderInfoPOConverter::toDomain).collect(Collectors.toList());
     }
 
     @Override

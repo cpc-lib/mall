@@ -29,6 +29,15 @@ public class CartRepositoryImpl implements CartRepository {
     }
 
     @Override
+    public List<CartItem> findSelectedByUserId(Long userId) {
+        return cartItemMapper.selectList(new LambdaQueryWrapper<CartItemPO>()
+                .eq(CartItemPO::getUserId, userId)
+                .and(w -> w.eq(CartItemPO::getSelected, "1").or().isNull(CartItemPO::getSelected))
+                .orderByAsc(CartItemPO::getProductId))
+            .stream().map(CartItemPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
     public CartItem findOne(Long userId, Long productId) {
         return CartItemPOConverter.toDomain(cartItemMapper.selectOne(new LambdaQueryWrapper<CartItemPO>()
             .eq(CartItemPO::getUserId, userId)
@@ -47,5 +56,12 @@ public class CartRepositoryImpl implements CartRepository {
         cartItemMapper.delete(new LambdaQueryWrapper<CartItemPO>()
             .eq(CartItemPO::getUserId, userId)
             .eq(CartItemPO::getProductId, productId));
+    }
+
+    @Override
+    public void deleteSelectedByUserId(Long userId) {
+        cartItemMapper.delete(new LambdaQueryWrapper<CartItemPO>()
+            .eq(CartItemPO::getUserId, userId)
+            .and(w -> w.eq(CartItemPO::getSelected, "1").or().isNull(CartItemPO::getSelected)));
     }
 }

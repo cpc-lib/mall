@@ -2,6 +2,7 @@ package cc.ivera.product.infrastructure.remote.client;
 
 import cc.ivera.infra.feign.InternalFeignConfiguration;
 import cc.ivera.product.application.dto.*;
+import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.StockImport;
@@ -42,6 +43,9 @@ public interface ProductServiceClient {
 
     @PostMapping("/internal/product/stock/{id}/failed-adjust")
     R<Object> recordFailedAdjustment(@PathVariable("id") Long id, @RequestBody StockAdjustFailedRequest request);
+
+    @PostMapping("/internal/product/stock/batch-adjust")
+    R<BatchAdjustResultVO> batchAdjust(@RequestBody ProductStockBatchAdjustRequest request);
 
     @GetMapping("/internal/product/stock/{id}/transactions")
     R<List<InventoryTransaction>> recentTransactions(@PathVariable("id") Long id, @RequestParam("limit") int limit);

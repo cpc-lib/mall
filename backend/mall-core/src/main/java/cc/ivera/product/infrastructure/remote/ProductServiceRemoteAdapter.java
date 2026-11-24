@@ -6,6 +6,7 @@ import cc.ivera.product.application.ProductService;
 import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.application.StockImportService;
 import cc.ivera.product.application.dto.*;
+import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.domain.model.*;
 import cc.ivera.product.infrastructure.remote.client.ProductServiceClient;
 import cc.ivera.shared.domain.exception.BizException;
@@ -83,6 +84,13 @@ public class ProductServiceRemoteAdapter implements ProductService, ProductStock
         request.setDelta(delta);
         request.setReason(reason);
         unwrap(client.recordFailedAdjustment(productId, request));
+    }
+
+    @Override
+    public BatchAdjustResultVO batchAdjust(List<ProductStockBatchAdjustRequest.Item> items) {
+        ProductStockBatchAdjustRequest request = new ProductStockBatchAdjustRequest();
+        request.setItems(items);
+        return unwrap(client.batchAdjust(request));
     }
 
     @Override

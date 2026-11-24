@@ -1,6 +1,9 @@
 package cc.ivera.product.application.impl;
 
 import cc.ivera.product.application.ProductStockService;
+import cc.ivera.product.application.dto.ProductStockBatchAdjustRequest;
+import cc.ivera.product.application.vo.BatchAdjustItemVO;
+import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.domain.enums.InventoryBizType;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
@@ -10,7 +13,9 @@ import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.web.PageVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -26,24 +31,65 @@ public class ProductStockServiceImpl implements ProductStockService {
 
     private final ProductRepository productRepository;
     private final InventoryTransactionRepository transactionRepository;
+    private final TransactionTemplate tx;
 
     public ProductStockServiceImpl(ProductRepository productRepository,
-                                   InventoryTransactionRepository transactionRepository) {
+                                   InventoryTransactionRepository transactionRepository,
+                                   TransactionTemplate tx) {
         this.productRepository = productRepository;
         this.transactionRepository = transactionRepository;
+        this.tx = tx;
     }
 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Product adjustOne(Long productId, int delta) {
+        return doAdjustOne(productId, delta);
+    }
+
+    private Product doAdjustOne(Long productId, int delta) {
         if (delta == 0) throw new BizException("库存调整量不能为 0");
-        if (productRepository.findById(productId) == null) throw new BizException("商品不存在");
+        Product before = productRepository.findById(productId);
+        if (before == null) throw new BizException("商品不存在");
         // 并发权威闸门：available_stock = available_stock + delta 且调整后非负，条件不满足返回 false。
         if (!productRepository.adjustAvailable(productId, delta)) {
             throw new BizException("库存扣减后不能为负数");
         }
         insertTransaction(productId, delta, "SUCCESS", null);
-        return productRepository.findById(productId);
+        // CAS 成功后用调整前快照计算，省去事务内二次查询
+        before.setStock((before.getStock() == null ? 0 : before.getStock()) + delta);
+        return before;
+    }
+
+    @Override
+    public BatchAdjustResultVO batchAdjust(List<ProductStockBatchAdjustRequest.Item> items) {
+        List<BatchAdjustItemVO> results = new ArrayList<>();
+        int successCount = 0;
+        for (ProductStockBatchAdjustRequest.Item item : items) {
+            BatchAdjustItemVO row = new BatchAdjustItemVO();
+            row.setProductId(item.getProductId());
+            row.setDelta(item.getDelta());
+            try {
+                // 每条明细独立事务，单条失败不影响其余明细
+                Product product = tx.execute(status -> doAdjustOne(item.getProductId(), item.getDelta()));
+                row.setSuccess(true);
+                row.setStock(product.getStock());
+                row.setMessage(item.getDelta() > 0 ? "补货成功" : "库存已扣减");
+                successCount++;
+            } catch (BizException e) {
+                tx.executeWithoutResult(status ->
+                    recordFailedAdjustment(item.getProductId(), item.getDelta(), e.getMessage()));
+                row.setSuccess(false);
+                row.setMessage(e.getMessage());
+            }
+            results.add(row);
+        }
+        BatchAdjustResultVO body = new BatchAdjustResultVO();
+        body.setTotal(items.size());
+        body.setSuccessCount(successCount);
+        body.setFailCount(items.size() - successCount);
+        body.setResults(results);
+        return body;
     }
 
     @Override

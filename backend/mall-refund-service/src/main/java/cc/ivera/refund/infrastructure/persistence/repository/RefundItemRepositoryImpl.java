@@ -8,6 +8,7 @@ import cc.ivera.refund.infrastructure.persistence.po.RefundItemPO;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,17 @@ public class RefundItemRepositoryImpl implements RefundItemRepository {
     public List<RefundItem> listByRefundNoAsc(String refundNo) {
         return refundItemMapper.selectList(new LambdaQueryWrapper<RefundItemPO>()
                 .eq(RefundItemPO::getRefundNo, refundNo)
+                .orderByAsc(RefundItemPO::getId))
+            .stream().map(RefundItemPOConverter::toDomain).collect(Collectors.toList());
+    }
+
+    @Override
+    public List<RefundItem> listByRefundNos(Collection<String> refundNos) {
+        if (refundNos == null || refundNos.isEmpty()) {
+            return List.of();
+        }
+        return refundItemMapper.selectList(new LambdaQueryWrapper<RefundItemPO>()
+                .in(RefundItemPO::getRefundNo, refundNos)
                 .orderByAsc(RefundItemPO::getId))
             .stream().map(RefundItemPOConverter::toDomain).collect(Collectors.toList());
     }

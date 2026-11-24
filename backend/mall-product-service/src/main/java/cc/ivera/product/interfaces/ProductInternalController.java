@@ -6,10 +6,12 @@ import cc.ivera.product.application.ProductService;
 import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.application.StockImportService;
 import cc.ivera.product.application.dto.*;
+import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.StockAdjustLine;
 import cc.ivera.product.domain.model.StockImport;
+import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.web.PageVO;
 import cc.ivera.shared.web.R;
 import jakarta.validation.Valid;
@@ -79,6 +81,14 @@ public class ProductInternalController {
     public R<?> recordFailedAdjustment(@PathVariable Long id, @Valid @RequestBody StockAdjustFailedRequest request) {
         productStockService.recordFailedAdjustment(id, request.getDelta(), request.getReason());
         return R.ok();
+    }
+
+    @PostMapping("/stock/batch-adjust")
+    public R<BatchAdjustResultVO> batchAdjust(@Valid @RequestBody ProductStockBatchAdjustRequest request) {
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new BizException("批量明细不能为空");
+        }
+        return R.ok(productStockService.batchAdjust(request.getItems()));
     }
 
     @GetMapping("/stock/{id}/transactions")
