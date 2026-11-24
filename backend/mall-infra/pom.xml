@@ -33,6 +33,11 @@
       <groupId>org.springframework.cloud</groupId>
       <artifactId>spring-cloud-starter-openfeign</artifactId>
     </dependency>
+    <!--Feign 客户端连接池：Apache HttpClient 5，避免退化为 JDK HttpURLConnection-->
+    <dependency>
+      <groupId>io.github.openfeign</groupId>
+      <artifactId>feign-hc5</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>

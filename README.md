@@ -1486,6 +1486,8 @@ flowchart TD
 九个可运行进程全部接入 Nacos：`spring.cloud.nacos.discovery` 注册自身，`spring.config.import: optional:nacos:<应用名>.yaml` 拉取集中配置。进程间内部调用统一由 `cc.ivera.infra.feign.InternalFeignConfiguration` 提供公共能力：
 
 - `ErrorDecoder` 把非 2xx 的 `R` 信封解析为 `BizException`，保留原 `ErrorCode`；无法解析时回落 `SYSTEM_ERROR`。
+- `GlobalExceptionHandler` 对外部 `/api/**` 仍返回 HTTP 200 + body `code`；对内部 `/internal/**` 的系统异常（`code >= 500`）改用 HTTP 500，使 `ErrorDecoder`、`feign-micrometer` 与 Zipkin 能够正确识别 RPC 失败。
+- `mall-infra` 引入 `io.github.openfeign:feign-hc5`，内部 Feign 调用使用 Apache HttpClient 5 连接池，不再退化为 JDK `HttpURLConnection`。
 - 客户端声明为 `@FeignClient(name = "mall-xxx-service", url = "${x.service.base-url:}")`：`url` 默认空，走 Nacos 服务发现 + LoadBalancer；需要离线直连时用 `USER_SERVICE_BASE_URL` 等环境变量填入 base-url。
 - 超时统一走 `spring.cloud.openfeign.client.config.default`（3000/10000ms），并按服务名覆盖商品服务读超时 30000ms。
 - 网关路由统一为 `lb://mall-xxx-service`，可用 `MALL_*_URI` 覆盖；`NACOS_ENABLED=false` 时注册与配置导入同时关闭，此时必须提供 Feign base-url 与网关直连 URI。

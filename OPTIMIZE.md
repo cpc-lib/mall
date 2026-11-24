@@ -640,6 +640,8 @@
   1. 在 `mall-infra` 中提供统一的 Feign `Decoder`（或在 `R<T>` 上提供统一的 `unwrap()` 方法），并在 `GlobalExceptionHandler` 中对 `/internal/**` 请求或通过统一的 Feign 拦截器将 `code >= 500` 的系统异常映射为对应的 HTTP 状态码，让 Zipkin 和 `ErrorDecoder` 正常工作。
   2. 在 `mall-infra/pom.xml` 中引入 `io.github.openfeign:feign-hc5` 开启 Apache HttpClient 5 连接池。
 
+**处理进展（2026-11-24）**：两条均已落地。`GlobalExceptionHandler` 改为返回 `ResponseEntity`，对 `/internal/**` 请求中 `code >= 500` 的错误使用 HTTP 500（body 仍是 `R` 信封，`ErrorDecoder` 可正常解析）；外部 `/api/**` 继续 HTTP 200 + body `code`，公共 API 契约不变。`mall-infra/pom.xml` 引入 `io.github.openfeign:feign-hc5`，内部 Feign 调用启用 Apache HttpClient 5 连接池。各远程适配器原有的 `unwrap(R<T>)` 仍保留，用于解析 HTTP 200 的业务错误（`code=-1` 等），行为不变。
+
 ---
 
 ### P3-2：API 契约模块（`mall-common`、`mall-api-payment`、`mall-api-refund`、`mall-api-order`）泄漏基础设施依赖
