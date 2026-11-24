@@ -85,6 +85,8 @@ product:
 payment:
   service:
     base-url: ${PAYMENT_SERVICE_BASE_URL:}
+  event:
+    topology-enabled: true # 消费支付成功事件，需声明支付事件拓扑
   order:
     expire-minutes: 3 # 本地订单未支付超时（分钟）：到时释放锁定库存并关单（MQ 延迟关单 TTL 与 DB 兜底判定共用此值）
     timeout-scan-ms: 60000 # DB 最终一致性兜底：扫描超时 NOTPAY 订单的周期

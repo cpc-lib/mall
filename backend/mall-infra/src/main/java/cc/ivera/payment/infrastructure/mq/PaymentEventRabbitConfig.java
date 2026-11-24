@@ -5,6 +5,7 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -14,8 +15,12 @@ import java.util.Map;
 /**
  * 支付事件拓扑（P4a）：支付成交 / 重复支付 / 晚到支付。
  * 队列统一 MANUAL ACK + Spring Retry，重试耗尽后进入 Failure 队列，Parking Lot 人工隔离。
+ * <p>
+ * 仅支付、订单、退款三个需要该拓扑的服务通过 {@code payment.event.topology-enabled=true} 开启，
+ * 账单服务与 BFF 不会因此被动连接 RabbitMQ。
  */
 @Configuration
+@ConditionalOnProperty(name = "payment.event.topology-enabled", havingValue = "true")
 public class PaymentEventRabbitConfig {
 
     public static final String PAYMENT_EVENT_EXCHANGE = "payment.event.exchange";

@@ -13,7 +13,7 @@ import cc.ivera.order.infrastructure.persistence.mapper.OrderInfoMapper;
 import cc.ivera.order.infrastructure.persistence.mapper.OrderItemMapper;
 import cc.ivera.order.infrastructure.persistence.po.OrderInfoPO;
 import cc.ivera.order.infrastructure.persistence.po.OrderItemPO;
-import cc.ivera.payment.domain.enums.PayStatus;
+import cc.ivera.shared.domain.enums.PayStatus;
 import cc.ivera.shared.domain.lock.FenceTokenHolder;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;

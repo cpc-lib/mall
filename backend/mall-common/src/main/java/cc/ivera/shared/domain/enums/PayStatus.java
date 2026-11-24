@@ -1,10 +1,12 @@
-package cc.ivera.payment.domain.enums;
+package cc.ivera.shared.domain.enums;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
 /**
  * 支付状态（V2 四维状态之一，落 t_order_info.pay_status）。
+ * <p>
+ * 订单与支付两个上下文共用，放在共享内核，避免契约模块之间因枚举归属产生反向依赖。
  */
 @AllArgsConstructor
 @Getter

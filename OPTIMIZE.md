@@ -660,6 +660,14 @@
   - 将 `WxPayNotifyHandler`、`WechatPay2ValidatorForRequest`、`WxPayPrivateKeyUtil` 移回 `mall-payment-service`（`mall-refund-service` 的微信退款通知验签本来就是通过 `PaymentChannelRefundApi.processRefundNotify` 远程委托给 `mall-payment-service` 的，根本不需要在 `mall-api-payment` 中放微信验签类！）；
   - 将 `PaymentEventRabbitConfig` 与 `RefundStatusSyncRabbitConfig` 移至各自需要声明拓扑的服务或标记 `@ConditionalOnProperty`。
 
+**处理进展（2026-11-24）**：已完成。
+- `mall-api-payment` 移除 `spring-boot-starter-amqp`、`spring-boot-starter-data-redis`、`wechatpay-apache-httpclient`；`mall-api-refund` 移除 `spring-boot-starter-amqp`。
+- `PaymentEventRabbitConfig` 迁至 `mall-infra` 并加 `@ConditionalOnProperty("payment.event.topology-enabled")`，仅在 `mall-payment-service`、`mall-order-service`、`mall-refund-service` 的 `application.yml` 中开启；`RefundStatusSyncRabbitConfig` 迁至 `mall-refund-service`。
+- `WxPayNotifyHandler` / `WechatPay2ValidatorForRequest` / `WxPayPrivateKeyUtil` 迁至 `mall-infra`（微信 SDK 声明为 optional + `@ConditionalOnClass`），`mall-payment-service` 与 `mall-refund-service` 显式引入 SDK。退款服务仍需本地验签（`PaymentChannelRefundApi.processRefundNotify` 只做解密，不验签），故未按原方案“只留在支付服务”，改为共享基础设施承载，避免破坏退款通知验签。
+- `mall-common` 的 MyBatis-Plus 依赖改为 `<optional>true</optional>`，各服务模块已显式声明，契约模块不再被传递持久层依赖。
+- `PayStatus` 从 `mall-api-order` 的 `cc.ivera.payment.domain.enums` 迁至 `mall-common` 的 `cc.ivera.shared.domain.enums`，消除包名与模块归属错位。
+- 影响与回滚：新增配置键 `payment.event.topology-enabled`（默认 false）；存量部署未添加该键时支付事件拓扑不再由任意进程声明，需在支付/订单/退款三个服务补齐；回滚只需恢复原 jar 依赖与配置键。
+
 ---
 
 ### P3-3：清理 `mall-core` 中的 11 个僵尸类与冗余 `RedissonConfig`

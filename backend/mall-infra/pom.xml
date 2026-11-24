@@ -17,6 +17,17 @@
       <groupId>cc.ivera</groupId>
       <artifactId>mall-common</artifactId>
     </dependency>
+    <!--微信通知验签等渠道支撑类需要支付契约中的配置模型；仅支付/退款服务会启用-->
+    <dependency>
+      <groupId>cc.ivera</groupId>
+      <artifactId>mall-api-payment</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.github.wechatpay-apiv3</groupId>
+      <artifactId>wechatpay-apache-httpclient</artifactId>
+      <version>0.3.0</version>
+      <optional>true</optional>
+    </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-amqp</artifactId>

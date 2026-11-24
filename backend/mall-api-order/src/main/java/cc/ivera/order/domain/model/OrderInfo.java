@@ -4,7 +4,7 @@ import cc.ivera.order.domain.enums.FulfillmentStatus;
 import cc.ivera.order.domain.enums.OrderLifecycleStatus;
 import cc.ivera.order.domain.enums.OrderRefundStatus;
 import cc.ivera.order.domain.enums.OrderStatus;
-import cc.ivera.payment.domain.enums.PayStatus;
+import cc.ivera.shared.domain.enums.PayStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import lombok.Data;
 

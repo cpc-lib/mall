@@ -11,7 +11,7 @@ import cc.ivera.order.application.vo.OrderDetailVO;
 import cc.ivera.order.application.vo.ShipmentDetailVO;
 import cc.ivera.payment.application.ChannelPaymentQueryApi;
 import cc.ivera.payment.application.PaymentSuccessService;
-import cc.ivera.payment.domain.enums.PayStatus;
+import cc.ivera.shared.domain.enums.PayStatus;
 import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.api.payment.PaymentOrderQueryApi;
 import cc.ivera.payment.application.dto.ChannelOrderQueryVO;

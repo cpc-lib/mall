@@ -10,7 +10,7 @@
 
   <artifactId>mall-api-payment</artifactId>
   <name>mall-api-payment</name>
-  <description>支付服务应用契约、跨进程快照模型、渠道退款 DTO 与支付事件拓扑</description>
+  <description>支付服务应用契约、跨进程快照模型与渠道退款 DTO（纯契约，不含基础设施实现）</description>
 
   <dependencies>
     <dependency>
@@ -24,19 +24,6 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-amqp</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-data-redis</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.github.wechatpay-apiv3</groupId>
-      <artifactId>wechatpay-apache-httpclient</artifactId>
-      <version>0.3.0</version>
     </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>

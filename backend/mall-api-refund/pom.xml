@@ -10,16 +10,12 @@
 
   <artifactId>mall-api-refund</artifactId>
   <name>mall-api-refund</name>
-  <description>退款服务应用契约、退款账模型与退款状态同步事件拓扑</description>
+  <description>退款服务应用契约与退款账模型（纯契约，不含基础设施实现）</description>
 
   <dependencies>
     <dependency>
       <groupId>cc.ivera</groupId>
       <artifactId>mall-common</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.boot</groupId>
-      <artifactId>spring-boot-starter-amqp</artifactId>
     </dependency>
     <dependency>
       <groupId>org.projectlombok</groupId>

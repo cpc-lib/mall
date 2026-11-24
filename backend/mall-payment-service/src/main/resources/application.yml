@@ -77,6 +77,8 @@ payment:
     jwt-secret: ${AUTH_JWT_SECRET:1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ}
   order:
     expire-minutes: 3
+  event:
+    topology-enabled: true # 声明支付事件拓扑（成交/重复支付/晚到支付）
 
 local-message:
   relay-enabled: true

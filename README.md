@@ -326,10 +326,10 @@ mall/
 ├── backend/                          # Maven 聚合父工程
 │   ├── mall-common/                  # 共享 Web 响应、异常、认证上下文与基础配置
 │   ├── mall-api-order/               # 订单契约、状态枚举与跨进程订单模型
-│   ├── mall-api-payment/             # 支付应用契约、DTO/VO、支付事件拓扑与跨进程支付模型
+│   ├── mall-api-payment/             # 支付应用契约、DTO/VO 与跨进程支付模型（纯契约，无 AMQP/Redis/微信 SDK）
 │   ├── mall-api-user/                # 用户应用契约、DTO/VO 与跨进程领域模型
 │   ├── mall-api-product/             # 商品与库存应用契约、DTO/VO 与跨进程领域模型
-│   ├── mall-api-refund/              # 退款账查询契约、退款账模型与退款状态同步 MQ 拓扑
+│   ├── mall-api-refund/              # 退款账查询契约与退款账模型（纯契约，无 MQ 实现）
 │   ├── mall-infra/                   # 分布式锁、Outbox、RabbitMQ 公共可靠性、Feign 公共配置等基础设施实现（纯 jar 库）
 │   ├── mall-core/                    # BFF 远程适配器与共享配置（纯 jar 库）
 │   │   ├── src/main/java/cc/ivera/
@@ -1075,10 +1075,10 @@ mall/
 ├── backend/                      # Maven 聚合父工程
 │   ├── mall-common/              # 共享 Web、异常、认证上下文与基础配置
 │   ├── mall-api-order/           # 订单契约、状态枚举与跨进程订单模型
-│   ├── mall-api-payment/         # 支付应用契约、DTO/VO、支付事件拓扑与跨进程支付模型
+│   ├── mall-api-payment/         # 支付应用契约、DTO/VO 与跨进程支付模型（纯契约，无 AMQP/Redis/微信 SDK）
 │   ├── mall-api-user/            # 用户应用服务接口、DTO/VO、跨进程领域模型
 │   ├── mall-api-product/         # 商品/库存应用服务接口、DTO/VO、跨进程领域模型
-│   ├── mall-api-refund/          # 退款账查询契约、退款账模型、退款状态同步 MQ 拓扑
+│   ├── mall-api-refund/          # 退款账查询契约与退款账模型（纯契约，无 MQ 实现）
 │   ├── mall-infra/               # 分布式锁、Outbox、RabbitMQ 公共可靠性实现（jar 库）
 │   ├── mall-core/                # BFF 远程适配器与共享配置（jar 库）
 │   │   ├── src/main/java/cc/ivera/
@@ -1491,7 +1491,8 @@ flowchart TD
 - 客户端声明为 `@FeignClient(name = "mall-xxx-service", url = "${x.service.base-url:}")`：`url` 默认空，走 Nacos 服务发现 + LoadBalancer；需要离线直连时用 `USER_SERVICE_BASE_URL` 等环境变量填入 base-url。
 - 超时统一走 `spring.cloud.openfeign.client.config.default`（3000/10000ms），并按服务名覆盖商品服务读超时 30000ms。
 - 网关路由统一为 `lb://mall-xxx-service`，可用 `MALL_*_URI` 覆盖；`NACOS_ENABLED=false` 时注册与配置导入同时关闭，此时必须提供 Feign base-url 与网关直连 URI。
-- 微信 / 支付宝渠道客户端仍使用各自 SDK 或独立 HTTP 客户端，不经过 Feign。
+- 微信 / 支付宝渠道客户端仍使用各自 SDK 或独立 HTTP 客户端，不经过 Feign。微信通知验签支撑类（`WxPayNotifyHandler`、`WechatPay2ValidatorForRequest`、`WxPayPrivateKeyUtil`）位于 `mall-infra`，微信 SDK 在 `mall-infra` 中声明为 optional，只有 `mall-payment-service`、`mall-refund-service` 显式引入；缺少 SDK 的进程通过 `@ConditionalOnClass` 跳过该组件。
+- `mall-api-order` / `mall-api-payment` / `mall-api-refund` 只保留契约、DTO/VO 与领域模型，不引入 AMQP、Redis 或微信 SDK；`mall-common` 的 MyBatis-Plus 依赖标记为 optional，不再向契约模块传递持久层依赖。`PayStatus` 作为订单/支付共用的共享内核枚举位于 `mall-common` 的 `cc.ivera.shared.domain.enums`。
 
 ### 15.7 事务边界说明
 
@@ -1899,6 +1900,8 @@ payment.event.failure.exchange
 ```
 
 事件消息经 `t_local_message` Outbox 在支付成交本地事务提交后投递。跨上下文消费使用 `t_consumer_dedupe(consumer, event_id)` 去重，消费顺序仍为“业务 → 去重回写 → `basicAck`”。
+
+支付事件拓扑定义在 `mall-infra` 的 `PaymentEventRabbitConfig`，由 `payment.event.topology-enabled=true` 控制，仅在 `mall-payment-service`、`mall-order-service`、`mall-refund-service` 开启；`mall-bill-service` 与两个 BFF 不会因此被动声明队列或连接 RabbitMQ。退款状态同步拓扑（`payment.refund.status-sync.*`）只由 `mall-refund-service` 声明。
 
 #### 15.10.6 退款状态同步 MQ 拓扑
 

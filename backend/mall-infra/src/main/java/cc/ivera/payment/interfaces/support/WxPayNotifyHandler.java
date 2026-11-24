@@ -12,6 +12,7 @@ import com.wechat.pay.contrib.apache.httpclient.auth.Verifier;
 import com.wechat.pay.contrib.apache.httpclient.auth.WechatPay2Credentials;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -26,8 +27,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+/**
+ * 微信支付/退款通知处理：验签、幂等锁与统一应答。
+ * <p>
+ * 仅支付服务与退款服务依赖微信 SDK，因此放在共享基础设施库并加 {@link ConditionalOnClass}，
+ * 缺少 SDK 的进程（如账单服务、BFF）不会注册该组件。
+ */
 @Component
 @Slf4j
+@ConditionalOnClass(name = "com.wechat.pay.contrib.apache.httpclient.auth.Verifier")
 public class WxPayNotifyHandler {
 
     private static final String NOTIFY_IDEMPOTENT_KEY_PREFIX = "payment:wx:notify:processed:";

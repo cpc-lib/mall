@@ -81,6 +81,8 @@ order:
 payment:
   service:
     base-url: ${PAYMENT_SERVICE_BASE_URL:}
+  event:
+    topology-enabled: true # 消费重复/晚到支付冲正事件，需声明支付事件拓扑
   refund:
     status-sync-delay-ms: 60000 # MQ 退款状态同步延迟，必须与 user-bff 声明值一致
     status-sync-scan-ms: 60000 # DB 最终一致性兜底：扫描 APPROVED + PROCESSING 退款的周期

@@ -83,7 +83,7 @@ public class CheckoutController {
         PayQueryVO vo = new PayQueryVO();
         vo.setOrderNo(orderNo);
         // 已支付短路：本地已是 PAID 直接返回，不再调渠道。
-        if (cc.ivera.payment.domain.enums.PayStatus.PAID.getType().equals(order.getPayStatus())) {
+        if (cc.ivera.shared.domain.enums.PayStatus.PAID.getType().equals(order.getPayStatus())) {
             vo.setPayStatus(order.getPayStatus());
             vo.setOrderStatus(order.getLegacyStatus());
             vo.setChannelCode(order.getPaymentType());
