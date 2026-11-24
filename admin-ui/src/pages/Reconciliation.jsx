@@ -5,13 +5,10 @@ import {
   Card,
   Col,
   DatePicker,
-  Drawer,
   Form,
-  Input,
   message,
   Modal,
   Row,
-  Select,
   Space,
   Statistic,
   Table,
@@ -30,8 +27,11 @@ import {
   resolveDiscrepancy,
   uploadBill
 } from '@/api/reconciliation'
-
-const { TextArea } = Input
+import ReconcileSummaryDrawer from '@/components/reconciliation/ReconcileSummaryDrawer'
+import BillRecordsDrawer from '@/components/reconciliation/BillRecordsDrawer'
+import DiscrepancyListDrawer from '@/components/reconciliation/DiscrepancyListDrawer'
+import DiscrepancyDrilldownDrawer from '@/components/reconciliation/DiscrepancyDrilldownDrawer'
+import ResolveDiscrepancyModal from '@/components/reconciliation/ResolveDiscrepancyModal'
 
 const IMPORT_STATUS_COLOR = { IMPORTED: 'processing', RECONCILED: 'success', FAILED: 'error' }
 const RECORD_TYPE_COLOR = { PAY: 'green', REFUND: 'orange' }
@@ -96,7 +96,6 @@ export default function Reconciliation() {
 
   const [resolveOpen, setResolveOpen] = useState(false)
   const [currentDisc, setCurrentDisc] = useState(null)
-  const [resolveRemark, setResolveRemark] = useState('')
   const [resolving, setResolving] = useState(false)
 
   const loadImports = useCallback(() => {
@@ -253,17 +252,16 @@ export default function Reconciliation() {
 
   const openResolve = (row) => {
     setCurrentDisc(row)
-    setResolveRemark('')
     setResolveOpen(true)
   }
 
-  const handleResolve = () => {
-    if (!resolveRemark.trim()) {
+  const handleResolve = (remark) => {
+    if (!remark.trim()) {
       message.warning('请填写处理备注')
       return
     }
     setResolving(true)
-    resolveDiscrepancy(currentDisc.id, resolveRemark.trim())
+    resolveDiscrepancy(currentDisc.id, remark.trim())
       .then(() => {
         message.success('差异单已标记处理')
         setResolveOpen(false)
@@ -608,212 +606,68 @@ export default function Reconciliation() {
           />
         </Card>
 
-      <Drawer
-        title={`账账核对汇总${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
+      <ReconcileSummaryDrawer
         open={summaryOpen}
-        width={900}
         onClose={() => setSummaryOpen(false)}
-        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setSummaryOpen(false)}>关闭</Button></div>}
-      >
-        <Card loading={summaryLoading} bordered={false}>
-          {summary && <>
-            <Alert
-              type={summary.balanced ? 'success' : 'warning'}
-              showIcon
-              style={{ marginBottom: 16 }}
-              message={summary.balanced ? '账账平衡' : '账账不平衡，请处理差异'}
-              description={`净差额（渠道-平台）：${fen(summary.netDifference)}；待处理差异：${summary.openDiscrepancyCount || 0} 笔。账单种类 ${summary.billKind || '-'}，渠道 ${summary.channelCode || '-' }。`}
-            />
-            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-              <Col span={8}><Card size="small"><Statistic title="渠道净额" value={Number(summary.channelNetAmount || 0) / 100} precision={2} prefix="¥" /></Card></Col>
-              <Col span={8}><Card size="small"><Statistic title="平台净额" value={Number(summary.localNetAmount || 0) / 100} precision={2} prefix="¥" /></Card></Col>
-              <Col span={8}><Card size="small"><Statistic title="待处理差异" value={summary.openDiscrepancyCount || 0} suffix="笔" /></Card></Col>
-            </Row>
-            <Table rowKey="key" dataSource={summaryRows} columns={summaryColumns} pagination={false} bordered size="middle" />
-            <Typography.Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-              平账条件：支付笔数/金额一致、退款成功笔数/金额一致、净额一致，并且不存在 OPEN 差异单。当前净额口径暂不包含渠道手续费；手续费属于后续资金账单核对范围。
-            </Typography.Paragraph>
-          </>}
-        </Card>
-      </Drawer>
+        currentImport={currentImport}
+        loading={summaryLoading}
+        summary={summary}
+        rows={summaryRows}
+        columns={summaryColumns}
+        fen={fen}
+      />
 
-      <Drawer
-        title={`账单流水${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
+      <BillRecordsDrawer
         open={recordModalOpen}
-        width={1100}
         onClose={() => setRecordModalOpen(false)}
-        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setRecordModalOpen(false)}>关闭</Button></div>}
-      >
-        <Space style={{ marginBottom: 16 }}>
-          <Select
-            placeholder="记录类型"
-            style={{ width: 140 }}
-            allowClear
-            value={recordType || undefined}
-            onChange={(val) => { setRecordType(val || ''); setRecordPage(1) }}
-          >
-            <Select.Option value="PAY">支付</Select.Option>
-            <Select.Option value="REFUND">退款</Select.Option>
-          </Select>
-        </Space>
-        <Table
-          rowKey="id"
-          dataSource={recordList}
-          columns={recordColumns}
-          bordered
-          loading={recordLoading}
-          scroll={{ x: 1100 }}
-          size="small"
-          pagination={{
-            current: recordPage,
-            pageSize: recordSize,
-            total: recordTotal,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (nextPage, nextSize) => { setRecordPage(nextPage); setRecordSize(nextSize) }
-          }}
-        />
-      </Drawer>
+        currentImport={currentImport}
+        recordType={recordType}
+        onRecordTypeChange={(val) => { setRecordType(val || ''); setRecordPage(1) }}
+        list={recordList}
+        loading={recordLoading}
+        columns={recordColumns}
+        page={recordPage}
+        size={recordSize}
+        total={recordTotal}
+        onPageChange={(nextPage, nextSize) => { setRecordPage(nextPage); setRecordSize(nextSize) }}
+      />
 
-      <Drawer
-        title={`差异列表${currentImport ? ` - ${currentImport.importNo}（${currentImport.billDate}）` : ''}`}
+      <DiscrepancyListDrawer
         open={discModalOpen}
-        width={1450}
         onClose={() => setDiscModalOpen(false)}
-        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setDiscModalOpen(false)}>关闭</Button></div>}
-      >
-        <Space style={{ marginBottom: 16 }} wrap>
-          <Select
-            placeholder="处理状态"
-            style={{ width: 140 }}
-            allowClear
-            value={discStatus || undefined}
-            onChange={(val) => { setDiscStatus(val || ''); setDiscPage(1) }}
-          >
-            <Select.Option value="OPEN">待处理</Select.Option>
-            <Select.Option value="RESOLVED">已处理</Select.Option>
-          </Select>
-          <Select
-            placeholder="差异类型"
-            style={{ width: 200 }}
-            allowClear
-            value={discType || undefined}
-            onChange={(val) => { setDiscType(val || ''); setDiscPage(1) }}
-            options={DISCREPANCY_TYPE_OPTIONS}
-          />
-        </Space>
-        <Table
-          rowKey="id"
-          dataSource={discList}
-          columns={discColumns}
-          bordered
-          loading={discLoading}
-          scroll={{ x: 1950 }}
-          size="small"
-          pagination={{
-            current: discPage,
-            pageSize: discSize,
-            total: discTotal,
-            showSizeChanger: true,
-            pageSizeOptions: [10, 20, 50, 100],
-            showTotal: (total) => `共 ${total} 条`,
-            onChange: (nextPage, nextSize) => { setDiscPage(nextPage); setDiscSize(nextSize) }
-          }}
-        />
-      </Drawer>
+        currentImport={currentImport}
+        status={discStatus}
+        type={discType}
+        onStatusChange={(val) => { setDiscStatus(val || ''); setDiscPage(1) }}
+        onTypeChange={(val) => { setDiscType(val || ''); setDiscPage(1) }}
+        typeOptions={DISCREPANCY_TYPE_OPTIONS}
+        list={discList}
+        loading={discLoading}
+        columns={discColumns}
+        page={discPage}
+        size={discSize}
+        total={discTotal}
+        onPageChange={(nextPage, nextSize) => { setDiscPage(nextPage); setDiscSize(nextSize) }}
+      />
 
-      <Drawer
-        title={`核验下钻${currentDisc ? ` - ${currentDisc.discrepancyTypeText || currentDisc.discrepancyType}` : ''}`}
+      <DiscrepancyDrilldownDrawer
         open={drillOpen}
-        width={1200}
         onClose={() => setDrillOpen(false)}
-        footer={<div style={{ textAlign: 'right' }}><Button onClick={() => setDrillOpen(false)}>关闭</Button></div>}
-      >
-        <Card loading={drillLoading} bordered={false}>
-          {drillData && <>
-            <Alert
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-              message="渠道账与平台账本双边核验"
-              description={`差异类型：${drillData.discrepancy?.discrepancyTypeText || '-'}；渠道业务单号：${drillData.discrepancy?.bizNo || '-'}；平台账本单号：${drillData.discrepancy?.localLedgerNo || '-'}`}
-            />
+        currentDisc={currentDisc}
+        loading={drillLoading}
+        drillData={drillData}
+        verificationColumns={verificationColumns}
+        recordColumns={recordColumns}
+        localLedgerColumns={localLedgerColumns}
+      />
 
-            <Typography.Title level={5}>逐字段核验</Typography.Title>
-            <Table
-              rowKey="field"
-              dataSource={drillData.verificationItems || []}
-              columns={verificationColumns}
-              pagination={false}
-              bordered
-              size="small"
-              style={{ marginBottom: 24 }}
-            />
-
-            <Typography.Title level={5}>渠道账原始记录</Typography.Title>
-            {(drillData.channelRecords || []).length > 0 ? <>
-              <Table
-                rowKey="id"
-                dataSource={drillData.channelRecords || []}
-                columns={recordColumns}
-                pagination={false}
-                bordered
-                size="small"
-                scroll={{ x: 1100 }}
-                style={{ marginBottom: 12 }}
-              />
-              {(drillData.channelRecords || []).map((record) => record.rawLine ? (
-                <Card key={`raw-${record.id}`} size="small" title={`原始账单行 #${record.id}`} style={{ marginBottom: 12 }}>
-                  <Typography.Paragraph copyable={{ text: record.rawLine }} style={{ marginBottom: 0 }}>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{record.rawLine}</pre>
-                  </Typography.Paragraph>
-                </Card>
-              ) : null)}
-            </> : <Alert type="warning" showIcon message="渠道侧没有找到对应账单记录" style={{ marginBottom: 24 }} />}
-
-            <Typography.Title level={5}>平台账本候选记录</Typography.Title>
-            {(drillData.localLedgers || []).length > 0 ? (
-              <Table
-                rowKey="ledgerNo"
-                dataSource={drillData.localLedgers || []}
-                columns={localLedgerColumns}
-                pagination={false}
-                bordered
-                size="small"
-                scroll={{ x: 1500 }}
-              />
-            ) : <Alert type="warning" showIcon message="平台侧没有找到对应交易账本记录" />}
-          </>}
-        </Card>
-      </Drawer>
-
-      <Modal
-        title="标记差异已处理"
+      <ResolveDiscrepancyModal
         open={resolveOpen}
-        width={500}
-        onCancel={() => setResolveOpen(false)}
-        onOk={handleResolve}
+        discrepancy={currentDisc}
         confirmLoading={resolving}
-        okText="确认处理"
-        cancelText="取消"
-      >
-        {currentDisc && (
-          <div style={{ marginBottom: 12 }}>
-            <p>
-              差异类型：<Tag color="red">{currentDisc.discrepancyTypeText}</Tag>
-              业务单号：<strong>{currentDisc.bizNo}</strong>
-            </p>
-          </div>
-        )}
-        <TextArea
-          rows={4}
-          value={resolveRemark}
-          onChange={(e) => setResolveRemark(e.target.value)}
-          placeholder="请输入差异处理说明（必填），如：已与渠道核对为跨日清算，差异关闭"
-          maxLength={500}
-        />
-      </Modal>
+        onClose={() => setResolveOpen(false)}
+        onSubmit={handleResolve}
+      />
     </div>
   )
 }

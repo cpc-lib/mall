@@ -864,6 +864,14 @@
    - 在 `user-ui/src/api/address.js` 中对 `/api/regions/tree` 增加模块级 Promise 记忆化缓存，避免在 `/cart` 与 `/addresses` 间切换时重复请求。
    - `user-ui/src/components/AppHeader.jsx:22-23` 的顶部搜索框目前提交后直接丢弃输入词并跳转 `'/'`，应将搜索关键字通过 URL Query（`/?q=...`）传递给 `Home.jsx` 进行商品过滤，并为 `Cart.jsx` 中的数量加减与删除操作补齐 `aria-label` 与键盘可访问性。
 
+**处理进展（2026-11-25）**：已完成。
+- 拆分：`Reconciliation.jsx` 的 4 个 Drawer 与“标记差异已处理”弹窗拆到 `admin-ui/src/components/reconciliation/`（`ReconcileSummaryDrawer`、`BillRecordsDrawer`、`DiscrepancyListDrawer`、`DiscrepancyDrilldownDrawer`、`ResolveDiscrepancyModal`）；备注输入状态收敛到弹窗内部，击键不再重渲染整页。
+- 脱敏：`PaymentConfig.jsx` 的 `apiV3Key`、`partnerKey`、`privateKey`、`merchantPrivateKey` 改为 `<Input.Password />`。
+- 复用：新增 `admin-ui/src/utils/stockAoa.jsx`，`StockMaintenance.jsx` 与 `StockExcelEditor.jsx` 共用 `BIZ_TYPES`、`STOCK_HEADER`、`deltaCell`、`validateStockAoa`。
+- 清理：`mallImgs.js` 改为本地内联 SVG；删除 `theme.css`、`global.css`、`reset.css`（其中 `.loading-container/.loading-text` 保留到 `polish.css`）与 4 张未使用图片；`Success.jsx` 文案改为“订单已支付成功”；删除 `user-ui/src/api/*.js` 中 31 个未使用的管理端方法；移除 `admin-ui` 的 `qrcode.react` 依赖，双端 `@vitejs/plugin-react` 移入 `devDependencies`。
+- 缓存与可访问性：省市区树缓存放在新增的 `user-ui/src/api/region.js`（模块级 Promise，失败自动重置），而非审计原文的 `api/address.js`，避免地址 API 模块承担区域树职责；`AppHeader` 搜索框改为 `form` 提交并把关键字以 `?q=` 传给首页（首页按标题过滤，搜索态取前 100 件并隐藏分页）；`Cart.jsx` 勾选、数量加减与删除补齐 `aria-label`，删除操作支持 Enter/Space 键盘触发。
+- `user-ui` 的 `npm run test:logic`、`npm run build` 与 `admin-ui` 的 `npm run build` 均通过。
+
 ---
 
 ## 7. P5：测试覆盖率、ArchUnit 架构守护与 CI/CD 流水线优化

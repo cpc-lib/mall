@@ -3,8 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Space, Spin, Tag, message } from 'antd'
 import stockApi from '@/api/adminStock'
 import { loadLuckysheet } from '@/utils/luckysheet'
-
-const HEADER = ['商品ID', '商品名称', '调整量']
+import { STOCK_HEADER as HEADER, validateStockAoa } from '@/utils/stockAoa'
 
 function aoaToLuckysheet(aoa) {
   const celldata = []
@@ -88,29 +87,10 @@ export default function StockExcelEditor() {
     }
   }, [id])
 
-  const validateAoa = aoa => {
-    const items = []
-    const issues = []
-    aoa.forEach((row, i) => {
-      const rawId = row ? row[0] : null
-      const rawDelta = row ? row[2] : null
-      if (i === 0 && typeof rawId === 'string' && rawId.includes('商品')) return
-      if (rawId == null || rawId === '') return
-      const line = i + 1
-      const pid = Number(rawId)
-      if (!Number.isInteger(pid) || pid <= 0) { issues.push(`第${line}行：商品ID ${rawId} 无效`); return }
-      if (rawDelta == null || rawDelta === '') return
-      const delta = Number(rawDelta)
-      if (!Number.isInteger(delta) || delta === 0) { issues.push(`第${line}行：调整量 ${rawDelta} 无效（需非 0 整数）`); return }
-      items.push({ productId: pid, delta })
-    })
-    return { items, issues }
-  }
-
   const save = async () => {
     const XLSX = await import('xlsx')
     const aoa = luckysheetToAoa()
-    const { items, issues } = validateAoa(aoa)
+    const { items, issues } = validateStockAoa(aoa)
     if (issues.length) {
       return message.error(`存在无效行，未保存：${issues[0]}${issues.length > 1 ? ` 等 ${issues.length} 处` : ''}`)
     }

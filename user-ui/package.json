@@ -10,7 +10,6 @@
     "test:logic": "node tests/refresh-single-flight.test.mjs"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^5.0.0",
     "antd": "^5.21.6",
     "axios": "^1.7.7",
     "dayjs": "^1.11.13",
@@ -20,6 +19,7 @@
     "react-router-dom": "^6.26.2"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
     "vite": "^5.4.8"
   },
   "browserslist": [

@@ -341,13 +341,13 @@ export default function PaymentConfig() {
             <Input />
           </Form.Item>
           <Form.Item label="商户私钥（apiclient_key.pem 内容）" name="privateKey">
-            <Input.TextArea rows={6} placeholder={'-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'} />
+            <Input.Password placeholder={'-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'} />
           </Form.Item>
           <Form.Item label="APIv3 密钥" name="apiV3Key">
-            <Input />
+            <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Form.Item label="APIv2 密钥（partnerKey）" name="partnerKey">
-            <Input />
+            <Input.Password autoComplete="new-password" />
           </Form.Item>
           <Divider plain orientation="left">支付宝商户信息</Divider>
           <Form.Item label="支付宝应用 ID" name="alipayAppId">
@@ -357,7 +357,7 @@ export default function PaymentConfig() {
             <Input />
           </Form.Item>
           <Form.Item label="应用私钥（base64）" name="merchantPrivateKey">
-            <Input.TextArea rows={4} />
+            <Input.Password />
           </Form.Item>
           <Form.Item label="支付宝公钥（base64）" name="alipayPublicKey">
             <Input.TextArea rows={4} />

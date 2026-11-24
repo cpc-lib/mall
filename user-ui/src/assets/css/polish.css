@@ -604,3 +604,16 @@ button.m-quick-item { min-height: 64px; }
     animation-iteration-count: 1 !important;
   }
 }
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  gap: 16px;
+}
+.loading-text {
+  color: #909399;
+  font-size: 14px;
+}

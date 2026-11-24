@@ -2,22 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Card, InputNumber, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
 import stockApi from '@/api/adminStock'
 import { OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL, STOCK_IMPORT_STATUS_LABEL, STOCK_IMPORT_STATUS_COLOR } from '@/utils/statusLabels'
-
-const BIZ_TYPES = [
-  { value: 'MANUAL_ADJUST', label: 'MANUAL_ADJUST（手工调整）' },
-  { value: 'ORDER_RESERVE', label: 'ORDER_RESERVE（下单预占）' },
-  { value: 'ORDER_COMMIT', label: 'ORDER_COMMIT（支付提交）' },
-  { value: 'ORDER_SOLD', label: 'ORDER_SOLD（确认收货结转）' },
-  { value: 'ORDER_RELEASE', label: 'ORDER_RELEASE（关单释放）' },
-  { value: 'REFUND_RESTOCK', label: 'REFUND_RESTOCK（退款回补）' },
-  { value: 'REFUND_LOST', label: 'REFUND_LOST（仅退款货损核销）' }
-]
-
-const deltaCell = v => v == null || v === 0
-  ? <span style={{ color: '#bfbfbf' }}>-</span>
-  : <span style={{ color: v > 0 ? '#52c41a' : '#f5222d' }}>{v > 0 ? `+${v}` : v}</span>
-
-const HEADER = ['商品ID', '商品名称', '调整量']
+import { BIZ_TYPES, STOCK_HEADER as HEADER, deltaCell, validateStockAoa } from '@/utils/stockAoa'
 
 export default function StockMaintenance() {
   const [titles, setTitles] = useState({})
@@ -77,31 +62,12 @@ export default function StockMaintenance() {
     window.open(`#/admin/stock-edit/${record.id}`, '_blank')
   }
 
-  const validateAoa = aoa => {
-    const items = []
-    const issues = []
-    aoa.forEach((row, i) => {
-      const rawId = row ? row[0] : null
-      const rawDelta = row ? row[2] : null
-      if (i === 0 && typeof rawId === 'string' && rawId.includes('商品')) return
-      if (rawId == null || rawId === '') return
-      const line = i + 1
-      const id = Number(rawId)
-      if (!Number.isInteger(id) || id <= 0) { issues.push(`第${line}行：商品ID ${rawId} 无效`); return }
-      if (rawDelta == null || rawDelta === '') return
-      const delta = Number(rawDelta)
-      if (!Number.isInteger(delta) || delta === 0) { issues.push(`第${line}行：调整量 ${rawDelta} 无效（需非 0 整数）`); return }
-      items.push({ productId: id, delta })
-    })
-    return { items, issues }
-  }
-
   const handleExcel = async file => {
     try {
       const XLSX = await import('xlsx')
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null })
-      const { items, issues } = validateAoa(aoa)
+      const { items, issues } = validateStockAoa(aoa)
       if (!items.length) {
         setImportReport({ applied: 0, issues })
         message.warning('Excel 中没有可导入的有效明细，未生成导入记录')

@@ -15,7 +15,7 @@ export default function Success() {
             </svg>
           </div>
           <h2>支付成功！</h2>
-          <p className="tb-success-tip">感谢您的购买，课程已开通</p>
+          <p className="tb-success-tip">感谢您的购买，订单已支付成功</p>
           <div className="tb-success-actions">
             <Button type="primary" onClick={() => navigate('/orders')}>查看订单</Button>
             <Button onClick={() => navigate('/')}>返回首页</Button>

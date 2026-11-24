@@ -5,7 +5,7 @@ import cartApi from '@/api/cart'
 import checkoutApi from '@/api/checkout'
 import paymentConfigApi from '@/api/paymentConfig'
 import addressApi from '@/api/address'
-import request from '@/utils/request'
+import { getRegionTree } from '@/api/region'
 import { mallImg, onMallImgError } from '@/assets/mallImgs'
 
 const paymentTypeOf = code => code === 'WXPAY' ? '微信' : code === 'ALIPAY' ? '支付宝' : ''
@@ -39,7 +39,7 @@ export default function Cart() {
     }
   }
   useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { request.get('/api/regions/tree').then(r => setRegions(r.data || [])).catch(() => {}) }, [])
+  useEffect(() => { getRegionTree().then(setRegions).catch(() => {}) }, [])
 
   const channels = useMemo(() => {
     const seen = new Set(); const list = []
@@ -58,6 +58,7 @@ export default function Cart() {
   const total = selectedItems.reduce((s, i) => s + Number(i.latestPrice || 0) * Number(i.quantity || 0), 0)
   const canCheckout = selectedItems.length > 0 && selectedItems.every(i => i.available) && Boolean(channelCode)
   const changeQty = async (row, q) => { await cartApi.put({ productId: row.productId, quantity: q, selected: row.selected }); await load() }
+  const removeItem = async productId => { await cartApi.remove(productId); await load() }
 
   const checkout = async () => {
     if (submitting) return
@@ -104,7 +105,7 @@ export default function Cart() {
         : items.map(r => (
         <div className="tb-cart-card" key={r.productId}>
           <label className="tb-cart-check">
-            <input type="checkbox" checked={r.selected} onChange={async e => { await cartApi.select(r.productId, e.target.checked); await load() }} />
+            <input type="checkbox" checked={r.selected} aria-label={`选择 ${r.title}`} onChange={async e => { await cartApi.select(r.productId, e.target.checked); await load() }} />
           </label>
           <div className="tb-cart-thumb" style={{ aspectRatio: '1/1' }}>
             <img src={mallImg(r.productId)} alt={r.title} onError={onMallImgError} />
@@ -114,11 +115,13 @@ export default function Cart() {
             <div className="tb-cart-sub">{r.available ? `可售 · 库存 ${r.availableStock}` : '库存不足'}</div>
             <div className="tb-cart-meta">
               <span className="tb-cart-price">¥{((r.latestPrice || 0) / 100).toFixed(2)}</span>
-              <span className="tb-cart-del" onClick={async () => { await cartApi.remove(r.productId); await load() }}>删除</span>
+              <span className="tb-cart-del" role="button" tabIndex={0} aria-label={`删除 ${r.title}`}
+                onClick={() => removeItem(r.productId)}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); removeItem(r.productId) } }}>删除</span>
               <div className="tb-cart-qty">
-                <button type="button" disabled={r.quantity <= 1} onClick={() => changeQty(r, r.quantity - 1)}>-</button>
+                <button type="button" aria-label="减少数量" disabled={r.quantity <= 1} onClick={() => changeQty(r, r.quantity - 1)}>-</button>
                 <span>{r.quantity}</span>
-                <button type="button" disabled={!r.available || r.quantity >= (r.availableStock || 99)} onClick={() => changeQty(r, r.quantity + 1)}>+</button>
+                <button type="button" aria-label="增加数量" disabled={!r.available || r.quantity >= (r.availableStock || 99)} onClick={() => changeQty(r, r.quantity + 1)}>+</button>
               </div>
             </div>
           </div>

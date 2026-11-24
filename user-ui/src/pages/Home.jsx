@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Empty, Pagination, Spin, message } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import productApi from '@/api/product'
 import cartApi from '@/api/cart'
 import { getAccessToken, getUser } from '@/utils/authStore'
@@ -14,18 +14,24 @@ export default function Home() {
   const size = 12
   const navigate = useNavigate()
   const admin = getUser()?.role === 'ROLE_ADMIN'
+  const [searchParams] = useSearchParams()
+  const q = (searchParams.get('q') || '').trim()
+  const searching = Boolean(q)
 
   const load = async (nextPage = 1) => {
     setLoading(true)
     try {
-      const r = await productApi.page({ page: nextPage, size })
+      const r = await productApi.page({ page: searching ? 1 : nextPage, size: searching ? 100 : size })
       const data = r?.data || {}
-      setProducts(data.records || [])
-      setTotal(data.total || 0)
+      const records = data.records || []
+      setProducts(searching
+        ? records.filter(p => String(p.title || '').toLowerCase().includes(q.toLowerCase()))
+        : records)
+      setTotal(searching ? 0 : (data.total || 0))
       setPage(data.page || nextPage)
     } finally { setLoading(false) }
   }
-  useEffect(() => { load(1) }, [])
+  useEffect(() => { load(1) }, [q]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const add = async (product) => {
     if (!getAccessToken()) { navigate('/login'); return }
@@ -35,9 +41,9 @@ export default function Home() {
 
   return <div className="tb-page">
     <div className="container">
-      <div className="tb-section-title">全部商品</div>
+      <div className="tb-section-title">{searching ? `搜索“${q}”` : '全部商品'}</div>
       {loading ? <div className="loading-container"><Spin size="large" /></div>
-        : products.length === 0 ? <div className="tb-cardbox"><Empty description="暂无商品" /></div>
+        : products.length === 0 ? <div className="tb-cardbox"><Empty description={searching ? '未找到相关商品' : '暂无商品'} /></div>
         : <div className="tb-grid">
           {products.map(p => {
             const soldOut = p.productStatus !== 'ENABLED' || Number(p.stock || 0) <= 0

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button, Cascader, Empty, Form, Input, Modal, Popconfirm, Switch, message } from 'antd'
 import addressApi from '@/api/address'
-import request from '@/utils/request'
+import { getRegionTree } from '@/api/region'
 
 export default function Addresses() {
   const [list, setList] = useState([])
@@ -12,7 +12,7 @@ export default function Addresses() {
   const [regions, setRegions] = useState([])
 
   useEffect(() => {
-    request.get('/api/regions/tree').then(r => setRegions(r.data || [])).catch(() => {})
+    getRegionTree().then(setRegions).catch(() => {})
   }, [])
 
   const load = async () => {
