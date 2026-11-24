@@ -14,7 +14,6 @@ import cc.ivera.shared.web.PageVO;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Base64;
@@ -56,7 +55,6 @@ public class StockImportServiceImpl implements StockImportService {
     }
 
     @Override
-    @Transactional
     public Long createImport(String fileName, String fileBase64, List<StockAdjustLine> items) {
         byte[] fileBytes = decodeFile(fileBase64);
         validateItems(items);
@@ -64,11 +62,16 @@ public class StockImportServiceImpl implements StockImportService {
             fileName == null || fileName.trim().isEmpty() ? "批量库存调整.xlsx" : fileName.trim(),
             items.size(), toJson(items));
         stockImportRepository.insert(record);
-        String writeType = fileStorage.writeType();
-        record.setFilePath(fileStorage.save(writeType, record.getId(), fileBytes));
-        record.setStorageType(writeType);
-        stockImportRepository.update(record);
-        return record.getId();
+        try {
+            String writeType = fileStorage.writeType();
+            record.setFilePath(fileStorage.save(writeType, record.getId(), fileBytes));
+            record.setStorageType(writeType);
+            stockImportRepository.update(record);
+            return record.getId();
+        } catch (RuntimeException e) {
+            stockImportRepository.deleteById(record.getId());
+            throw e;
+        }
     }
 
     @Override
@@ -104,7 +107,6 @@ public class StockImportServiceImpl implements StockImportService {
     }
 
     @Override
-    @Transactional
     public void saveImportFile(Long id, String fileBase64, List<StockAdjustLine> items) {
         StockImport record = stockImportRepository.findById(id);
         if (record == null) throw new BizException("导入记录不存在");
@@ -112,11 +114,11 @@ public class StockImportServiceImpl implements StockImportService {
         record.requirePendingForEdit();
         byte[] fileBytes = decodeFile(fileBase64);
         validateItems(items);
+        // 文件跟随记录原件：按记录自身存储后端覆盖，不迁移
+        fileStorage.save(record.getStorageType(), id, fileBytes);
         if (!stockImportRepository.updatePendingItems(id, items.size(), toJson(items), new Date())) {
             throw new BizException("该导入记录已确认入库，明细不可再修改");
         }
-        // 文件跟随记录原件：按记录自身存储后端覆盖，不迁移
-        fileStorage.save(record.getStorageType(), id, fileBytes);
     }
 
     @Override

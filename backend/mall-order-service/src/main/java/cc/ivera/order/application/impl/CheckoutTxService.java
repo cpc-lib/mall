@@ -22,6 +22,7 @@ import cc.ivera.user.domain.model.ShippingAddress;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -29,6 +30,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 下单本地事务：商品校验、落单、明细与延迟关单消息（Outbox）。
@@ -45,6 +47,7 @@ public class CheckoutTxService {
     private final OrderCloseMessageService orderCloseMessageService;
     private final ShippingAddressService addressService;
     private final LocalMessageService localMessageService;
+    private final TransactionTemplate transactionTemplate;
 
     @Value("${payment.order.expire-minutes:3}")
     private long orderExpireMinutes;
@@ -53,7 +56,8 @@ public class CheckoutTxService {
                              OrderRepository orderRepository, PaymentConfigGateway paymentConfigLoader,
                              OrderCloseMessageService orderCloseMessageService,
                              ShippingAddressService addressService,
-                             LocalMessageService localMessageService) {
+                             LocalMessageService localMessageService,
+                             TransactionTemplate transactionTemplate) {
         this.cartService = cartService;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
@@ -61,13 +65,13 @@ public class CheckoutTxService {
         this.orderCloseMessageService = orderCloseMessageService;
         this.addressService = addressService;
         this.localMessageService = localMessageService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
      * 落单本地事务，返回 Saga 后续步骤与补偿所需的上下文（只含可 JSON 序列化的基础类型）。
      * 同一 orderNo 重复执行时直接返回既有订单上下文，保证状态机重试幂等。
      */
-    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> prepare(Long userId, CheckoutRequest request, String orderNo) {
         OrderInfo existing = orderRepository.findByOrderNo(orderNo);
         if (existing != null && Objects.equals(existing.getUserId(), userId)) {
@@ -81,10 +85,13 @@ public class CheckoutTxService {
             : paymentConfigLoader.getRequiredAppConfig(request.getPaymentAppId());
         if (!channelCode.equals(payConfig.getChannelCode())) throw new BizException("支付应用与支付方式不匹配");
 
+        List<Long> productIds = selected.stream().map(CartItemVO::getProductId).toList();
+        Map<Long, Product> productById = productRepository.findByIds(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, product -> product));
         int total = 0;
         List<Product> products = new ArrayList<>();
         for (CartItemVO cart : selected) {
-            Product p = productRepository.findById(cart.getProductId());
+            Product p = productById.get(cart.getProductId());
             if (p == null || !CommonStatus.ENABLED.getType().equals(p.getProductStatus()))
                 throw new BizException("商品不可售，productId=" + cart.getProductId());
             if (p.getStock() == null || p.getStock() < cart.getQuantity())
@@ -122,20 +129,26 @@ public class CheckoutTxService {
             receiverName,
             receiverPhone,
             receiverAddress);
-        orderRepository.save(order);
 
-        List<OrderItem> items = new ArrayList<>();
-        for (int i = 0; i < selected.size(); i++) {
-            CartItemVO cart = selected.get(i);
-            Product product = products.get(i);
-            OrderItem item = OrderItem.createSnapshot(order.getId(), order.getOrderNo(),
-                product.getId(), product.getTitle(), product.getPrice(), cart.getQuantity());
-            orderRepository.saveItem(item);
-            items.add(item);
-        }
-        // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
-        orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
-        return context(order, items);
+        return transactionTemplate.execute(status -> {
+            OrderInfo persisted = orderRepository.findByOrderNo(orderNo);
+            if (persisted != null && Objects.equals(persisted.getUserId(), userId)) {
+                return context(persisted, orderRepository.listItemsByOrderNo(orderNo));
+            }
+            orderRepository.save(order);
+            List<OrderItem> items = new ArrayList<>();
+            for (int i = 0; i < selected.size(); i++) {
+                CartItemVO cart = selected.get(i);
+                Product product = products.get(i);
+                OrderItem item = OrderItem.createSnapshot(order.getId(), order.getOrderNo(),
+                    product.getId(), product.getTitle(), product.getPrice(), cart.getQuantity());
+                orderRepository.saveItem(item);
+                items.add(item);
+            }
+            // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
+            orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
+            return context(order, items);
+        });
     }
 
     /**

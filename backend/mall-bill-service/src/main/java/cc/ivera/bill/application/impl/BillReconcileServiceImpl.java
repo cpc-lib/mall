@@ -212,7 +212,7 @@ public class BillReconcileServiceImpl implements BillReconcileService {
 
         // 事务2：自动对账（失败标记 FAILED，批次与流水保留，可重新对账）
         try {
-            reconcileInTransaction(billImport.getId());
+            reconcile(billImport.getId());
         } catch (Exception e) {
             markFailed(billImport.getId(), e);
             throw e instanceof BizException ? (BizException) e
@@ -237,7 +237,7 @@ public class BillReconcileServiceImpl implements BillReconcileService {
                     if (BillImportStatus.RECONCILED.getType().equals(locked.getStatus())) {
                         return locked;
                     }
-                    reconcileInTransaction(locked.getId());
+                    reconcile(locked.getId());
                     return billImportRepository.findById(locked.getId());
                 });
         } catch (BizException e) {
@@ -249,51 +249,55 @@ public class BillReconcileServiceImpl implements BillReconcileService {
     }
 
     /**
-     * 对账核心（单个事务）：重跑前先按 import_id 删除旧差异单，保证结果确定、不重复。
+     * 对账核心：平台账本 Feign 查询与内存双向比对在事务外完成，短事务只保存差异并更新批次。
      */
-    private void reconcileInTransaction(Long importId) {
+    private void reconcile(Long importId) {
+        BillImport billImport = billImportRepository.findById(importId);
+        if (billImport == null) {
+            throw new BizException("账单导入批次不存在");
+        }
+
+        List<BillRecord> records = billRecordRepository.listByImport(importId, null);
+        List<BillRecord> payRecords = filterByType(records, BillRecordType.PAY);
+        List<BillRecord> refundRecords = filterByType(records, BillRecordType.REFUND);
+
+        // 对账范围按账单种类收窄：SUCCESS 账单仅含支付行、REFUND 账单仅含退款行，
+        // 未覆盖的业务方向不参与核对（避免误报「仅本地有」）；ALL 账单双向核对
+        BillKind billKind = BillKind.of(billImport.getBillKind());
+        boolean checkPay = billKind != BillKind.REFUND;
+        boolean checkRefund = billKind != BillKind.SUCCESS;
+
+        List<BillReconcileDiscrepancy> discrepancies = new ArrayList<>();
+        int matchedCount = 0;
+        if (checkPay) {
+            matchedCount += reconcilePayRecords(billImport, payRecords, discrepancies);
+        }
+        if (checkRefund) {
+            matchedCount += reconcileRefundRecords(billImport, refundRecords, discrepancies);
+        }
+
+        // DB 唯一键为(import_id, discrepancy_type, biz_type, biz_no)。异常账单可能重复多行，
+        // 落库前按同一幂等键收敛为一条差异，避免重复行反而导致整个对账事务失败。
+        Map<String, BillReconcileDiscrepancy> uniqueDiscrepancies = new LinkedHashMap<>();
+        for (BillReconcileDiscrepancy discrepancy : discrepancies) {
+            String key = discrepancy.getDiscrepancyType() + "|" + discrepancy.getBizType() + "|" + discrepancy.getBizNo();
+            uniqueDiscrepancies.putIfAbsent(key, discrepancy);
+        }
+        for (BillReconcileDiscrepancy discrepancy : uniqueDiscrepancies.values()) {
+            discrepancy.setImportId(importId);
+            discrepancy.setBillDate(billImport.getBillDate());
+            discrepancy.setStatus(BillDiscrepancyStatus.OPEN.getType());
+        }
+
+        int finalMatchedCount = matchedCount;
         transactionTemplate.executeWithoutResult(status -> {
-            BillImport billImport = billImportRepository.findById(importId);
-            if (billImport == null) {
-                throw new BizException("账单导入批次不存在");
-            }
-
+            // 重跑前先按 import_id 删除旧差异单，保证结果确定、不重复。
             discrepancyRepository.deleteByImport(importId);
-
-            List<BillRecord> records = billRecordRepository.listByImport(importId, null);
-            List<BillRecord> payRecords = filterByType(records, BillRecordType.PAY);
-            List<BillRecord> refundRecords = filterByType(records, BillRecordType.REFUND);
-
-            // 对账范围按账单种类收窄：SUCCESS 账单仅含支付行、REFUND 账单仅含退款行，
-            // 未覆盖的业务方向不参与核对（避免误报「仅本地有」）；ALL 账单双向核对
-            BillKind billKind = BillKind.of(billImport.getBillKind());
-            boolean checkPay = billKind != BillKind.REFUND;
-            boolean checkRefund = billKind != BillKind.SUCCESS;
-
-            List<BillReconcileDiscrepancy> discrepancies = new ArrayList<>();
-            int matchedCount = 0;
-            if (checkPay) {
-                matchedCount += reconcilePayRecords(billImport, payRecords, discrepancies);
-            }
-            if (checkRefund) {
-                matchedCount += reconcileRefundRecords(billImport, refundRecords, discrepancies);
-            }
-
-            // DB 唯一键为(import_id, discrepancy_type, biz_type, biz_no)。异常账单可能重复多行，
-            // 落库前按同一幂等键收敛为一条差异，避免重复行反而导致整个对账事务失败。
-            Map<String, BillReconcileDiscrepancy> uniqueDiscrepancies = new LinkedHashMap<>();
-            for (BillReconcileDiscrepancy discrepancy : discrepancies) {
-                String key = discrepancy.getDiscrepancyType() + "|" + discrepancy.getBizType() + "|" + discrepancy.getBizNo();
-                uniqueDiscrepancies.putIfAbsent(key, discrepancy);
-            }
             for (BillReconcileDiscrepancy discrepancy : uniqueDiscrepancies.values()) {
-                discrepancy.setImportId(importId);
-                discrepancy.setBillDate(billImport.getBillDate());
-                discrepancy.setStatus(BillDiscrepancyStatus.OPEN.getType());
                 discrepancyRepository.save(discrepancy);
             }
 
-            billImport.setMatchedCount(matchedCount);
+            billImport.setMatchedCount(finalMatchedCount);
             billImport.setDiscrepancyCount(uniqueDiscrepancies.size());
             billImport.setStatus(BillImportStatus.RECONCILED.getType());
             billImport.setReconcileTime(new Date());

@@ -14,6 +14,8 @@ public interface StockImportRepository {
 
     void update(StockImport record);
 
+    void deleteById(Long id);
+
     StockImport findById(Long id);
 
     /**

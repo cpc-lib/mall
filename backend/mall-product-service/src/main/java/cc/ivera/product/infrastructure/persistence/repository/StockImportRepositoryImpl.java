@@ -37,6 +37,11 @@ public class StockImportRepositoryImpl implements StockImportRepository {
     }
 
     @Override
+    public void deleteById(Long id) {
+        stockImportMapper.deleteById(id);
+    }
+
+    @Override
     public StockImport findById(Long id) {
         return StockImportPOConverter.toDomain(stockImportMapper.selectById(id));
     }

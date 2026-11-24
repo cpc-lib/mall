@@ -224,31 +224,27 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
         String notifyId = getString(bodyMap, "id");
         // 订单级支付锁：同一订单的支付通知/查单/关单/支付单推进共用一把锁，避免并发写同一笔 t_payment_order。
-        distributedLockTemplate.execute("payment:order:" + orderNo, PAY_NOTIFY_LOCK_WAIT_MS, () ->
-            transactionTemplate.execute(status -> {
-                doProcessOrderNotifyInTransaction(orderNo, plainTextMap, plainText, notifyId);
-                return null;
-            })
-        );
+        distributedLockTemplate.execute("payment:order:" + orderNo, PAY_NOTIFY_LOCK_WAIT_MS, () -> {
+            OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+            if (order == null) {
+                throw new BizException("微信支付通知对应订单不存在，orderNo=" + orderNo);
+            }
+            validateWxPayOrderNotify(order, plainTextMap);
+            transactionTemplate.executeWithoutResult(status ->
+                doProcessOrderNotifyInTransaction(order, plainTextMap, plainText, notifyId));
+        });
     }
 
-    private void doProcessOrderNotifyInTransaction(String orderNo,
+    private void doProcessOrderNotifyInTransaction(OrderInfo order,
                                                    Map<String, Object> plainTextMap,
                                                    String plainText,
                                                    String notifyId) {
-        // 入口仅做存在性/报文校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
-        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException("微信支付通知对应订单不存在，orderNo=" + orderNo);
-        }
-
-        validateWxPayOrderNotify(order, plainTextMap);
-
+        String orderNo = order.getOrderNo();
         // V2：统一支付成功处理器（支付单状态机 + 订单 CAS + 预占提交 + 异常冲正）。
         String transactionId = getString(plainTextMap, "transaction_id");
         Integer payerTotal = getWxPayTotalAmount(plainTextMap);
         boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-            orderNo, PaymentConfigGateway.CHANNEL_WXPAY, transactionId, payerTotal);
+            order, PaymentConfigGateway.CHANNEL_WXPAY, transactionId, payerTotal);
         if (firstSettled) {
             paymentInfoService.createPaymentInfo(plainText);
             log.info("微信支付通知处理完成，orderNo={}, notifyId={}", orderNo, notifyId);
@@ -263,25 +259,22 @@ public class WxPayOrderService implements WxPayOrderFacade {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("订单号不能为空");
         }
-        transactionTemplate.execute(status -> {
-            // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，order 状态仍为 NOTPAY，
-            // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
-            if (paymentDealRepository.existsByOrderNo(orderNo)) {
-                log.info("cancelOrder 发现有效成交，跳过关单 orderNo={}", orderNo);
-                return null;
-            }
-            OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
-            if (lockedOrder == null) {
-                throw new BizException("订单不存在，orderNo=" + orderNo);
-            }
-            if (!OrderStatus.NOTPAY.getType().equals(lockedOrder.getLegacyStatus())) {
-                log.info("订单当前状态不允许取消，orderNo={}, currentStatus={}", orderNo, lockedOrder.getLegacyStatus());
-                return null;
-            }
-            closeOrder(orderNo);
-            orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
-            return null;
-        });
+        // 关单前必须先查成交事实：支付刚刚成交但 MQ 尚未消费的窗口期内，order 状态仍为 NOTPAY，
+        // 必须以 t_payment_deal 为权威，禁止"已收款却本地关单"。
+        if (paymentDealRepository.existsByOrderNo(orderNo)) {
+            log.info("cancelOrder 发现有效成交，跳过关单 orderNo={}", orderNo);
+            return;
+        }
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException("订单不存在，orderNo=" + orderNo);
+        }
+        if (!OrderStatus.NOTPAY.getType().equals(order.getLegacyStatus())) {
+            log.info("订单当前状态不允许取消，orderNo={}, currentStatus={}", orderNo, order.getLegacyStatus());
+            return;
+        }
+        closeOrder(orderNo);
+        orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CANCEL);
     }
 
     @Override
@@ -359,12 +352,13 @@ public class WxPayOrderService implements WxPayOrderFacade {
             Map<String, Object> finalResultMap = resultMap;
             String finalResult = result;
             String finalTradeState = tradeState;
-            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
-                transactionTemplate.execute(status -> {
-                    doSyncOrderStatusFromWxQuery(orderNo, finalResultMap, finalResult, finalTradeState, false);
-                    return null;
-                })
-            );
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
+                OrderInfo currentOrder = orderInfoService.getOrderByOrderNo(orderNo);
+                if (currentOrder == null) {
+                    throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
+                }
+                doSyncOrderStatusFromWxQuery(currentOrder, finalResultMap, finalResult, finalTradeState, false);
+            });
         }
 
         String localStatusAfter = orderInfoService.getOrderStatus(orderNo);
@@ -374,62 +368,59 @@ public class WxPayOrderService implements WxPayOrderFacade {
     @Override
     public void checkOrderStatus(String orderNo) {
         String result = queryOrderBodyIfExists(orderNo);
-        distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
-            transactionTemplate.execute(status -> {
-                if (result == null) {
-                    closeLocalOrderWhenChannelAbsent(orderNo);
-                } else {
-                    Map<String, Object> resultMap = JsonUtils.toObjectMap(result);
-                    String tradeState = getString(resultMap, "trade_state");
-                    doSyncOrderStatusFromWxQuery(orderNo, resultMap, result, tradeState, true);
-                }
-                return null;
-            })
-        );
+        distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
+            OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+            if (order == null) {
+                throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
+            }
+            if (result == null) {
+                closeLocalOrderWhenChannelAbsent(order);
+            } else {
+                Map<String, Object> resultMap = JsonUtils.toObjectMap(result);
+                String tradeState = getString(resultMap, "trade_state");
+                doSyncOrderStatusFromWxQuery(order, resultMap, result, tradeState, true);
+            }
+        });
     }
 
     /**
      * 渠道查无此交易（从未发起支付）时的本地关单：渠道无单可关，直接走 V2 本地关单链路
      * （CAS NOTPAY->CLOSED：关闭活跃支付单 + 释放预占库存）。
      */
-    private void closeLocalOrderWhenChannelAbsent(String orderNo) {
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
-        if (lockedOrder == null) {
-            throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
-        }
-        if (!OrderStatus.NOTPAY.getType().equals(lockedOrder.getLegacyStatus())) {
-            log.info("微信渠道无此交易但订单本地已处理，orderNo={}, currentStatus={}", orderNo, lockedOrder.getLegacyStatus());
+    private void closeLocalOrderWhenChannelAbsent(OrderInfo order) {
+        String orderNo = order.getOrderNo();
+        if (!OrderStatus.NOTPAY.getType().equals(order.getLegacyStatus())) {
+            log.info("微信渠道无此交易但订单本地已处理，orderNo={}, currentStatus={}", orderNo, order.getLegacyStatus());
             return;
         }
         log.warn("微信渠道查无此交易（从未发起支付），本地订单超时关单 ===> {}", orderNo);
         orderStatusCommandApi.closeIfNotPay(orderNo, OrderStatus.CLOSED);
     }
 
-    private void doSyncOrderStatusFromWxQuery(String orderNo,
+    private void doSyncOrderStatusFromWxQuery(OrderInfo order,
                                               Map<String, Object> resultMap,
                                               String result,
                                               String tradeState,
                                               boolean closeUnpaidOrder) {
-        OrderInfo lockedOrder = orderInfoService.getOrderByOrderNo(orderNo);
-        if (lockedOrder == null) {
-            throw new BizException("查单同步对应订单不存在，orderNo=" + orderNo);
-        }
-        if (!OrderStatus.NOTPAY.getType().equals(lockedOrder.getLegacyStatus())) {
-            log.info("微信查单同步发现订单已处理，orderNo={}, currentStatus={}", orderNo, lockedOrder.getLegacyStatus());
+        String orderNo = order.getOrderNo();
+        if (!OrderStatus.NOTPAY.getType().equals(order.getLegacyStatus())) {
+            log.info("微信查单同步发现订单已处理，orderNo={}, currentStatus={}", orderNo, order.getLegacyStatus());
             return;
         }
 
         if (WxTradeState.SUCCESS.getType().equals(tradeState)) {
-            validateWxPayOrderNotify(lockedOrder, resultMap);
+            validateWxPayOrderNotify(order, resultMap);
             // 查单确认支付成功统一走支付成功处理器：支付单回写 SUCCESS/渠道交易号/实付金额/支付时间
             // + 成交收口其它渠道活跃支付单，与支付宝查单路径（queryAndSyncStatus/checkOrderStatus）对齐。
             String transactionId = getString(resultMap, "transaction_id");
             Integer payerTotal = getWxPayTotalAmount(resultMap);
-            boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-                orderNo, PaymentConfigGateway.CHANNEL_WXPAY, transactionId, payerTotal);
-            if (firstSettled) {
-                paymentInfoService.createPaymentInfo(result);
-            }
+            transactionTemplate.executeWithoutResult(status -> {
+                boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
+                    order, PaymentConfigGateway.CHANNEL_WXPAY, transactionId, payerTotal);
+                if (firstSettled) {
+                    paymentInfoService.createPaymentInfo(result);
+                }
+            });
             return;
         }
         if (WxTradeState.NOTPAY.getType().equals(tradeState) && closeUnpaidOrder) {

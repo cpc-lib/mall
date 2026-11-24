@@ -67,8 +67,12 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         if (!StringUtils.hasText(orderNo)) {
             throw new BizException("标记付款缺少订单号");
         }
+        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+        if (order == null) {
+            throw new BizException("标记付款对应订单不存在，orderNo=" + orderNo);
+        }
         return tx.execute(s ->
-            handlePaymentSuccess(orderNo, PaymentConfigGateway.CHANNEL_OFFLINE, null, null));
+            handlePaymentSuccess(order, PaymentConfigGateway.CHANNEL_OFFLINE, null, null));
     }
 
     @Override
@@ -81,6 +85,15 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         if (order == null) {
             throw new BizException("支付成功处理对应订单不存在，orderNo=" + orderNo);
         }
+        return handlePaymentSuccess(order, channel, channelOrderNo, paidAmount);
+    }
+
+    @Override
+    public boolean handlePaymentSuccess(OrderInfo order, String channel, String channelOrderNo, Integer paidAmount) {
+        if (order == null) {
+            throw new BizException("支付成功处理对应订单不存在");
+        }
+        String orderNo = order.getOrderNo();
 
         // 0. 渠道交易号幂等：channel_order_no 只在成交时写入，(channel, channel_order_no) 唯一。
         //    若本次交易号已锚定支付单，说明成交事实已落库，直接幂等返回；

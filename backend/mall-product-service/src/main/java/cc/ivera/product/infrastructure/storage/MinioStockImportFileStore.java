@@ -3,6 +3,7 @@ package cc.ivera.product.infrastructure.storage;
 import cc.ivera.shared.domain.exception.BizException;
 import io.minio.*;
 import io.minio.errors.ErrorResponseException;
+import jakarta.annotation.PostConstruct;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -10,7 +11,7 @@ import java.io.InputStream;
 
 /**
  * MinIO 对象存储实现（V6）：每个导入记录一个对象，键固定 stock-import/{id}.xlsx。
- * save 前确保 bucket 存在（不存在自动创建），返回对象键作为记录地址；
+ * 启动时确保 bucket 存在（不存在自动创建），返回对象键作为记录地址；
  * read 的 location 为空时按记录 id 回退默认对象键，兼容 V5 存量记录；
  * 对象不存在（NoSuchKey/NoSuchBucket）视为文件缺失返回 null。
  */
@@ -38,10 +39,18 @@ public class MinioStockImportFileStore implements StockImportFileStore {
         return OBJECT_PREFIX + id + ".xlsx";
     }
 
+    @PostConstruct
+    public void initialize() {
+        try {
+            ensureBucket();
+        } catch (Exception e) {
+            throw new BizException("MinIO 库存导入 bucket 初始化失败", e);
+        }
+    }
+
     @Override
     public String save(Long id, byte[] bytes) {
         try {
-            ensureBucket();
             client.putObject(PutObjectArgs.builder()
                 .bucket(bucket)
                 .object(objectKey(id))

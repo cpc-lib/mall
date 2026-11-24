@@ -120,9 +120,23 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         // 自动受理（CANCEL_BEFORE_SHIP）会立即发起渠道退款：渠道调用必须留在锁内，
         // 否则事务提交后锁已释放，并发请求可能对同一退款单重复提交渠道退款。
         return lockTemplate.execute("refund:create:" + request.getOrderNo(), 5000L, () -> {
-            RefundApplyVO vo = tx.execute(s -> doCreate(userId, request, null, channelHolder));
+            OrderInfo order = orderQueryApi.findByOrderNo(request.getOrderNo());
+            if (order == null || !Objects.equals(order.getUserId(), userId)) {
+                throw new BizException("订单不存在或无权访问");
+            }
+            requirePaidActive(order);
+            String refundType = resolveRefundType(request.getRefundType(), order.getFulfillmentStatus());
+            if ((request.getItems() == null || request.getItems().isEmpty())
+                && RefundType.REFUND_ONLY.getType().equals(refundType)) {
+                request.setItems(buildFullRefundItems(order.getOrderNo()));
+            }
+            PaymentOrder paymentOrder = RefundType.CANCEL_BEFORE_SHIP.getType().equals(refundType)
+                ? requireSuccessPaymentOrder(order.getOrderNo()) : null;
+            RefundOrder refundOrder = tx.execute(s ->
+                doCreate(userId, request, null, channelHolder, order, paymentOrder));
+            RefundApplyVO vo = detail(refundOrder);
             if (channelHolder[0] != null) {
-                executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
+                executeChannelRefund(order, channelHolder[0]);
             }
             return vo;
         });
@@ -131,7 +145,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     @Override
     @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public RefundApplyVO update(Long userId, String refundNo, RefundApplyUpdateRequest request) {
-        return tx.execute(s -> doUpdate(userId, refundNo, request));
+        RefundOrder refundOrder = tx.execute(s -> doUpdate(userId, refundNo, request));
+        return detail(refundOrder);
     }
 
     @Override
@@ -150,9 +165,24 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         RefundInfo[] channelHolder = new RefundInfo[1];
         // 与 create 一致：未发货取消会自动受理并发起渠道退款，渠道调用必须留在锁内。
         return lockTemplate.execute("refund:create:" + orderNo, 5000L, () -> {
-            RefundApplyVO vo = tx.execute(s -> doCancelPaidOrder(userId, orderNo, channelHolder));
+            OrderInfo order = orderQueryApi.findByOrderNo(orderNo);
+            if (order == null || !Objects.equals(order.getUserId(), userId)) {
+                throw new BizException("订单不存在或无权访问");
+            }
+            requirePaidActive(order);
+            if (!FulfillmentStatus.WAIT_SHIP.getType().equals(order.getFulfillmentStatus())) {
+                throw new BizException("订单已发货，无法取消，请在确认收货后申请退货退款或仅退款");
+            }
+            RefundApplyRequest request = new RefundApplyRequest();
+            request.setOrderNo(orderNo);
+            request.setReason("未发货取消订单");
+            request.setItems(buildFullRefundItems(orderNo));
+            PaymentOrder paymentOrder = requireSuccessPaymentOrder(orderNo);
+            RefundOrder refundOrder = tx.execute(s -> doCreate(userId, request,
+                RefundType.CANCEL_BEFORE_SHIP.getType(), channelHolder, order, paymentOrder));
+            RefundApplyVO vo = detail(refundOrder);
             if (channelHolder[0] != null) {
-                executeChannelRefund(orderNo(channelHolder[0].getOrderNo()), channelHolder[0]);
+                executeChannelRefund(order, channelHolder[0]);
             }
             return vo;
         });
@@ -169,27 +199,62 @@ public class RefundOrderServiceImpl implements RefundOrderService {
 
     @Override
     public void accept(String refundNo, String remark, String goodsDisposition) {
-        executeWithLockAndChannelRefund("refund:order:" + refundNo,
-            () -> prepareAccept(refundNo, remark, goodsDisposition));
+        lockTemplate.execute("refund:order:" + refundNo, 5000L, () -> {
+            RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
+            ensureApplying(refundOrder);
+            boolean returnAndRefund = RefundType.RETURN_AND_REFUND.getType().equals(refundOrder.getRefundType());
+            OrderInfo order = returnAndRefund ? null : orderNo(refundOrder.getOrderNo());
+            PaymentOrder paymentOrder = returnAndRefund || StringUtils.hasText(refundOrder.getPaymentNo())
+                ? null : requireSuccessPaymentOrder(refundOrder.getOrderNo());
+            RefundInfo channelRefund = tx.execute(s ->
+                prepareAccept(refundOrder, order, paymentOrder, remark, goodsDisposition));
+            if (channelRefund != null) {
+                executeChannelRefund(order, channelRefund);
+            }
+        });
     }
 
     @Override
     public void confirmReturn(String refundNo, String remark) {
-        executeWithLockAndChannelRefund("refund:order:" + refundNo, () -> prepareConfirmReturn(refundNo, remark));
+        lockTemplate.execute("refund:order:" + refundNo, 5000L, () -> {
+            RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
+            if (refundOrder == null) {
+                throw new BizException("退款单不存在");
+            }
+            if (!RefundOrderStatus.APPROVED.getType().equals(refundOrder.getStatus())) {
+                throw new BizException("仅已受理状态允许确认退货签收，当前=" + refundOrder.getStatus());
+            }
+            if (!RefundPolicy.restockOnConfirmReturn(refundOrder.getRefundType())) {
+                throw new BizException("仅退货退款类型需要确认签收");
+            }
+            OrderInfo order = orderNo(refundOrder.getOrderNo());
+            PaymentOrder paymentOrder = StringUtils.hasText(refundOrder.getPaymentNo())
+                ? null : requireSuccessPaymentOrder(refundOrder.getOrderNo());
+            RefundInfo channelRefund = tx.execute(s ->
+                prepareConfirmReturn(refundOrder, order, paymentOrder, remark));
+            if (channelRefund != null) {
+                executeChannelRefund(order, channelRefund);
+            }
+        });
     }
 
     @Override
     public void retry(String refundNo) {
-        executeWithLockAndChannelRefund("refund:order:" + refundNo, () -> prepareRetry(refundNo));
-    }
-
-    private void executeWithLockAndChannelRefund(String lockKey, java.util.function.Supplier<RefundInfo> prepare) {
-        lockTemplate.execute(lockKey, 5000L, () -> {
-            RefundInfo channelRefund = tx.execute(s -> prepare.get());
-            if (channelRefund != null) {
-                executeChannelRefund(orderNo(channelRefund.getOrderNo()), channelRefund);
+        lockTemplate.execute("refund:order:" + refundNo, 5000L, () -> {
+            RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
+            if (refundOrder == null) {
+                throw new BizException("退款单不存在");
             }
-            return null;
+            if (!RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus())) {
+                throw new BizException("仅退款失败状态允许重试，当前=" + refundOrder.getStatus());
+            }
+            OrderInfo order = orderNo(refundOrder.getOrderNo());
+            PaymentOrder paymentOrder = StringUtils.hasText(refundOrder.getPaymentNo())
+                ? null : requireSuccessPaymentOrder(refundOrder.getOrderNo());
+            RefundInfo channelRefund = tx.execute(s -> prepareRetry(refundOrder, order, paymentOrder));
+            if (channelRefund != null) {
+                executeChannelRefund(order, channelRefund);
+            }
         });
     }
 
@@ -198,7 +263,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
     @Override
     @DistributedLock(key = "'refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public RefundApplyVO createPriceAdjustment(String orderNo, Integer amount, String reason) {
-        return tx.execute(s -> doCreatePriceAdjustment(orderNo, amount, reason));
+        OrderInfo order = orderNo(orderNo);
+        RefundOrder refundOrder = tx.execute(s -> doCreatePriceAdjustment(order, amount, reason));
+        return detail(refundOrder);
     }
 
     // ==================== 查询 ====================
@@ -245,9 +312,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return details(refundOrderRepository.listByOrderNoCreateTimeDesc(orderNo));
     }
 
-    private RefundApplyVO doCreate(Long userId, RefundApplyRequest request, String forcedType, RefundInfo[] channelHolder) {
-        OrderInfo order = orderQueryApi.findByOrderNo(request.getOrderNo());
-        if (order == null || !Objects.equals(order.getUserId(), userId)) {
+    private RefundOrder doCreate(Long userId, RefundApplyRequest request, String forcedType,
+                                 RefundInfo[] channelHolder, OrderInfo order, PaymentOrder paymentOrder) {
+        if (!Objects.equals(order.getUserId(), userId)) {
             throw new BizException("订单不存在或无权访问");
         }
         requirePaidActive(order);
@@ -292,7 +359,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
                 refundOrder.setAcceptedTime(new Date());
                 refundOrderRepository.update(refundOrder);
                 // 先冻结渠道资金，成功后再回补库存：冻结不足会直接抛出，避免库存已回补而退款被拒导致库存虚增。
-                RefundInfo refundInfo = initiateChannelRefund(refundOrder);
+                RefundInfo refundInfo = initiateChannelRefund(refundOrder, order, paymentOrder);
                 restockWithGuard(refundNo, false);
                 if (channelHolder != null) channelHolder[0] = refundInfo;
             }
@@ -302,7 +369,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             throw e;
         }
 
-        return detail(refundOrder);
+        return refundOrder;
     }
 
     private void releaseFrozenQuota(List<RefundItem> frozenItems, String orderNo, Integer orderAmount) {
@@ -319,7 +386,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
     }
 
-    private RefundApplyVO doUpdate(Long userId, String refundNo, RefundApplyUpdateRequest request) {
+    private RefundOrder doUpdate(Long userId, String refundNo, RefundApplyUpdateRequest request) {
         RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
         validateOwner(refundOrder, userId);
         ensureApplying(refundOrder);
@@ -341,23 +408,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             releaseFrozenQuota(frozenItems, orderFrozen ? refundOrder.getOrderNo() : null, refundOrder.getRefundAmount());
             throw e;
         }
-        return detail(refundOrder);
-    }
-
-    private RefundApplyVO doCancelPaidOrder(Long userId, String orderNo, RefundInfo[] channelHolder) {
-        OrderInfo order = orderQueryApi.findByOrderNo(orderNo);
-        if (order == null || !Objects.equals(order.getUserId(), userId)) {
-            throw new BizException("订单不存在或无权访问");
-        }
-        requirePaidActive(order);
-        if (!FulfillmentStatus.WAIT_SHIP.getType().equals(order.getFulfillmentStatus())) {
-            throw new BizException("订单已发货，无法取消，请在确认收货后申请退货退款或仅退款");
-        }
-        RefundApplyRequest request = new RefundApplyRequest();
-        request.setOrderNo(orderNo);
-        request.setReason("未发货取消订单");
-        request.setItems(buildFullRefundItems(orderNo));
-        return doCreate(userId, request, RefundType.CANCEL_BEFORE_SHIP.getType(), channelHolder);
+        return refundOrder;
     }
 
     /**
@@ -381,11 +432,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return items;
     }
 
-    private RefundApplyVO doCreatePriceAdjustment(String orderNo, Integer amount, String reason) {
-        OrderInfo order = orderQueryApi.findByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException("订单不存在");
-        }
+    private RefundOrder doCreatePriceAdjustment(OrderInfo order, Integer amount, String reason) {
         requirePaidActive(order);
         if (amount == null || amount <= 0) {
             throw new BizException("差价退款金额必须大于0");
@@ -408,7 +455,7 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (orderRefundQuotaApi.freezeOrderRefund(order.getOrderNo(), amount) == 0) {
             throw new BizException("可退额度不足：订单剩余可退金额不够本次申请");
         }
-        return detail(refundOrder);
+        return refundOrder;
     }
 
     // ==================== 内部：撤回/拒绝（释放冻结） ====================
@@ -491,12 +538,13 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
     }
 
-    private RefundInfo prepareAccept(String refundNo, String remark, String goodsDisposition) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
+    private RefundInfo prepareAccept(RefundOrder refundOrder, OrderInfo order, PaymentOrder paymentOrder,
+                                     String remark, String goodsDisposition) {
         ensureApplying(refundOrder);
 
         String type = refundOrder.getRefundType();
-        String resolvedDisposition = resolveGoodsDispositionForAccept(refundOrder, goodsDisposition);
+        String refundNo = refundOrder.getRefundNo();
+        String resolvedDisposition = resolveGoodsDispositionForAccept(refundOrder, order, goodsDisposition);
 
         refundOrder.setStatus(RefundOrderStatus.APPROVED.getType());
         refundOrder.setLegacyApplyStatus(LEGACY_ACCEPTED);
@@ -510,20 +558,16 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             return null;
         }
         // 先冻结渠道资金，成功后再回补/核销库存：冻结不足会直接抛出，避免库存已回补/核销而退款被拒导致库存虚增。
-        RefundInfo refundInfo = initiateChannelRefund(refundOrder);
+        RefundInfo refundInfo = initiateChannelRefund(refundOrder, order, paymentOrder);
         if (RefundType.CANCEL_BEFORE_SHIP.getType().equals(type)) {
             restockWithGuard(refundNo, false);
         } else if (RefundType.REFUND_ONLY.getType().equals(type)) {
-            handleRefundOnly(refundNo, refundOrder);
+            handleRefundOnly(refundNo, refundOrder, order);
         }
         return refundInfo;
     }
 
-    private void handleRefundOnly(String refundNo, RefundOrder refundOrder) {
-        OrderInfo order = orderQueryApi.findByOrderNo(refundOrder.getOrderNo());
-        if (order == null) {
-            throw new BizException("订单不存在，无法处理退款库存去向");
-        }
+    private void handleRefundOnly(String refundNo, RefundOrder refundOrder, OrderInfo order) {
         boolean received = FulfillmentStatus.RECEIVED.getType().equals(order.getFulfillmentStatus());
         boolean shipped = FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus());
         if (shipped) {
@@ -539,11 +583,8 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         }
     }
 
-    private RefundInfo prepareConfirmReturn(String refundNo, String remark) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
-        if (refundOrder == null) {
-            throw new BizException("退款单不存在");
-        }
+    private RefundInfo prepareConfirmReturn(RefundOrder refundOrder, OrderInfo order,
+                                            PaymentOrder paymentOrder, String remark) {
         if (!RefundOrderStatus.APPROVED.getType().equals(refundOrder.getStatus())) {
             throw new BizException("仅已受理状态允许确认退货签收，当前=" + refundOrder.getStatus());
         }
@@ -555,20 +596,16 @@ public class RefundOrderServiceImpl implements RefundOrderService {
             refundOrder.setAdminRemark(remark.trim());
         }
         // 先冻结渠道资金，成功后再按签收回补库存：冻结不足会直接抛出，避免库存已回补而退款被拒导致库存虚增。
-        RefundInfo refundInfo = initiateChannelRefund(refundOrder);
-        restockWithGuard(refundNo, true);
+        RefundInfo refundInfo = initiateChannelRefund(refundOrder, order, paymentOrder);
+        restockWithGuard(refundOrder.getRefundNo(), true);
         return refundInfo;
     }
 
-    private RefundInfo prepareRetry(String refundNo) {
-        RefundOrder refundOrder = refundOrderRepository.findByRefundNo(refundNo);
-        if (refundOrder == null) {
-            throw new BizException("退款单不存在");
-        }
+    private RefundInfo prepareRetry(RefundOrder refundOrder, OrderInfo order, PaymentOrder paymentOrder) {
         if (!RefundOrderStatus.FAILED.getType().equals(refundOrder.getStatus())) {
             throw new BizException("仅退款失败状态允许重试，当前=" + refundOrder.getStatus());
         }
-        return initiateChannelRefund(refundOrder);
+        return initiateChannelRefund(refundOrder, order, paymentOrder);
     }
 
     @Override
@@ -616,13 +653,20 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         return V1_TO_V2_STATUS.get(v1Status);
     }
 
+    private PaymentOrder requireSuccessPaymentOrder(String orderNo) {
+        PaymentOrder paymentOrder = paymentOrderQueryApi.findSuccessPaymentOrderForRefund(orderNo);
+        if (paymentOrder == null) {
+            throw new BizException("未找到成功支付单，无法发起渠道退款");
+        }
+        return paymentOrder;
+    }
+
     /**
      * 发起渠道退款前置（事务内）：冻结 PaymentOrder 渠道资金 + RefundOrder→REFUNDING + 建渠道侧 RefundInfo。
-     * paymentNo 已存在（重试场景）则不重复冻结。
+     * 订单与待冻结支付单由调用方在事务前预读；paymentNo 已存在（重试场景）则不重复冻结。
      */
-    private RefundInfo initiateChannelRefund(RefundOrder refundOrder) {
+    private RefundInfo initiateChannelRefund(RefundOrder refundOrder, OrderInfo order, PaymentOrder paymentOrder) {
         if (refundOrder.getPaymentNo() == null || refundOrder.getPaymentNo().trim().isEmpty()) {
-            PaymentOrder paymentOrder = paymentOrderQueryApi.findSuccessPaymentOrderForRefund(refundOrder.getOrderNo());
             if (paymentOrder == null) {
                 throw new BizException("未找到成功支付单，无法发起渠道退款");
             }
@@ -638,7 +682,6 @@ public class RefundOrderServiceImpl implements RefundOrderService {
         if (existing != null) {
             return existing;
         }
-        OrderInfo order = orderQueryApi.findByOrderNo(refundOrder.getOrderNo());
         RefundInfo refund = new RefundInfo();
         refund.setOrderNo(refundOrder.getOrderNo());
         refund.setRefundNo(refundOrder.getRefundNo());
@@ -771,13 +814,9 @@ public class RefundOrderServiceImpl implements RefundOrderService {
      * SHIPPED + REFUND_ONLY 必须人工选择 LOST/RECOVERED；RECEIVED + REFUND_ONLY 固定为 LOST；
      * 其他退款类型不使用该字段。
      */
-    private String resolveGoodsDispositionForAccept(RefundOrder refundOrder, String requested) {
+    private String resolveGoodsDispositionForAccept(RefundOrder refundOrder, OrderInfo order, String requested) {
         if (!RefundType.REFUND_ONLY.getType().equals(refundOrder.getRefundType())) {
             return null;
-        }
-        OrderInfo order = orderQueryApi.findByOrderNo(refundOrder.getOrderNo());
-        if (order == null) {
-            throw new BizException("订单不存在，无法确认商品去向");
         }
         if (FulfillmentStatus.SHIPPED.getType().equals(order.getFulfillmentStatus())) {
             if (!StringUtils.hasText(requested)) {

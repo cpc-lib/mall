@@ -463,6 +463,8 @@
 | `mall-refund-service` | `RefundOrderServiceImpl` (`doCreate:244-301`, `doUpdate:317-340`, `prepareAccept:489-513`, `doSettle:677-713`) | `tx.execute` 内多次调用 `orderQueryApi`、`paymentOrderQueryApi` 以及返回前的 `detail(refundOrder)`（再次 Feign 查订单） | 事务前预先读取 `OrderInfo` 与 `PaymentOrder`；将只读组装 `detail(refundOrder)` 移出 `tx.execute` 事务块外 |
 | `mall-bill-service` | `BillReconcileServiceImpl.reconcileInTransaction` (`254-303`) | 单个大事务内发起 **6 次 Feign 调用**拉取全天支付账本与退款账本 | 在开启 `transactionTemplate` 前先通过 Feign 拉取平台支付/退款账本并完成内存双向比对，算出差异列表后，仅在短事务内批量落库差异单与更新批次状态 |
 
+**处理进展（2026-11-23）**：已完成上述事务边界调整。下单在事务前批量加载商品并保留事务内幂等复查；支付回调以兼容默认方法新增 `OrderInfo` 入参重载，支付单 CAS、成交事实、支付信息与 Outbox 仍保持同事务；退款预读订单/支付单并外移响应组装与渠道调用，渠道调用仍持原分布式锁，库存与防超退顺序不变；对账仅在短事务中保存差异和更新批次；库存文件上传移出事务，MinIO bucket 改为启动时初始化。未改变 REST 路由、DB schema 或 MQ 拓扑，P1-5 Saga 顺序仍保持暂缓。JDK 21 下 `mvn -o clean test` 已通过。
+
 ---
 
 ### P2-2：消除高频 N+1 数据库查询与 N+1 跨服务 Feign RPC

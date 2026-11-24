@@ -192,30 +192,26 @@ public class AliPayServiceImpl implements AliPayService {
         // 订单级支付锁：同一订单的支付通知/查单/关单/支付单推进共用一把锁，避免并发写同一笔 t_payment_order。
         String lockKey = "payment:order:" + orderNo;
 
-        distributedLockTemplate.execute(lockKey, 5000L, () ->
-            transactionTemplate.execute(status -> {
-                doProcessAliPayNotifyInTransaction(params, orderNo, notifyId);
-                return null;
-            })
-        );
+        distributedLockTemplate.execute(lockKey, 5000L, () -> {
+            OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+            if (order == null) {
+                throw new BizException("支付宝支付通知对应订单不存在，orderNo=" + orderNo);
+            }
+            validateAliPayOrderNotify(order, params);
+            transactionTemplate.executeWithoutResult(status ->
+                doProcessAliPayNotifyInTransaction(order, params, notifyId));
+        });
     }
 
-    private void doProcessAliPayNotifyInTransaction(Map<String, String> params, String orderNo, String notifyId) {
+    private void doProcessAliPayNotifyInTransaction(OrderInfo order, Map<String, String> params, String notifyId) {
+        String orderNo = order.getOrderNo();
         log.info("支付宝支付通知加锁处理开始，orderNo={}, notifyId={}", orderNo, notifyId);
-
-        // 支付宝异步通知同样可能重复投递，和主动查单、关单并发。
-        // 入口仅做存在性/报文校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
-        OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException("支付宝支付通知对应订单不存在，orderNo=" + orderNo);
-        }
-        validateAliPayOrderNotify(order, params);
 
         // V2：统一支付成功处理器（支付单状态机 + 订单 CAS + 预占提交 + 异常冲正）。
         String tradeNo = params.get("trade_no");
         Integer paidAmount = MoneyUtils.yuanToCents(params.get("total_amount"));
         boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-            orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
+            order, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
         if (firstSettled) {
             paymentInfoService.createPaymentInfoForAliPay(params);
             log.info("支付宝支付通知处理完成，orderNo={}, notifyId={}", orderNo, notifyId);
@@ -339,16 +335,19 @@ public class AliPayServiceImpl implements AliPayService {
             String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
             String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
             Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
-                transactionTemplate.execute(status -> {
+            distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
+                OrderInfo order = orderInfoService.getOrderByOrderNo(orderNo);
+                if (order == null) {
+                    throw new BizException("支付宝查单同步对应订单不存在，orderNo=" + orderNo);
+                }
+                transactionTemplate.executeWithoutResult(status -> {
                     boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-                        orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
+                        order, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
                     if (firstSettled) {
                         paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
                     }
-                    return null;
-                })
-            );
+                });
+            });
         }
     }
 
@@ -389,16 +388,19 @@ public class AliPayServiceImpl implements AliPayService {
                     String tradeNo = (String) alipayTradeQueryResponse.get("trade_no");
                     String totalAmount = (String) alipayTradeQueryResponse.get("total_amount");
                     Integer paidAmount = totalAmount == null ? null : MoneyUtils.yuanToCents(totalAmount);
-                    distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () ->
-                        transactionTemplate.execute(status -> {
+                    distributedLockTemplate.execute("payment:order:" + orderNo, 5000L, () -> {
+                        OrderInfo currentOrder = orderInfoService.getOrderByOrderNo(orderNo);
+                        if (currentOrder == null) {
+                            throw new BizException("支付宝查单同步对应订单不存在，orderNo=" + orderNo);
+                        }
+                        transactionTemplate.executeWithoutResult(status -> {
                             boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-                                orderNo, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
+                                currentOrder, PaymentConfigGateway.CHANNEL_ALIPAY, tradeNo, paidAmount);
                             if (firstSettled) {
                                 paymentInfoService.createPaymentInfoForAliPay(alipayTradeQueryResponse);
                             }
-                            return null;
-                        })
-                    );
+                        });
+                    });
                 } else if (AliPayTradeState.FINISHED.getType().equals(tradeStatus)) {
                     tradeStatusDesc = "交易结束，不可退款";
                 } else if (AliPayTradeState.CLOSED.getType().equals(tradeStatus)) {

@@ -1,5 +1,7 @@
 package cc.ivera.payment.application;
 
+import cc.ivera.order.domain.model.OrderInfo;
+
 /**
  * 统一支付成功处理器（V2）。
  * 微信 V2/V3 notify、支付宝 notify、主动查单同步共用：
@@ -21,6 +23,14 @@ public interface PaymentSuccessService {
      * false=幂等命中/重复支付冲正/晚到支付冲正/并发 CAS 失败
      */
     boolean handlePaymentSuccess(String orderNo, String channel, String channelOrderNo, Integer paidAmount);
+
+    /**
+     * 使用调用方在事务前预读的订单快照处理支付成功，避免在本地事务内重复发起订单查询。
+     * 默认委托原接口，兼容跨进程适配器；支付服务本地实现直接复用订单快照。
+     */
+    default boolean handlePaymentSuccess(OrderInfo order, String channel, String channelOrderNo, Integer paidAmount) {
+        return handlePaymentSuccess(order.getOrderNo(), channel, channelOrderNo, paidAmount);
+    }
 
     /**
      * 管理员标记付款（线下/手工收款，演示与线下收款场景）：以 OFFLINE 渠道补记一笔 SUCCESS 支付单，

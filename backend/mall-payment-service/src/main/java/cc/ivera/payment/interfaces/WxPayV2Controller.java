@@ -157,12 +157,17 @@ public class WxPayV2Controller {
                 String lockKey = "payment:order:" + orderNo;
 
                 // 使用 Redisson 分布式锁（leaseTime=-1 开启看门狗自动续期）
-                distributedLockTemplate.execute(lockKey, 5000L, () ->
-                    transactionTemplate.execute(status -> {
-                        doProcessWxPayV2NotifyInTransaction(orderNo, transactionId, notifyTotalFee, notifyMap, body);
-                        return null;
-                    })
-                );
+                distributedLockTemplate.execute(lockKey, 5000L, () -> {
+                    OrderInfo order = orderPaymentApi.getOrderByOrderNo(orderNo);
+                    if (order == null) {
+                        throw new BizException("微信支付v2通知订单不存在，orderNo=" + orderNo);
+                    }
+                    if (notifyTotalFee == null || !notifyTotalFee.equals(order.getTotalFee().longValue())) {
+                        throw new BizException("微信支付v2通知金额与本地订单金额不一致，orderNo=" + orderNo);
+                    }
+                    transactionTemplate.executeWithoutResult(status ->
+                        doProcessWxPayV2NotifyInTransaction(order, transactionId, notifyTotalFee, notifyMap, body));
+                });
 
                 markNotifyProcessed(transactionId);
                 log.info("微信支付v2通知处理成功，已应答");
@@ -225,27 +230,18 @@ public class WxPayV2Controller {
         stringRedisTemplate.opsForValue().set(key, "processed", NOTIFY_IDEMPOTENT_EXPIRE_HOURS, TimeUnit.HOURS);
     }
 
-    private void doProcessWxPayV2NotifyInTransaction(String orderNo,
+    private void doProcessWxPayV2NotifyInTransaction(OrderInfo order,
                                                      String transactionId,
                                                      Long notifyTotalFee,
                                                      Map<String, String> notifyMap,
                                                      String body) {
+        String orderNo = order.getOrderNo();
         log.info("微信支付v2通知加锁处理开始，orderNo={}, transactionId={}", orderNo, transactionId);
-
-        // 支付成功通知可能重复投递，也可能和延迟关单、主动查单并发。
-        // 此处仅做存在性/金额校验，普通读即可；权威行锁在 PaymentSuccessService 事务内统一加。
-        OrderInfo order = orderPaymentApi.getOrderByOrderNo(orderNo);
-        if (order == null) {
-            throw new BizException("微信支付v2通知订单不存在，orderNo=" + orderNo);
-        }
-        if (notifyTotalFee == null || !notifyTotalFee.equals(order.getTotalFee().longValue())) {
-            throw new BizException("微信支付v2通知金额与本地订单金额不一致，orderNo=" + orderNo);
-        }
 
         // V2：统一支付成功处理器（支付单状态机 + 订单 CAS + 预占提交 + 异常冲正）。
         // 只有订单首次成交推进成功才写支付流水。
         boolean firstSettled = paymentSuccessService.handlePaymentSuccess(
-            orderNo, PayType.WXPAY.getType(), transactionId, notifyTotalFee == null ? null : notifyTotalFee.intValue());
+            order, PayType.WXPAY.getType(), transactionId, notifyTotalFee == null ? null : notifyTotalFee.intValue());
         if (firstSettled) {
             paymentInfoService.createPaymentInfoForWxPayV2(notifyMap, body);
             log.info("微信支付v2通知处理完成，orderNo={}, transactionId={}", orderNo, transactionId);

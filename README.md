@@ -1491,6 +1491,8 @@ flowchart TD
 
 这一点对理解代码很重要。
 
+高频链路避免在本地数据库事务中等待可预读的远程数据或慢 I/O：`CheckoutTxService.prepare` 在事务前加载购物车、支付配置、商品快照与收货地址，短事务内只写订单、明细和延迟关单 Outbox；支付成功回调复用事务前加载的 `OrderInfo`，支付单 CAS、成交事实、支付信息与 Outbox 仍在同一本地事务中；退款单创建/修改在事务前预读订单与支付单，响应 `detail` 组装在事务外执行，受理、退货签收与重试的渠道退款也在本地事务外发起，但仍处于原退款分布式锁内，冻结可退额度、`restocked_qty` 守卫及库存结转顺序不变。账单对账先在事务外拉取平台账本并完成双向比对，再用短事务保存差异和更新批次。库存 Excel 导入的文件上传不占用数据库事务，创建失败时删除已插入记录，MinIO bucket 在启动时初始化一次。
+
 #### 15.7.1 下单
 
 `CheckoutServiceImpl` 只做幂等编排：校验 `Idempotency-Key` → Redis 锁 + `t_order_request` 状态机 → 调用 `CheckoutSagaService`。
