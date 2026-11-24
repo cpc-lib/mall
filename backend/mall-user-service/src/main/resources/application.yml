@@ -22,12 +22,6 @@ spring:
         file-extension: yaml
         import-check:
           enabled: false
-    openfeign:
-      client:
-        config:
-          default:
-            connect-timeout: 3000
-            read-timeout: 10000
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8

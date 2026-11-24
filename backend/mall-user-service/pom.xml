@@ -21,7 +21,7 @@
       <groupId>cc.ivera</groupId>
       <artifactId>mall-infra</artifactId>
       <exclusions>
-        <!-- 仅使用 mall-infra 的 Feign 公共配置；用户服务不引入 AMQP、Redisson 与 MyBatis-Plus 传递依赖 -->
+        <!-- 仅使用 mall-infra 的 logback 日志配置与共享基础设施；用户服务不引入 AMQP、Redisson 与 MyBatis-Plus 传递依赖 -->
         <exclusion>
           <groupId>org.springframework.boot</groupId>
           <artifactId>spring-boot-starter-amqp</artifactId>
@@ -43,14 +43,6 @@
     <dependency>
       <groupId>com.alibaba.cloud</groupId>
       <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.cloud</groupId>
-      <artifactId>spring-cloud-starter-openfeign</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.springframework.cloud</groupId>
-      <artifactId>spring-cloud-starter-loadbalancer</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.boot</groupId>

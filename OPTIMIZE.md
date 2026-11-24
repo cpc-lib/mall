@@ -716,6 +716,8 @@
    - **定位**：`backend/mall-product-service/src/main/resources/`、`README.md:616, 2387`
    - **问题**：`README.md` 与 `mall-infra/.../logback-spring.xml` 注释均声称 `mall-product-service` 保留了一份同名 `logback-spring.xml`，但实际上 `mall-product-service/src/main/resources/` 下只有 `application.yml` 和 `mapper/`，**根本没有 `logback-spring.xml`**！导致 `mall-product-service` 的日志完全无法通过 Logstash 采集到 Elasticsearch/Kibana。
 
+**处理进展（2026-11-24）**：已完成 1–3 项。`mall-gateway/pom.xml` 改为继承根 `mall-backend` 父 POM，删除重复的版本属性、`dependencyManagement` 与 `maven-compiler-plugin`；`mall-payment-service/pom.xml` 移除 `poi-ooxml` 与 `commons-compress`；`mall-user-service/pom.xml` 移除 `spring-cloud-starter-openfeign`、`spring-cloud-starter-loadbalancer`，`UserServiceApplication` 删除 `@EnableFeignClients`，`application.yml` 删除未使用的 `spring.cloud.openfeign` 配置块，`mall-infra` 排除项注释改为说明仅用于共享日志与基础设施。第 4 项经核查 `mall-product-service/src/main/resources/logback-spring.xml` 已存在且与 `mall-infra` 内容一致，无需改动。全量 `mvn clean test` 通过，无 API/配置键/DB 变更。
+
 ---
 
 ### P3-6：跨服务配置一致性、连接池调优与网关韧性治理

@@ -2,21 +2,15 @@
 <project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
-  <groupId>cc.ivera</groupId>
+  <parent>
+    <groupId>cc.ivera</groupId>
+    <artifactId>mall-backend</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+  </parent>
+
   <artifactId>mall-gateway</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
   <name>mall-gateway</name>
   <description>商城网关：统一入口、CORS 与路由分发</description>
-
-  <properties>
-    <java.version>21</java.version>
-    <maven.compiler.release>21</maven.compiler.release>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <spring-boot.version>3.5.16</spring-boot.version>
-    <spring-cloud.version>2025.0.0</spring-cloud.version>
-    <spring-cloud-alibaba.version>2025.0.0.0</spring-cloud-alibaba.version>
-    <logstash-logback-encoder.version>8.0</logstash-logback-encoder.version>
-  </properties>
 
   <dependencies>
     <!--响应式网关：与核心应用的 Servlet 栈隔离，单独进程部署-->
@@ -66,43 +60,8 @@
     </dependency>
   </dependencies>
 
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-dependencies</artifactId>
-        <version>${spring-boot.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-      <dependency>
-        <groupId>org.springframework.cloud</groupId>
-        <artifactId>spring-cloud-dependencies</artifactId>
-        <version>${spring-cloud.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-      <dependency>
-        <groupId>com.alibaba.cloud</groupId>
-        <artifactId>spring-cloud-alibaba-dependencies</artifactId>
-        <version>${spring-cloud-alibaba.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
-
   <build>
     <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.14.0</version>
-        <configuration>
-          <release>${maven.compiler.release}</release>
-          <encoding>UTF-8</encoding>
-        </configuration>
-      </plugin>
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>

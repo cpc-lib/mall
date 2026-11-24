@@ -1493,6 +1493,7 @@ flowchart TD
 - 网关路由统一为 `lb://mall-xxx-service`，可用 `MALL_*_URI` 覆盖；`NACOS_ENABLED=false` 时注册与配置导入同时关闭，此时必须提供 Feign base-url 与网关直连 URI。
 - 微信 / 支付宝渠道客户端仍使用各自 SDK 或独立 HTTP 客户端，不经过 Feign。微信通知验签支撑类（`WxPayNotifyHandler`、`WechatPay2ValidatorForRequest`、`WxPayPrivateKeyUtil`）位于 `mall-infra`，微信 SDK 在 `mall-infra` 中声明为 optional，只有 `mall-payment-service`、`mall-refund-service` 显式引入；缺少 SDK 的进程通过 `@ConditionalOnClass` 跳过该组件。
 - `mall-api-order` / `mall-api-payment` / `mall-api-refund` 只保留契约、DTO/VO 与领域模型，不引入 AMQP、Redis 或微信 SDK；`mall-common` 的 MyBatis-Plus 依赖标记为 optional，不再向契约模块传递持久层依赖。`PayStatus` 作为订单/支付共用的共享内核枚举位于 `mall-common` 的 `cc.ivera.shared.domain.enums`。
+- 模块依赖治理：`mall-gateway` 继承根 `mall-backend` 父 POM，不再重复声明版本与编译插件；`mall-payment-service` 不再声明 Apache POI（账单解析只在 `mall-bill-service`）；`mall-user-service` 不声明 OpenFeign / LoadBalancer，启动类也不再 `@EnableFeignClients`，只有实际发起内部调用的进程启用 Feign。
 
 ### 15.7 事务边界说明
 
