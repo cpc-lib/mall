@@ -684,6 +684,8 @@
   - 从 `mall-core` 中删除上述 11 个未使用类及 `RedissonConfig.java`，并从 `mall-core/pom.xml` 中移除 `mall-api-order`、`mall-api-payment`、`mall-api-refund` 依赖；
   - 顺带修正 `CartServiceRemoteAdapter.java:16, 60, 71` 中复制粘贴遗留的错误提示（将 `"用户服务响应为空"` / `"用户服务调用失败"` 修正为 `"购物车服务响应为空"` / `"购物车服务调用失败"`）以及 `OpenApiConfig.java:13` 的旧标题 `"微信支付案例接口文档"`。
 
+**处理进展（2026-11-24）**：已完成。删除 `mall-core` 中 9 个支付远程适配器/客户端、`OversoldException`、`Money` 与 `RedissonConfig`（共 12 个文件），并从 `mall-core/pom.xml` 移除 `mall-api-order`、`mall-api-payment`、`mall-api-refund` 依赖；`RedissonClient` 改由 `redisson-spring-boot-starter` 自动配置。同步修正购物车适配器错误文案与 OpenAPI 标题。全量 `mvn clean test` 通过。
+
 ---
 
 ### P3-4：DDD 分层依赖违规修复（`application` 层直接依赖 `infrastructure` 实现）

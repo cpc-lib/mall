@@ -27,18 +27,6 @@
     </dependency>
     <dependency>
       <groupId>cc.ivera</groupId>
-      <artifactId>mall-api-order</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>cc.ivera</groupId>
-      <artifactId>mall-api-payment</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>cc.ivera</groupId>
-      <artifactId>mall-api-refund</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>cc.ivera</groupId>
       <artifactId>mall-infra</artifactId>
     </dependency>
     <dependency>

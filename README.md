@@ -603,7 +603,7 @@ ON t_bill_record(import_id, channel_serial_no);
 主要配置文件：
 
 ```text
-backend/mall-core/src/main/resources/application-core.yml         # 两个 BFF 的共享配置与用户/商品/支付/退款远程客户端配置
+backend/mall-core/src/main/resources/application-core.yml         # 两个 BFF 的共享配置与用户/商品/购物车远程客户端配置
 backend/mall-user-service/src/main/resources/application.yml      # 端口 8083、用户服务自有 DM8/Redis/JWT 配置
 backend/mall-product-service/src/main/resources/application.yml   # 端口 8084、商品服务自有 DM8 与库存导入存储配置
 backend/mall-order-service/src/main/resources/application.yml     # 端口 8085、订单服务自有 DM8/Redis/RabbitMQ、用户/商品/支付远程地址、Seata Saga 客户端与下单幂等参数
@@ -1469,8 +1469,8 @@ flowchart TD
 
 #### 15.6.6 支付服务远程边界（P4b）
 
-支付实现（支付单、成交事实、微信/支付宝渠道、渠道与应用配置）独立在 `mall-payment-service`，BFF 通过
-`mall-core` 的 `cc.ivera.payment.infrastructure.remote.*RemoteAdapter`，账单服务通过自有
+支付实现（支付单、成交事实、微信/支付宝渠道、渠道与应用配置）独立在 `mall-payment-service`，两个 BFF 不再经
+`mall-core` 持有支付远程适配器（支付与退款路由经网关直连领域服务），账单服务通过自有
 `cc.ivera.bill.infrastructure.remote.PaymentLedgerRemoteAdapter`，订单服务通过自有
 `cc.ivera.order.infrastructure.remote.Payment*RemoteAdapter`，退款服务通过自有
 `PaymentOrderRemoteAdapter` / `PaymentChannelRefundRemoteAdapter`，统一调用 `/internal/payment/**`；支付服务反向通过
@@ -1595,6 +1595,8 @@ fence 围栏 CAS、`biz_no` 幂等与数据库唯一键兜底。
 保证事务在锁持有期间开始并提交。注解方式与编程式入口共享 watchdog 与围栏令牌语义。
 启动期由 `DistributedLockAnnotationValidator` 校验每个注解方法确实会被代理，出现「当前进程无 `DistributedLockTemplate`、
 方法为 static/private/final、所在 Bean 未被 AOP 代理」任一情况直接启动失败，避免注解在、锁不在。
+`RedissonClient` 统一由 `redisson-spring-boot-starter` 自动配置（读取 `spring.data.redis.*`，自动处理空密码与超时）；
+`mall-core` 不再自定义 `RedissonConfig`，避免覆盖 starter 的连接与超时语义。
 
 锁上下文由 `cc.ivera.shared.domain.lock.LockContext` 的线程栈承载：记录 `lockKey`、围栏令牌、加锁时刻与状态，
 `FenceTokenHolder` 退化为门面（`get()` 语义不变）。嵌套加锁时取栈顶令牌——围栏令牌由 Redis 全局自增生成，

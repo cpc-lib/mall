@@ -10,6 +10,6 @@ public class OpenApiConfig {
 
     @Bean
     public OpenAPI mallOpenAPI() {
-        return new OpenAPI().info(new Info().title("微信支付案例接口文档"));
+        return new OpenAPI().info(new Info().title("电商商城平台接口文档"));
     }
 }
