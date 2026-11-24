@@ -29,7 +29,7 @@ public interface RefundInfoRepository {
     List<RefundInfo> listByOrderNoCreateTimeDesc(String orderNo);
 
     /**
-     * 全量渠道退款流水按创建时间倒序。
+     * 渠道退款流水按创建时间倒序，最多返回 200 条（不加载全表 CLOB 大字段）。
      */
     List<RefundInfo> listAllCreateTimeDesc();
 

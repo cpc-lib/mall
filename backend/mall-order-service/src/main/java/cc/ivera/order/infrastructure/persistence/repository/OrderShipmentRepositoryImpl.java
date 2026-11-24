@@ -54,7 +54,8 @@ public class OrderShipmentRepositoryImpl implements OrderShipmentRepository {
     public List<OrderShipment> listShippedBefore(Date cutoff) {
         return orderShipmentMapper.selectList(new LambdaQueryWrapper<OrderShipmentPO>()
                 .eq(OrderShipmentPO::getStatus, "SHIPPED")
-                .lt(OrderShipmentPO::getShippedTime, cutoff))
+                .lt(OrderShipmentPO::getShippedTime, cutoff)
+                .last("LIMIT 200"))
             .stream().map(OrderShipmentPOConverter::toDomain).collect(Collectors.toList());
     }
 
@@ -62,7 +63,8 @@ public class OrderShipmentRepositoryImpl implements OrderShipmentRepository {
     public List<OrderShipment> listInTransitBefore(Date cutoff) {
         return orderShipmentMapper.selectList(new LambdaQueryWrapper<OrderShipmentPO>()
                 .eq(OrderShipmentPO::getStatus, "IN_TRANSIT")
-                .lt(OrderShipmentPO::getInTransitTime, cutoff))
+                .lt(OrderShipmentPO::getInTransitTime, cutoff)
+                .last("LIMIT 200"))
             .stream().map(OrderShipmentPOConverter::toDomain).collect(Collectors.toList());
     }
 

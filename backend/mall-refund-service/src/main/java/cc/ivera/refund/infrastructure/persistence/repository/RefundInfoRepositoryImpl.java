@@ -56,7 +56,8 @@ public class RefundInfoRepositoryImpl implements RefundInfoRepository {
     @Override
     public List<RefundInfo> listAllCreateTimeDesc() {
         return refundInfoMapper.selectList(new LambdaQueryWrapper<RefundInfoPO>()
-                .orderByDesc(RefundInfoPO::getCreateTime))
+                .orderByDesc(RefundInfoPO::getCreateTime)
+                .last("LIMIT 200"))
             .stream().map(RefundInfoPOConverter::toDomain).collect(Collectors.toList());
     }
 

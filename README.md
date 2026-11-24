@@ -2256,7 +2256,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 |---|---|---|
 | `RefundApplyController` | `/api/refund-applies` | 用户退款申请（`page`/`size` 服务端分页）/ 管理端退款列表（分页） |
 | `RefundApplicationController` | 方法级兼容路由 | 兼容退款入口、`/api/wx-pay/refunds`、`/api/ali-pay/trade/refund` |
-| `RefundInfoController` | `/api/refund-info` | 退款查询（仅管理员可访问） |
+| `RefundInfoController` | `/api/refund-info` | 退款查询（仅管理员可访问，列表最多返回 200 条） |
 | `WxPayRefundNotifyController` | `/api/wx-pay/refunds/notify` | 微信退款结果通知 |
 | `PaymentRefundQueryController` | `/api/wx-pay/query-refund/**`、`/api/ali-pay/trade/fastpay/refund/**` | 退款查询 |
 | `AdminRefundOrderController` | `/api/admin/refund` | 管理端退款 |

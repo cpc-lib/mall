@@ -26,12 +26,12 @@ public interface OrderShipmentRepository {
     List<OrderShipment> listByOrderNos(List<String> orderNos);
 
     /**
-     * 已发货且发货时间早于 cutoff 的运单（SHIPPED → IN_TRANSIT 模拟推进候选）。
+     * 已发货且发货时间早于 cutoff 的运单（SHIPPED → IN_TRANSIT 模拟推进候选），单批最多 200 条。
      */
     List<OrderShipment> listShippedBefore(Date cutoff);
 
     /**
-     * 运输中且进入运输时间早于 cutoff 的运单（IN_TRANSIT → DELIVERED 模拟推进候选）。
+     * 运输中且进入运输时间早于 cutoff 的运单（IN_TRANSIT → DELIVERED 模拟推进候选），单批最多 200 条。
      */
     List<OrderShipment> listInTransitBefore(Date cutoff);
 

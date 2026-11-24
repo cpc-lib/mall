@@ -25,7 +25,7 @@ public interface InventoryTransactionRepository {
     List<InventoryTransaction> pageTransactions(Long productId, String bizType, String status, int limit, long offset);
 
     /**
-     * 商品最近 limit 条库存流水（按 create_time desc, id desc）。
+     * 商品最近 limit 条库存流水（按 create_time desc, id desc），limit 收敛到 1..200。
      */
     List<InventoryTransaction> recentByProduct(Long productId, int limit);
 }

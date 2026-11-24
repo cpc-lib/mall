@@ -541,6 +541,8 @@
   - 为 `listShippedBefore` 和 `listInTransitBefore` 增加 `LIMIT 200` 批处理上限；
   - 在 `recentByProduct` 中对 `limit` 做 `int safeLimit = Math.min(Math.max(limit, 1), 200)` 边界收敛。
 
+**处理进展（2026-11-24）**：三条均已落地。`RefundInfoRepositoryImpl.listAllCreateTimeDesc` 增加 `LIMIT 200`，并同步仓储端口注释；`OrderShipmentRepositoryImpl.listShippedBefore` / `listInTransitBefore` 增加 `LIMIT 200` 单批上限，物流模拟任务仍按 15 秒周期继续推进剩余运单；`InventoryTransactionRepositoryImpl.recentByProduct` 将 `limit` 收敛到 `1..200` 后再拼接方言 SQL。仅调整查询边界，未改变状态推进与库存口径。
+
 ---
 
 ### P2-5：Redis 与锁路径高频冗余 RTT 及阻塞式 `KEYS` 命令优化

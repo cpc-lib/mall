@@ -45,10 +45,11 @@ public class InventoryTransactionRepositoryImpl implements InventoryTransactionR
 
     @Override
     public List<InventoryTransaction> recentByProduct(Long productId, int limit) {
+        int safeLimit = Math.min(Math.max(limit, 1), 200);
         List<InventoryTransactionPO> rows = transactionMapper.selectList(
             new LambdaQueryWrapper<InventoryTransactionPO>().eq(InventoryTransactionPO::getProductId, productId)
                 .orderByDesc(InventoryTransactionPO::getCreateTime)
-                .orderByDesc(InventoryTransactionPO::getId).last("LIMIT " + limit));
+                .orderByDesc(InventoryTransactionPO::getId).last("LIMIT " + safeLimit));
         return rows.stream().map(InventoryTransactionPOConverter::toDomain).collect(Collectors.toList());
     }
 }
