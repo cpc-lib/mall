@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Card, InputNumber, Modal, Select, Space, Table, Tag, Typography, Upload, message } from 'antd'
-import * as XLSX from 'xlsx'
 import stockApi from '@/api/adminStock'
 import { OPERATION_STATUS_COLOR, OPERATION_STATUS_LABEL, STOCK_IMPORT_STATUS_LABEL, STOCK_IMPORT_STATUS_COLOR } from '@/utils/statusLabels'
 
@@ -93,6 +92,7 @@ export default function StockMaintenance() {
 
   const handleExcel = async file => {
     try {
+      const XLSX = await import('xlsx')
       const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' })
       const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null })
       const { items, issues } = validateAoa(aoa)
@@ -130,6 +130,7 @@ export default function StockMaintenance() {
 
   const downloadTemplate = async () => {
     try {
+      const XLSX = await import('xlsx')
       const products = await loadAllProducts()
       const ws = XLSX.utils.json_to_sheet(
         products.map(p => ({ 商品ID: p.id, 商品名称: p.title, 调整量: null })),

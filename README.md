@@ -2331,7 +2331,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 #### 15.17.2 admin-ui
 
-开发端口：`3002`。
+开发端口：`3002`。Luckysheet 编辑器与 SheetJS（`xlsx`）均为按需动态加载：Luckysheet 的脚本与样式仅在进入 `/admin/stock-edit/:id` 时注入并在退出时 `destroy`，`xlsx` 仅在库存导入/模板下载/账单转换动作触发时加载，不再作为首屏同步阻塞资源。
 
 | 路由 | 功能 |
 |---|---|

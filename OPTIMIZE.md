@@ -766,6 +766,8 @@
   1. 从 `admin-ui/index.html` 中移除 Luckysheet 的 4 个 `<link>` 和 2 个 `<script>` 标签，封装一个 `loadLuckysheet()` 单例动态脚本加载器，仅在进入 `StockExcelEditor.jsx` 时按需注入，并在 `useEffect` cleanup 中调用 `window.luckysheet?.destroy?.()`。
   2. 将 `import * as XLSX from 'xlsx'` 改为事件触发时的动态导入 `const XLSX = await import('xlsx')`。
 
+**处理进展（2026-11-25）**：已完成。`admin-ui/index.html` 移除 4 个 Luckysheet `<link>` 与 2 个同步 `<script>`（首屏不再加载约 3.83MB）；新增 `admin-ui/src/utils/luckysheet.js` 单例加载器，按需注入 CSS 与 `plugin.js → luckysheet.umd.js`（失败可重试），`StockExcelEditor.jsx` 在 `useEffect` 中 `Promise.all([import('xlsx'), loadLuckysheet()])` 并行加载并在 cleanup 调用 `window.luckysheet?.destroy?.()`；`StockExcelEditor.jsx`、`StockMaintenance.jsx`、`Download.jsx` 的 `xlsx` 改为动作触发时 `await import('xlsx')`，构建产物中 `xlsx` 独立为 429KB 异步 chunk（gzip 143KB），`index.html` 由 3.83MB 同步资源降至 0.76KB。`npm run build` 通过。
+
 ---
 
 ### P4-2：`user-ui` 核心交易交互缺陷修复（跨页支付轮询、支付宝弹窗拦截、第 101+ 订单退款编辑、结算新建地址）

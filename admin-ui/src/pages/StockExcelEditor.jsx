@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Button, Space, Spin, Tag, message } from 'antd'
-import * as XLSX from 'xlsx'
 import stockApi from '@/api/adminStock'
+import { loadLuckysheet } from '@/utils/luckysheet'
 
 const HEADER = ['商品ID', '商品名称', '调整量']
 
@@ -54,6 +54,8 @@ export default function StockExcelEditor() {
     let cancelled = false
     ;(async () => {
       let aoa = null
+      const [XLSX, ls] = await Promise.all([import('xlsx'), loadLuckysheet()])
+      if (cancelled) return
       const metaRes = await stockApi.getImport(id).catch(() => ({ data: null }))
       if (cancelled) return
       const record = metaRes.data || null
@@ -66,7 +68,7 @@ export default function StockExcelEditor() {
         aoa = [HEADER, ...((record && record.items) || []).map(it => [it.productId, '', it.delta])]
       }
       if (cancelled) return
-      window.luckysheet.create({
+      ls.create({
         container: 'luckysheet-editor',
         data: aoaToLuckysheet(aoa || [HEADER]),
         title: (record && record.fileName) || '库存调整',
@@ -80,7 +82,10 @@ export default function StockExcelEditor() {
       })
       setSheetReady(true)
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      window.luckysheet?.destroy?.()
+    }
   }, [id])
 
   const validateAoa = aoa => {
@@ -103,6 +108,7 @@ export default function StockExcelEditor() {
   }
 
   const save = async () => {
+    const XLSX = await import('xlsx')
     const aoa = luckysheetToAoa()
     const { items, issues } = validateAoa(aoa)
     if (issues.length) {
