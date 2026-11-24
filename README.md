@@ -792,6 +792,8 @@ http://localhost:3002
 /admin/reconciliation
 ```
 
+前端请求基地址由 `VITE_API_BASE_URL` 控制：开发环境未设置时默认 `http://localhost:8080`；生产构建未设置时使用同源空 baseURL（由 Nginx 反向代理 `/api`），不会回退到访问者本机 `localhost`。管理端“前台首页”跳转地址可用 `VITE_USER_UI_URL` 覆盖（默认 `http://localhost:3000`）。
+
 ## 11. 测试与构建
 
 ### 后端

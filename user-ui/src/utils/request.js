@@ -3,7 +3,8 @@ import { message } from 'antd'
 import { clearAuth, getAccessToken, getRefreshToken, saveAuth } from './authStore'
 import { createRefreshSingleFlight } from './refreshSingleFlight'
 
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+// 生产构建未注入 VITE_API_BASE_URL 时使用同源（由 Nginx 反向代理 /api），避免打到访问者本机 localhost
+const baseURL = import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8080' : '')
 const service = axios.create({ baseURL, timeout: 20000 })
 const raw = axios.create({ baseURL, timeout: 20000 })
 
@@ -36,6 +37,14 @@ service.interceptors.response.use(
     const original = error.config || {}
     if (error?.response?.status === 401 && !original.__retried && !original.url?.includes('/api/auth/refresh') && !original.url?.includes('/api/auth/login') && !original.url?.includes('/api/auth/register')) {
       original.__retried = true
+      const currentToken = getAccessToken()
+      const failedToken = (original.headers?.Authorization || original.headers?.authorization || '').replace(/^Bearer\s+/i, '')
+      // 并发请求的 401 可能晚到：若本地 Token 已被其它请求刷新，直接用新 Token 重放，避免二次消耗 Refresh Token
+      if (currentToken && failedToken && currentToken !== failedToken) {
+        original.headers = original.headers || {}
+        original.headers.Authorization = `Bearer ${currentToken}`
+        return service(original)
+      }
       try {
         const token = await refreshOnce()
         original.headers = original.headers || {}

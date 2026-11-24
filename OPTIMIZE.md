@@ -846,6 +846,8 @@
 - **优化方案**：
   在 401 拦截器触发 `refreshOnce()` 前，先对比失败请求头中的旧 Token 与当前 `getAccessToken()`：若当前 `getAccessToken()` 已经更新且不等于失败请求携带的 Token，直接用当前新 Token 重放 `service(original)`，无需再次调用 `refreshOnce()`。
 
+**处理进展（2026-11-25）**：已完成。双端 `request.js` 的 `baseURL` 改为 `import.meta.env.VITE_API_BASE_URL ?? (import.meta.env.DEV ? 'http://localhost:8080' : '')`；401 拦截器在调用 `refreshOnce()` 前比较失败请求头 Token 与当前 `getAccessToken()`，若已被其它请求刷新则直接以新 Token 重放，避免 Refresh Token 被二次消耗。`user-ui` 的 `npm run test:logic`、`npm run build` 与 `admin-ui` 的 `npm run build` 均通过。
+
 ---
 
 ### P4-5：大组件拆分、静态资源瘦身与无障碍（a11y）改进
