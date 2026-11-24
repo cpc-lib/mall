@@ -3,10 +3,11 @@ package cc.ivera.user.application.impl;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.security.AuthPrincipal;
-import cc.ivera.user.infrastructure.security.JwtTokenService;
-import cc.ivera.user.infrastructure.security.LoginGuardService;
-import cc.ivera.user.infrastructure.security.PasswordHasher;
 import cc.ivera.user.application.AuthService;
+import cc.ivera.user.domain.gateway.LoginGuardPort;
+import cc.ivera.user.domain.gateway.PasswordHashPort;
+import cc.ivera.user.domain.gateway.TokenPort;
+import cc.ivera.user.domain.gateway.TokenVersionPort;
 import cc.ivera.user.domain.model.AuthSession;
 import cc.ivera.user.domain.model.UserAccount;
 import cc.ivera.user.domain.repository.AuthSessionRepository;
@@ -17,7 +18,6 @@ import cc.ivera.user.application.dto.PasswordChangeRequest;
 import cc.ivera.user.application.dto.RegisterRequest;
 import cc.ivera.user.application.vo.LoginVO;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,21 +29,20 @@ import java.util.UUID;
 @Service
 public class AuthServiceImpl implements AuthService {
     private static final String ROLE_USER = "ROLE_USER";
-    private static final String VERSION_PREFIX = "auth:token_version:";
     private static final long REFRESH_TTL_SECONDS = 7 * 24 * 3600L;
 
     private final UserAccountRepository userRepository;
-    private final PasswordHasher passwordHasher;
-    private final JwtTokenService jwtTokenService;
-    private final StringRedisTemplate redisTemplate;
-    private final LoginGuardService loginGuard;
+    private final PasswordHashPort passwordHasher;
+    private final TokenPort jwtTokenService;
+    private final TokenVersionPort tokenVersionStore;
+    private final LoginGuardPort loginGuard;
     private final AuthSessionRepository authSessionRepository;
 
-    public AuthServiceImpl(UserAccountRepository userRepository, PasswordHasher passwordHasher, JwtTokenService jwtTokenService, StringRedisTemplate redisTemplate, LoginGuardService loginGuard, AuthSessionRepository authSessionRepository) {
+    public AuthServiceImpl(UserAccountRepository userRepository, PasswordHashPort passwordHasher, TokenPort jwtTokenService, TokenVersionPort tokenVersionStore, LoginGuardPort loginGuard, AuthSessionRepository authSessionRepository) {
         this.userRepository = userRepository;
         this.passwordHasher = passwordHasher;
         this.jwtTokenService = jwtTokenService;
-        this.redisTemplate = redisTemplate;
+        this.tokenVersionStore = tokenVersionStore;
         this.loginGuard = loginGuard;
         this.authSessionRepository = authSessionRepository;
     }
@@ -210,14 +209,11 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private long ensureVersion(Long userId) {
-        // key 不存在时默认版本号即为 0，无需先 SETNX 再 GET
-        String value = redisTemplate.opsForValue().get(VERSION_PREFIX + userId);
-        return value == null ? 0L : Long.parseLong(value);
+        return tokenVersionStore.currentVersion(userId);
     }
 
     private void bumpVersion(Long userId) {
-        if (userId == null) return;
-        redisTemplate.opsForValue().increment(VERSION_PREFIX + userId);
+        tokenVersionStore.bumpVersion(userId);
     }
 
     private String newRefreshToken() {

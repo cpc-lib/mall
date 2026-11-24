@@ -697,6 +697,8 @@
 - **优化方案**：
   遵循 `AGENTS.md` §4 的四层依赖方向（`application -> domain <- infrastructure`），在 `domain.gateway` 或 `domain.service` 中定义抽象端口（如 `TokenPort`、`PasswordHashPort`、`LoginGuardPort`、`WechatPayChannelGateway`），由 `infrastructure` 实现，使 `application` 层只依赖 `domain` 端口。
 
+**处理进展（2026-11-24）**：已完成。`mall-user-service` 新增 `user.domain.gateway` 的 `TokenPort`、`PasswordHashPort`、`LoginGuardPort`、`TokenVersionPort`，`JwtTokenService`、`PasswordHasher`、`LoginGuardService` 改为实现对应端口，新增 `RedisTokenVersionStore` 承接原 `StringRedisTemplate` 版本号读写；`AuthServiceImpl`、`UserAdminServiceImpl` 仅注入端口。`mall-payment-service` 新增 `payment.domain.gateway.WxPayChannelGateway`（含 `WxPayResponse` 记录），由 `WxPayChannelGatewayImpl` 组合 `WxPayHttpClient`、`WxPayNotificationDecoder`、`HttpClientUtils`、`WxPayPrivateKeyUtil`；`WxPayOrderService`、`WxPayRefundService`、`WxPayBillService` 改为只依赖该端口。另外将 `ChannelPaymentQueryDispatcher` 对 `WxChannelPaymentQueryHandler` 实现类的依赖改为对 `ChannelPaymentQueryHandler` 接口的 `@Qualifier` 注入。全量 `mvn clean test` 通过，无 API/配置/DB 变更。
+
 ---
 
 ### P3-5：Maven 构建工程与模块依赖瘦身

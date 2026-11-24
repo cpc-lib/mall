@@ -1,9 +1,9 @@
 package cc.ivera.payment.application;
 
-import cc.ivera.payment.infrastructure.gateway.WxChannelPaymentQueryHandler;
 import cc.ivera.payment.domain.enums.PayType;
 import cc.ivera.payment.application.dto.ChannelOrderQueryVO;
 import cc.ivera.shared.domain.exception.BizException;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -18,7 +18,7 @@ public class ChannelPaymentQueryDispatcher implements ChannelPaymentQueryApi {
 
     private final Map<String, ChannelPaymentQueryHandler> handlers;
 
-    public ChannelPaymentQueryDispatcher(WxChannelPaymentQueryHandler wxHandler, AliPayService aliPayService) {
+    public ChannelPaymentQueryDispatcher(@Qualifier("wxChannelPaymentQueryHandler") ChannelPaymentQueryHandler wxHandler, AliPayService aliPayService) {
         Map<String, ChannelPaymentQueryHandler> map = new HashMap<>();
         map.put(PayType.WXPAY.getType(), wxHandler);
         map.put(PayType.ALIPAY.getType(), aliPayService);

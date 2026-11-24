@@ -1,6 +1,7 @@
 package cc.ivera.user.infrastructure.security;
 
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.user.domain.gateway.LoginGuardPort;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -13,7 +14,7 @@ import java.util.concurrent.TimeUnit;
  * 不按来源 IP 锁定，避免同一网络（NAT/办公网）下某个用户输错密码误伤其他用户。
  */
 @Service
-public class LoginGuardService {
+public class LoginGuardService implements LoginGuardPort {
     public static final String USERNAME_FAIL_PREFIX = "auth:login_fail:";
     public static final String USERNAME_LOCK_PREFIX = "auth:login_lock:";
 

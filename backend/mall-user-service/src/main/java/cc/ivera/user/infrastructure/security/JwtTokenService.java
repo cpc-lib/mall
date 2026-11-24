@@ -2,6 +2,7 @@ package cc.ivera.user.infrastructure.security;
 
 import cc.ivera.shared.security.AuthPrincipal;
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.user.domain.gateway.TokenPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
-public class JwtTokenService {
+public class JwtTokenService implements TokenPort {
     private final ObjectMapper objectMapper;
     private final byte[] secret;
     private final long accessTtlSeconds;

@@ -6,10 +6,10 @@ import cc.ivera.shared.web.PageVO;
 import cc.ivera.user.application.UserAdminService;
 import cc.ivera.user.application.dto.UserStatusRequest;
 import cc.ivera.user.application.vo.UserVO;
+import cc.ivera.user.domain.gateway.TokenVersionPort;
 import cc.ivera.user.domain.model.UserAccount;
 import cc.ivera.user.domain.repository.AuthSessionRepository;
 import cc.ivera.user.domain.repository.UserAccountRepository;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -17,16 +17,14 @@ import java.util.List;
 
 @Service
 public class UserAdminServiceImpl implements UserAdminService {
-    private static final String VERSION_PREFIX = "auth:token_version:";
-
     private final UserAccountRepository userRepository;
-    private final StringRedisTemplate redisTemplate;
+    private final TokenVersionPort tokenVersionStore;
     private final AuthSessionRepository authSessionRepository;
 
-    public UserAdminServiceImpl(UserAccountRepository userRepository, StringRedisTemplate redisTemplate,
+    public UserAdminServiceImpl(UserAccountRepository userRepository, TokenVersionPort tokenVersionStore,
                                 AuthSessionRepository authSessionRepository) {
         this.userRepository = userRepository;
-        this.redisTemplate = redisTemplate;
+        this.tokenVersionStore = tokenVersionStore;
         this.authSessionRepository = authSessionRepository;
     }
 
@@ -69,7 +67,7 @@ public class UserAdminServiceImpl implements UserAdminService {
             userRepository.update(user);
         }
         if (CommonStatus.DISABLED.getType().equals(status)) {
-            redisTemplate.opsForValue().increment(VERSION_PREFIX + user.getId());
+            tokenVersionStore.bumpVersion(user.getId());
             authSessionRepository.deleteAll(user.getId());
         }
         UserVO result = new UserVO();

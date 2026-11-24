@@ -1147,7 +1147,7 @@ cc.ivera.<context>/
     └── 外部渠道/存储适配
 ```
 
-各可运行进程的启动类统一放在 `cc.ivera` 根包（如 `cc.ivera.OrderServiceApplication`、`cc.ivera.UserBffApplication`），不再占用独立子包；上下文专属的 Token/密码/登录守卫等适配器落在对应上下文的 `infrastructure.security`，微信支付 HTTP 客户端与通知解密落在 `payment.infrastructure.gateway`。
+各可运行进程的启动类统一放在 `cc.ivera` 根包（如 `cc.ivera.OrderServiceApplication`、`cc.ivera.UserBffApplication`），不再占用独立子包；上下文专属的 Token/密码摘要/登录守卫/Token 版本号以 `user.domain.gateway` 端口声明，分别由 `user.infrastructure.security` 与 `user.infrastructure.redis` 实现；微信支付渠道调用以 `payment.domain.gateway.WxPayChannelGateway` 端口声明，由 `payment.infrastructure.gateway.WxPayChannelGatewayImpl` 组合 HTTP 客户端、通知解密与商户私钥加载实现。`application` 层只依赖上述 `domain.gateway` 端口，不直接引用 `infrastructure` 实现类。
 
 #### 15.3.1 上下文职责
 

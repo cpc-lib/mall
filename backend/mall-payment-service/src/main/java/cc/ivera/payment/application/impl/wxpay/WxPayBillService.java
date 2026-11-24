@@ -3,8 +3,8 @@ package cc.ivera.payment.application.impl.wxpay;
 import cc.ivera.payment.application.wxpay.WxPayBillFacade;
 import cc.ivera.payment.domain.enums.wxpay.WxApiType;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.gateway.WxPayChannelGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
-import cc.ivera.payment.infrastructure.gateway.WxPayHttpClient;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.constant.DatePatterns;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
@@ -33,14 +33,14 @@ public class WxPayBillService implements WxPayBillFacade {
 
     private final PaymentConfigGateway paymentConfigLoader;
 
-    private final WxPayHttpClient wxPayHttpClient;
+    private final WxPayChannelGateway wxPayChannelGateway;
 
     public WxPayBillService(
         PaymentConfigGateway paymentConfigLoader,
-        WxPayHttpClient wxPayHttpClient
+        WxPayChannelGateway wxPayChannelGateway
     ) {
         this.paymentConfigLoader = paymentConfigLoader;
-        this.wxPayHttpClient = wxPayHttpClient;
+        this.wxPayChannelGateway = wxPayChannelGateway;
     }
 
     @Override
@@ -54,7 +54,7 @@ public class WxPayBillService implements WxPayBillFacade {
 
         String bodyAsString;
         try {
-            bodyAsString = wxPayHttpClient.get(payConfig, url, "申请微信账单异常");
+            bodyAsString = wxPayChannelGateway.get(payConfig, url, "申请微信账单异常");
         } catch (IOException e) {
             throw new BizException("申请微信账单异常", e);
         }
@@ -75,7 +75,7 @@ public class WxPayBillService implements WxPayBillFacade {
         PaymentAppConfig payConfig = resolveWxPayConfig();
         String downloadUrl = queryBill(billDate, type, billType, accountType, tarType);
         try {
-            return wxPayHttpClient.getNoSign(payConfig, downloadUrl, "下载微信账单异常");
+            return wxPayChannelGateway.getNoSign(payConfig, downloadUrl, "下载微信账单异常");
         } catch (IOException e) {
             throw new BizException("下载微信账单异常", e);
         }

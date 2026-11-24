@@ -13,10 +13,8 @@ import cc.ivera.payment.domain.enums.wxpay.WxApiType;
 import cc.ivera.payment.domain.enums.wxpay.WxNotifyType;
 import cc.ivera.payment.domain.enums.wxpay.WxRefundStatus;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.gateway.WxPayChannelGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
-import cc.ivera.payment.infrastructure.gateway.WxPayHttpClient;
-import cc.ivera.payment.infrastructure.gateway.WxPayNotificationDecoder;
-import cc.ivera.payment.infrastructure.util.HttpClientUtils;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import com.github.wxpay.sdk.WXPayUtil;
@@ -47,19 +45,16 @@ public class WxPayRefundService implements WxPayRefundFacade {
 
     private final PaymentConfigGateway paymentConfigLoader;
     private final OrderPaymentApi orderInfoService;
-    private final WxPayHttpClient wxPayHttpClient;
-    private final WxPayNotificationDecoder wxPayNotificationDecoder;
+    private final WxPayChannelGateway wxPayChannelGateway;
 
     public WxPayRefundService(
         PaymentConfigGateway paymentConfigLoader,
         OrderPaymentApi orderInfoService,
-        WxPayHttpClient wxPayHttpClient,
-        WxPayNotificationDecoder wxPayNotificationDecoder
+        WxPayChannelGateway wxPayChannelGateway
     ) {
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderInfoService = orderInfoService;
-        this.wxPayHttpClient = wxPayHttpClient;
-        this.wxPayNotificationDecoder = wxPayNotificationDecoder;
+        this.wxPayChannelGateway = wxPayChannelGateway;
     }
 
     @Override
@@ -88,19 +83,19 @@ public class WxPayRefundService implements WxPayRefundFacade {
         log.info("微信退款请求参数 ===> {}", jsonParams);
 
         String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.DOMESTIC_REFUNDS.getType());
-        WxPayHttpClient.WxPayHttpResponse response;
+        WxPayChannelGateway.WxPayResponse response;
         try {
-            response = wxPayHttpClient.postJsonForResponse(payConfig, url, jsonParams);
+            response = wxPayChannelGateway.postJsonForResponse(payConfig, url, jsonParams);
         } catch (IOException e) {
             return ChannelRefundResult.failed(e.getMessage(), e.getMessage());
         }
         if (response.isSuccessful()) {
-            log.info("微信退款申请已受理，返回结果 = {}", response.getBody());
-            return ChannelRefundResult.processing(response.getBody());
+            log.info("微信退款申请已受理，返回结果 = {}", response.body());
+            return ChannelRefundResult.processing(response.body());
         }
 
-        String errorMessage = "微信退款异常，响应码 = " + response.getStatusCode() + ", 返回结果 = " + response.getBody();
-        return ChannelRefundResult.failed(response.getBody(), errorMessage);
+        String errorMessage = "微信退款异常，响应码 = " + response.statusCode() + ", 返回结果 = " + response.body();
+        return ChannelRefundResult.failed(response.body(), errorMessage);
     }
 
     @Override
@@ -116,7 +111,7 @@ public class WxPayRefundService implements WxPayRefundFacade {
 
         String result;
         try {
-            result = wxPayHttpClient.get(payConfig, url, "查询微信退款异常");
+            result = wxPayChannelGateway.get(payConfig, url, "查询微信退款异常");
         } catch (IOException e) {
             throw new BizException("查询微信退款异常", e);
         }
@@ -215,7 +210,7 @@ public class WxPayRefundService implements WxPayRefundFacade {
 
         String plainText;
         try {
-            plainText = wxPayNotificationDecoder.decryptResource(bodyMap);
+            plainText = wxPayChannelGateway.decryptNotification(bodyMap);
         } catch (GeneralSecurityException e) {
             throw new BizException("微信退款通知解密失败", e);
         }
@@ -252,7 +247,6 @@ public class WxPayRefundService implements WxPayRefundFacade {
 
     private Map<String, String> queryOrderRefundsByV2(String orderNo, int offset) {
         PaymentAppConfig payConfig = resolveWxPayConfigByOrderNo(orderNo);
-        HttpClientUtils client = new HttpClientUtils(required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.REFUND_QUERY_V2.getType()));
         Map<String, String> params = new HashMap<>();
         params.put("appid", required(payConfig.getAppid(), "微信appid未配置"));
         params.put("mch_id", required(payConfig.getMchId(), "微信商户号未配置"));
@@ -262,11 +256,10 @@ public class WxPayRefundService implements WxPayRefundFacade {
 
         try {
             String xmlParams = WXPayUtil.generateSignedXml(params, required(payConfig.getPartnerKey(), "微信APIv2密钥partnerKey未配置"));
-            client.setXmlParam(xmlParams);
-            client.setHttps(true);
-            client.post();
+            String resultXml = wxPayChannelGateway.postXml(
+                required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.REFUND_QUERY_V2.getType()),
+                xmlParams);
 
-            String resultXml = client.getContent();
             log.info("微信订单退款查询结果 ===> {}", resultXml);
             Map<String, String> resultMap = WXPayUtil.xmlToMap(resultXml);
             if (!"SUCCESS".equals(resultMap.get("return_code"))) {

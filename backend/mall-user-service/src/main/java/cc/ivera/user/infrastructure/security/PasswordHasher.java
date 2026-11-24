@@ -1,6 +1,7 @@
 package cc.ivera.user.infrastructure.security;
 
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.user.domain.gateway.PasswordHashPort;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -9,7 +10,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 @Component
-public class PasswordHasher {
+public class PasswordHasher implements PasswordHashPort {
     private final SecureRandom secureRandom = new SecureRandom();
 
     public String newSalt() {

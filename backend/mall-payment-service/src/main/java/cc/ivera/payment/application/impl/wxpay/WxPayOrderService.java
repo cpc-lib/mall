@@ -13,15 +13,12 @@ import cc.ivera.payment.domain.enums.wxpay.WxApiType;
 import cc.ivera.payment.domain.enums.wxpay.WxNotifyType;
 import cc.ivera.payment.domain.enums.wxpay.WxTradeState;
 import cc.ivera.payment.domain.gateway.PaymentConfigGateway;
+import cc.ivera.payment.domain.gateway.WxPayChannelGateway;
 import cc.ivera.payment.domain.model.PaymentAppConfig;
 import cc.ivera.payment.domain.repository.PaymentDealRepository;
 import cc.ivera.payment.application.vo.WxPayJsapiVO;
 import cc.ivera.payment.application.dto.WxPayNativeVO;
 import cc.ivera.payment.application.vo.WxPayStatusVO;
-import cc.ivera.payment.infrastructure.gateway.WxPayHttpClient;
-import cc.ivera.payment.infrastructure.gateway.WxPayNotificationDecoder;
-import cc.ivera.payment.infrastructure.util.HttpClientUtils;
-import cc.ivera.payment.infrastructure.util.WxPayPrivateKeyUtil;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.domain.lock.DistributedLockTemplate;
@@ -62,8 +59,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
     private final PaymentInfoService paymentInfoService;
     private final PaymentOrderService paymentOrderService;
     private final PaymentSuccessService paymentSuccessService;
-    private final WxPayHttpClient wxPayHttpClient;
-    private final WxPayNotificationDecoder wxPayNotificationDecoder;
+    private final WxPayChannelGateway wxPayChannelGateway;
     private final DistributedLockTemplate distributedLockTemplate;
     private final TransactionTemplate transactionTemplate;
     private final PaymentDealRepository paymentDealRepository;
@@ -74,8 +70,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
                              PaymentInfoService paymentInfoService,
                              PaymentOrderService paymentOrderService,
                              PaymentSuccessService paymentSuccessService,
-                             WxPayHttpClient wxPayHttpClient,
-                             WxPayNotificationDecoder wxPayNotificationDecoder,
+                             WxPayChannelGateway wxPayChannelGateway,
                              DistributedLockTemplate distributedLockTemplate,
                              TransactionTemplate transactionTemplate,
                              PaymentDealRepository paymentDealRepository) {
@@ -85,8 +80,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
         this.paymentInfoService = paymentInfoService;
         this.paymentOrderService = paymentOrderService;
         this.paymentSuccessService = paymentSuccessService;
-        this.wxPayHttpClient = wxPayHttpClient;
-        this.wxPayNotificationDecoder = wxPayNotificationDecoder;
+        this.wxPayChannelGateway = wxPayChannelGateway;
         this.distributedLockTemplate = distributedLockTemplate;
         this.transactionTemplate = transactionTemplate;
         this.paymentDealRepository = paymentDealRepository;
@@ -142,7 +136,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
         String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY.getType());
         try {
-            String bodyAsString = wxPayHttpClient.postJson(payConfig, url, jsonParams, "Native下单失败");
+            String bodyAsString = wxPayChannelGateway.postJson(payConfig, url, jsonParams, "Native下单失败");
             Map<String, Object> resultMap = JsonUtils.toObjectMap(bodyAsString);
             String codeUrl = getString(resultMap, "code_url");
             if (!StringUtils.hasText(codeUrl)) {
@@ -191,7 +185,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
         String jsonParams = JsonUtils.toJson(paramsMap);
         String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY.getType());
         try {
-            String bodyAsString = wxPayHttpClient.postJson(payConfig, url, jsonParams, "Native下单失败");
+            String bodyAsString = wxPayChannelGateway.postJson(payConfig, url, jsonParams, "Native下单失败");
             Map<String, Object> resultMap = JsonUtils.toObjectMap(bodyAsString);
             String codeUrl = getString(resultMap, "code_url");
             if (!StringUtils.hasText(codeUrl)) {
@@ -211,7 +205,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
         String plainText;
         try {
-            plainText = wxPayNotificationDecoder.decryptResource(bodyMap);
+            plainText = wxPayChannelGateway.decryptNotification(bodyMap);
         } catch (GeneralSecurityException e) {
             throw new BizException("微信支付通知解密失败", e);
         }
@@ -312,7 +306,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
             .concat(url)
             .concat("?mchid=")
             .concat(required(payConfig.getMchId(), "微信商户号未配置"));
-        return wxPayHttpClient.get(payConfig, url, "查单接口调用异常");
+        return wxPayChannelGateway.get(payConfig, url, "查单接口调用异常");
     }
 
     private boolean isOrderNotExistOnChannel(IOException e) {
@@ -464,7 +458,6 @@ public class WxPayOrderService implements WxPayOrderFacade {
         // V2：发起支付前创建支付单（临近过期拒绝）。
         cc.ivera.payment.domain.model.PaymentOrder paymentOrder = paymentOrderService.startPayment(orderInfo, PaymentConfigGateway.CHANNEL_WXPAY);
 
-        HttpClientUtils client = new HttpClientUtils(required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY_V2.getType()));
         Map<String, String> params = new HashMap<>();
         params.put("appid", required(payConfig.getAppid(), "微信appid未配置"));
         params.put("mch_id", required(payConfig.getMchId(), "微信商户号未配置"));
@@ -478,10 +471,9 @@ public class WxPayOrderService implements WxPayOrderFacade {
 
         try {
             String xmlParams = WXPayUtil.generateSignedXml(params, required(payConfig.getPartnerKey(), "微信APIv2密钥partnerKey未配置"));
-            client.setXmlParam(xmlParams);
-            client.setHttps(true);
-            client.post();
-            String resultXml = client.getContent();
+            String resultXml = wxPayChannelGateway.postXml(
+                required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.NATIVE_PAY_V2.getType()),
+                xmlParams);
             Map<String, String> resultMap = WXPayUtil.xmlToMap(resultXml);
             if ("FAIL".equals(resultMap.get("return_code")) || "FAIL".equals(resultMap.get("result_code"))) {
                 throw new BizException("微信支付V2统一下单错误：" + resultXml);
@@ -520,14 +512,14 @@ public class WxPayOrderService implements WxPayOrderFacade {
                 objectMapper.writeValue(bos, rootNode);
 
                 String url = required(payConfig.getDomain(), "微信支付网关domain未配置").concat(WxApiType.JSAPI_PAY.getType());
-                String bodyAsString = wxPayHttpClient.postJson(payConfig, url, bos.toString("UTF-8"), "JSAPI下单失败");
+                String bodyAsString = wxPayChannelGateway.postJson(payConfig, url, bos.toString("UTF-8"), "JSAPI下单失败");
                 Map<String, Object> responseMap = JsonUtils.toObjectMap(bodyAsString);
                 String prepayId = (String) responseMap.get("prepay_id");
                 paymentOrderService.markPaying(paymentOrder.getPaymentNo(), null);
 
                 return getPayment("prepay_id=" + prepayId,
                     required(payConfig.getAppid(), "微信appid未配置"),
-                    WxPayPrivateKeyUtil.load(required(payConfig.getPrivateKey(), "微信商户私钥内容未配置")));
+                    wxPayChannelGateway.loadPrivateKey(required(payConfig.getPrivateKey(), "微信商户私钥内容未配置")));
             } catch (Exception e) {
                 throw new BizException("支付失败" + e.getMessage(), e);
             }
@@ -542,7 +534,7 @@ public class WxPayOrderService implements WxPayOrderFacade {
         Map<String, String> paramsMap = new HashMap<>();
         paramsMap.put("mchid", required(payConfig.getMchId(), "微信商户号未配置"));
         try {
-            wxPayHttpClient.postJson(payConfig, url, JsonUtils.toJson(paramsMap), "Native关单失败");
+            wxPayChannelGateway.postJson(payConfig, url, JsonUtils.toJson(paramsMap), "Native关单失败");
         } catch (IOException e) {
             if (isOrderNotExistOnChannel(e)) {
                 // 渠道侧已无此交易（从未发起支付或已被渠道清理），无单可关，本地关单可继续。
