@@ -49,9 +49,12 @@ spring:
       password: ${REDIS_PASSWORD:cpc!23#@}
   datasource:
     driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000&socketTimeout=60000
     username: ${DM_USERNAME:SYSDBA}
     password: ${DM_PASSWORD:Cpc2026#@Dm}
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 5
 
 mybatis-plus:
   configuration:

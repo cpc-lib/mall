@@ -553,7 +553,7 @@ backend/nacos/config/seataServer.properties    # Seata TC 存储配置：Data ID
 
 各进程通过 `spring.config.import: optional:nacos:...` 导入；`optional:` 保证 Nacos 不可达时仍能用本地
 `application.yml` 中的同值配置启动。需要完全脱离 Nacos 时设置 `NACOS_ENABLED=false`，并为 Feign 指定
-`USER_SERVICE_BASE_URL` / `PRODUCT_SERVICE_BASE_URL` / `ORDER_SERVICE_BASE_URL` / `PAYMENT_SERVICE_BASE_URL` /
+`USER_SERVICE_BASE_URL` / `PRODUCT_SERVICE_BASE_URL` / `CART_SERVICE_BASE_URL` / `ORDER_SERVICE_BASE_URL` / `PAYMENT_SERVICE_BASE_URL` /
 `REFUND_SERVICE_BASE_URL`，同时用 `MALL_*_URI`（如 `MALL_USER_BFF_URI=http://127.0.0.1:8081`）覆盖网关的 `lb://` 路由。
 
 容器健康后，执行初始化脚本：
@@ -655,7 +655,7 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`，由 `LOGSTASH_DESTINATION` 覆盖；由 `logback-spring.xml` 读取 |
 | `mybatis-plus.configuration.log-impl` | 统一为 `org.apache.ibatis.logging.slf4j.Slf4jImpl`，SQL 走应用日志体系而不再直写 stdout；默认 `info` 级别不输出 SQL，需要排查时把对应 Mapper 包日志级别调为 `debug` |
 
-生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。凭据全部带同名环境变量占位符；当激活 `prod` profile 时，`ProductionSecretGuard` 会在启动阶段校验 DM / RabbitMQ / Redis 口令与 `payment.auth.jwt-secret`，为空或仍等于仓库默认值即启动失败（异常只输出配置键名，不输出口令明文）。
+生产环境不要直接沿用仓库中的开发凭据、JWT Secret、数据库密码、Redis 密码、MinIO 凭据或支付密钥。凭据全部带同名环境变量占位符；当激活 `prod` profile 时，`ProductionSecretGuard` 会在启动阶段校验 DM / RabbitMQ / Redis 口令、`payment.auth.jwt-secret`、`stock.import.minio.secret-key` 与 `spring.cloud.nacos.password`，为空或仍等于仓库默认值即启动失败（异常只输出配置键名，不输出口令明文）。
 
 ### 10.3 启动用户服务、商品服务、订单服务、支付服务、退款服务、账单服务、BFF 与网关
 
@@ -1177,6 +1177,8 @@ infrastructure ─────┘
 - 调用 `cc.ivera.api.<context>` 下的内部契约（如 `ProductQueryApi`、`OrderRefundQuotaApi`、`PaymentOrderQueryApi`）；或
 - 引用对方 application 服务接口；或
 - 引用对方 domain model / gateway 端口。
+
+上下文内部的 `application` 层只依赖 `domain` 端口，不直接 import `infrastructure` 实现：用户域的 `TokenPort` / `PasswordHashPort` / `LoginGuardPort` / `TokenVersionPort` 由 `user.infrastructure.security` 与 `user.infrastructure.redis` 实现，支付域的 `WxPayChannelGateway` 由 `payment.infrastructure.gateway` 实现。
 
 内部契约约定：
 
@@ -2358,7 +2360,7 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 
 | 配置 | 作用 |
 |---|---|
-| `server.port` | `mall-user-service` 默认 8083、`mall-cart-service` 默认 8089、`mall-product-service` 默认 8084、`mall-order-service` 默认 8085、`mall-payment-service` 默认 8086、`mall-refund-service` 默认 8087、`mall-bill-service` 默认 8088、`mall-user-bff` 默认 8081、`mall-admin-bff` 默认 8082（均可用 `SERVER_PORT` 覆盖）；`mall-gateway` 占用 8080 |
+| `server.port` | `mall-user-service` 默认 8083、`mall-cart-service` 默认 8089、`mall-product-service` 默认 8084、`mall-order-service` 默认 8085、`mall-payment-service` 默认 8086、`mall-refund-service` 默认 8087、`mall-bill-service` 默认 8088、`mall-user-bff` 默认 8081、`mall-admin-bff` 默认 8082、`mall-gateway` 默认 8080（均可用 `SERVER_PORT` 覆盖） |
 | `spring.cloud.nacos.discovery.*` / `spring.cloud.nacos.config.*` | 服务注册与配置中心连接（默认 `127.0.0.1:8848`）；`NACOS_ENABLED=false` 时同时关闭注册与配置导入 |
 | Nacos 配置存储 | DB 模式落在 DM8（`SPRING_DATASOURCE_PLATFORM=dm`）：官方镜像只内置 MySQL 方言，达梦方言由 `backend/nacos/dm-plugin` 编译出的 Mapper 插件提供（挂载到 `/home/nacos/plugins`），表由 `env/nacos/schema/nacos-schema.sql` 创建；Nacos 3.x 会把 `tenant_id=''` 与 `'public'` 各写一份做兼容，属预期 |
 | `spring.config.import` | `optional:nacos:<应用名>.yaml`；`optional:` 保证 Nacos 不可达时回落到本地同值配置 |
@@ -2369,7 +2371,9 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `spring.cloud.nacos.discovery.namespace` / `group` | 注册与配置使用的 namespace / group，默认空 / `DEFAULT_GROUP` |
 | `spring.rabbitmq.listener.simple.auto-startup` | `mall-admin-bff`、`mall-payment-service` 与 `mall-bill-service` 设为 `false`，关闭该进程的 MQ 监听；退款服务保持开启以消费退款队列；用户服务、商品服务与账单服务不消费 MQ |
 | `local-message.relay-enabled` | 按领域开启：`mall-order-service`、`mall-refund-service`、`mall-payment-service` 为 `true`，`mall-user-bff`、`mall-admin-bff`、`mall-bill-service` 为 `false`；配合 `local-message.relay-biz-types` 只中继本域 biz_type |
-| `spring.datasource.*` | DM8 |
+| `spring.datasource.*` | DM8；连接串固定追加 `connectTimeout=30000&socketTimeout=60000`，避免网络中断后查询线程长期挂起 |
+| `spring.datasource.hikari.*` | 连接池上限：常规服务 `minimum-idle=2` / `maximum-pool-size=10`，低频 `mall-bill-service` 为 `1` / `5`；两个 BFF 的池参数由 `application-core.yml` 统一提供 |
+| `spring.cloud.gateway.server.webflux.httpclient.*` | 网关下游连接超时 3000ms、响应超时 15s；超时与 404/503 统一由 `GatewayErrorWebExceptionHandler` 返回 `{code:500,message,data:null}` 结构 |
 | `spring.data.redis.*` | Redis |
 | `spring.rabbitmq.*` | RabbitMQ 连接、confirm、returns、MANUAL ACK、Retry |
 | `payment.auth.access-ttl-seconds` | Access Token TTL |
@@ -2386,8 +2390,9 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `payment.refund.status-sync-scan-ms` | RefundStatusSyncScheduler DB 兜底扫描周期，默认 60000ms |
 | `refund.status-sync-enabled` | 退款状态同步兜底扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
 | `CORS_ALLOWED_ORIGINS` | 网关 CORS 允许来源，默认 `http://localhost:3000,http://localhost:3002`（`"*"` 不再作为默认值） |
-| `prod` profile | 激活后 `ProductionSecretGuard` 校验 DM / RabbitMQ / Redis 口令与 JWT 密钥，命中仓库默认值或为空即启动失败 |
-| `stock.import.storage` | 商品服务 Excel 导入存储：local / minio |
+| `X-Forwarded-For` | 网关 `TrustedForwardedHeaderFilter` 会用直连来源地址覆盖客户端传入值，下游 BFF 取首个元素作为客户端 IP；直接访问 BFF 时回落到 `RemoteAddr` |
+| `prod` profile | 激活后 `ProductionSecretGuard` 校验 DM / RabbitMQ / Redis 口令、JWT 密钥、MinIO 凭据与 Nacos 密码，命中仓库默认值或为空即启动失败 |
+| `stock.import.storage` | 商品服务 Excel 导入存储：默认 `local`，可切 `minio` |
 | `stock.import.dir` | 商品服务本地文件目录 |
 | `stock.import.minio.*` | 商品服务 MinIO 配置 |
 | `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`（`ZIPKIN_ENDPOINT` 覆盖） |

@@ -29,6 +29,8 @@ public class ProductionSecretGuard implements InitializingBean {
         BUILT_IN_DEFAULTS.put("spring.rabbitmq.password", "Cpc2026#@Mq");
         BUILT_IN_DEFAULTS.put("spring.data.redis.password", "cpc!23#@");
         BUILT_IN_DEFAULTS.put("payment.auth.jwt-secret", "1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ");
+        BUILT_IN_DEFAULTS.put("stock.import.minio.secret-key", "hjm029796");
+        BUILT_IN_DEFAULTS.put("spring.cloud.nacos.password", "nacos");
     }
 
     private final Environment environment;

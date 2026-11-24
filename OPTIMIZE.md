@@ -746,6 +746,8 @@
      - 新增网关全局 `ErrorWebExceptionHandler`，将 404/503/504 统一包装为 `{ "code": 500, "message": "...", "data": null }` 格式；
      - 对可信代理跳数做限制（或使用 Spring Cloud Gateway `XForwardedRemoteAddressResolver`），防止客户端伪造 `X-Forwarded-For` 欺骗 `AuthSession` 设备 IP 记录。
 
+**处理进展（2026-11-24）**：已完成 1、3、4、5、6 项。`application-core.yml` 补齐 `cart.service.base-url` 并移除 BFF 已不再使用的 `payment.service.base-url` / `payment.auth.*`（两个 BFF 的 Nacos 配置同步清理）；`ProductServiceApplication` 的 `@Import` 补齐 `TimeZoneConfig` 与 `ProductionSecretGuard`，`ProductionSecretGuard` 新增 `stock.import.minio.secret-key`、`spring.cloud.nacos.password` 校验，商品服务 `stock.import.storage` 默认改为 `local`；订单服务与退款服务 RabbitMQ 重试统一为 `2000 / 3.0 / 20000`；7 个领域服务 + 两个 BFF 的 DM8 连接串追加 `socketTimeout=60000` 并配置 HikariCP（常规 `2 / 10`、`mall-bill-service` `1 / 5`），购物车服务补齐 `mapper-locations`；网关端口改为 `${SERVER_PORT:8080}`，新增下游连接 3000ms / 响应 15s 超时、`GatewayErrorWebExceptionHandler` 统一 JSON 错误体与 `TrustedForwardedHeaderFilter` 覆盖客户端 `X-Forwarded-For`（同步更新 `nacos/config/mall-gateway.yaml`）。第 2 项**不实施**：`PaymentServiceApplication` 的 `@EnableScheduling` 是 `mall-payment-service` 中继 `PAYMENT_SUCCEEDED` / `DUPLICATE_PAYMENT_DETECTED` 的 `LocalMessageSendJob` 所必需，且 `AGENTS.md` §1 明确要求支付服务开启 `@EnableScheduling`，移除会中断支付事件 Outbox 投递，原审计结论有误。全量 `mvn clean test` 通过，无 API/DB/MQ 拓扑变更。
+
 ---
 
 ## 6. P4：前端工程（`user-ui` & `admin-ui`）交互、性能与代码治理

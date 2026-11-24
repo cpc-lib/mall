@@ -27,9 +27,12 @@ spring:
     time-zone: GMT+8
   datasource:
     driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000&socketTimeout=60000
     username: ${DM_USERNAME:SYSDBA}
     password: ${DM_PASSWORD:Cpc2026#@Dm}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
 
 mybatis-plus:
   configuration:
@@ -39,7 +42,7 @@ mybatis-plus:
 # Excel 导入文件存储（V6）：storage=local 落本地 dir 目录；storage=minio 走 MinIO 对象存储
 stock:
   import:
-    storage: ${STOCK_IMPORT_STORAGE:minio}
+    storage: ${STOCK_IMPORT_STORAGE:local}
     dir: ${STOCK_IMPORT_DIR:D:/release/payment-demo-java-dm/upload}
     minio:
       endpoint: ${STOCK_IMPORT_MINIO_ENDPOINT:http://192.168.1.200:39000}

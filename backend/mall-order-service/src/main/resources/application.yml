@@ -49,9 +49,9 @@ spring:
         retry:
           enabled: true
           max-attempts: 4
-          initial-interval: 1000
-          multiplier: 2.0
-          max-interval: 10000
+          initial-interval: 2000
+          multiplier: 3.0
+          max-interval: 20000
   data:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
@@ -61,9 +61,12 @@ spring:
       password: ${REDIS_PASSWORD:cpc!23#@}
   datasource:
     driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000&socketTimeout=60000
     username: ${DM_USERNAME:SYSDBA}
     password: ${DM_PASSWORD:Cpc2026#@Dm}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
 
 mybatis-plus:
   configuration:

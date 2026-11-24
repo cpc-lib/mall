@@ -49,7 +49,7 @@ spring:
   datasource:
     # 达梦 DM8：默认由 docker-compose.infra.yml 暴露到本机 5236
     driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000
+    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000&socketTimeout=60000
     username: ${DM_USERNAME:SYSDBA}
     password: ${DM_PASSWORD:Cpc2026#@Dm}
 
@@ -71,11 +71,5 @@ product:
     base-url: ${PRODUCT_SERVICE_BASE_URL:}
 
 payment:
-  auth:
-    access-ttl-seconds: 1800
-    refresh-ttl-seconds: 604800
-    jwt-secret: ${AUTH_JWT_SECRET:1SloQ0WmJUmNWiqvNOPco016eVlkYAskLrJE2FJ}
-  service:
-    base-url: ${PAYMENT_SERVICE_BASE_URL:}
   refund:
     status-sync-delay-ms: 60000 # MQ 退款状态同步延迟；BFF 声明队列参数时读取，必须与 refund-service 保持一致
