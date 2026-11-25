@@ -798,7 +798,7 @@ http://localhost:3002
 
 ### 后端
 
-后端已恢复最小测试基线：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）与 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / 上层或基础设施实现），`mall-order-service` 的 `AutoReceiptSchedulerTest`（复用确认收货链路、单批失败隔离），以及 `mall-cart-service` 的 `CartServiceImplTest`（购物车列表批量查询商品快照、空购物车不发起远程调用）。测试均不启动 Spring 上下文、不依赖 DM8；其余模块仍以编译通过为基础门槛：
+后端测试基线扩展为：`mall-refund-service` 的 `RefundPolicyTest`（尾差、防超退不变量、库存回补时点）+ `RefundDomainArchitectureTest`（两条 ArchUnit 规则：domain 不依赖 Spring/MyBatis-Plus/外层四层 + application 不依赖 interfaces/infrastructure.persistence.po）；`mall-order-service` 的 `AutoReceiptSchedulerTest` + `OrderDomainArchitectureTest`；`mall-cart-service` 的 `CartServiceImplTest` + `CartDomainArchitectureTest`；`mall-infra` 的 `LocalMessageSendJobTest`；`mall-product-service`、`mall-user-service`、`mall-payment-service`、`mall-bill-service` 各自的 `*DomainArchitectureTest`。总计 30 条后端测试（14 条 ArchUnit + 16 条业务/基础设施），全部不启动 Spring、不依赖 DM8。`mall-infra` 为跨域共享库，不适用四层依赖规则，未加 ArchUnit。
 
 ```powershell
 cd backend
@@ -822,11 +822,11 @@ cd admin-ui
 npm run build
 ```
 
-当前 `admin-ui` 暂无独立自动化逻辑测试。
+`user-ui` 逻辑测试：`node --test "tests/*.test.mjs"`（6 条：`refresh-single-flight` 并发单飞、`refund-quota` 可退数量/金额/尾差/边界）；`admin-ui` 同样用 Node 原生 `node --test` 驱动（3 条：`stock-aoa` 库存 Excel 导入 AOA 校验）。
 
 ### CI
 
-`.github/workflows/ci.yml` 在 push 到 `main` 与 PR 时执行：后端 `mvn -B clean test`（JDK 21），以及 `user-ui` / `admin-ui` 的 `npm ci`、`npm run build`，其中 `user-ui` 额外执行 `npm run test:logic`。流水线不启动 DM8 / Redis / RabbitMQ，因此只覆盖编译与纯域单测。
+`.github/workflows/ci.yml` 在 push 到 `main` 与 PR 时执行，`concurrency` 自动取消旧流水线防止快速连续推送浪费 Runner：后端 `mvn -B -ntp -T 1C clean test`（并行安静构建，`timeout-minutes: 15`，JDK 21）；前端矩阵（`timeout-minutes: 10`）：`user-ui` 与 `admin-ui` 各执行 `npm ci` → `npm run test:logic`（Node 原生 `node --test`，`admin-ui` 从本次起也开启） → `npm run build`。流水线不启动 DM8 / Redis / RabbitMQ，因此只覆盖编译与纯逻辑/架构测试。
 
 ## 12. 重要接口分组
 
@@ -1189,7 +1189,7 @@ infrastructure ─────┘
 - 禁止跨上下文依赖对方 `domain.repository`：表的写入权限只属于拥有方。
 - 跨上下文 DTO 放提供方 `application.dto`，不得放 `interfaces` 层。
 
-以上规则由人工与代码评审保证；`mall-refund-service` 已恢复 ArchUnit 边界校验 `RefundDomainArchitectureTest`（domain 不依赖 Spring / MyBatis-Plus / infrastructure / interfaces / application），其余上下文仍依赖代码评审，后续可按同一模板补充。
+以上规则由人工与代码评审配合 ArchUnit 自动化守护：`order / payment / bill / product / user / cart / refund` 七个领域服务各有 `*DomainArchitectureTest`，每条同时断言 domain 不依赖 Spring/MyBatis-Plus/外层四层，与 application 不依赖 interfaces 或 infrastructure.persistence.po；`mall-infra` 为共享库不适用该规则。
 
 禁止：
 
@@ -2431,7 +2431,7 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端已恢复最小测试基线：`mall-refund-service` 包含 `RefundPolicyTest`（8 个用例，覆盖尾差、防超退不变量与库存回补时点）和 `RefundDomainArchitectureTest`（ArchUnit 校验 domain 层依赖方向）；`mall-order-service` 包含 `AutoReceiptSchedulerTest`（2 个用例，覆盖复用确认收货链路与单批失败隔离）；`mall-cart-service` 包含 `CartServiceImplTest`（2 个用例，覆盖购物车列表批量查询商品快照与空购物车不发起远程调用）。所有测试均不启动 Spring、不依赖 DM8；其余模块仍以编译通过为准。
+后端 30 条测试基线：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则）覆盖四层依赖方向；`mall-refund-service` 的 `RefundPolicyTest`（8 条）覆盖尾差与防超退不变量；`mall-order-service` 的 `AutoReceiptSchedulerTest`（2 条）、`mall-cart-service` 的 `CartServiceImplTest`（2 条）、`mall-infra` 的 `LocalMessageSendJobTest`（3 条）分别覆盖基础设施与业务回归。前端逻辑测试扩展至 9 条：`user-ui` 原有 1 条 refresh-single-flight + 新增 5 条 refund-quota（与后端 `RefundPolicy` 口径一致）；`admin-ui` 新增 3 条 stock-aoa（库存 Excel 导入 AOA 校验）。前端通过 Node 原生 `node --test "tests/*.test.mjs"` 执行，后端统一走 `mvn clean test`。
 
 命令：
 

@@ -925,6 +925,12 @@
   3. **设置 `timeout-minutes` 防止任务挂死**：为 `backend` 设置 `timeout-minutes: 15`，为 `frontend` 设置 `timeout-minutes: 10`。
   4. **开启 `admin-ui` 逻辑测试**：在 `admin-ui` 补齐 `test:logic` 后，移除第 49 行的 `if: matrix.app == 'user-ui'` 限制。
 
+**处理进展（2026-11-25）**：P5-2/3/4 已完成。
+- P5-2：给 `mall-product-service`、`mall-user-service`、`mall-cart-service` 补齐 archunit 依赖（`archunit:1.5.1` test scope，与已有 `mall-refund-service`、`mall-order-service`、`mall-payment-service`、`mall-bill-service` 统一），7 个领域服务全部落地 `*DomainArchitectureTest`，每条测试覆盖 "domain 不依赖 Spring/MyBatis-Plus/外层四层" 与 "application 不依赖 interfaces/infrastructure.persistence.po" 两条规则；原有 `RefundDomainArchitectureTest` 也同步扩展为两条规则；全量 14 条 ArchUnit 测试通过。`mall-infra` 为跨域共享基础设施库而非限界上下文，不适用四层依赖规则，未加 ArchUnit。
+- P5-3：`admin-ui/package.json` 新增 `test:logic`（`node --test "tests/*.test.mjs"`），`user-ui` 的 `test:logic` 从单文件改为 glob 模式；新增 `admin-ui/tests/stock-aoa.test.mjs`（`validateStockAoa` 跳过表头/空行、解析数字字符串 ID、收集非法行）；新增 `user-ui/tests/refund-quota.test.mjs`（可退数量/金额预估/尾差规则/边界，口径与后端 `RefundPolicy` 一致）；同时把 `admin-ui/src/utils/stockAoa.jsx` 拆为纯 JS 核心 `stockAoaCore.js`（Node 测试可直接 import）和 React 入口 `stockAoa.jsx`（在核心基础上加 JSX `deltaCell`）。双端逻辑测试共 9 条全部通过，`admin-ui` 构建不受影响。
+- P5-4：`.github/workflows/ci.yml` 新增 `concurrency` 自动取消旧流水线，`mvn -B clean test` → `mvn -B -ntp -T 1C clean test`，`backend timeout-minutes: 15`、`frontend timeout-minutes: 10`，移除 `if: matrix.app == 'user-ui'` 让 `admin-ui` 也执行 `test:logic`。
+- P5-1（领域单测补齐）暂未落地：审计建议覆盖 5 个域（bill/payment/product/infra/user），每个域的可测试纯逻辑与 Mockito 场景差异大，需要单独一轮专题调研与编写，不在本次 P5 批量治理内；已在 README 第 15 章更新当前实际测试基线（30 条后端 + 9 条前端逻辑测试）。
+
 ---
 
 ## 8. 建议落地路线图（Roadmap）
