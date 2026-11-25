@@ -14,7 +14,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * 下单 Saga 入口：生成订单号并驱动 Seata 状态机（落单 → 预占库存 → 清空购物车）。
+ * 下单 Saga 入口：生成订单号并驱动 Seata 状态机（预占库存 → 落单 → 清空购物车）。
  * 任一正向步骤失败会按状态机定义反向补偿；补偿完成后向上抛出可读业务异常。
  */
 @Service
@@ -32,18 +32,16 @@ public class CheckoutSagaService {
 
     /**
      * 下单：以 orderNo 作为 Saga 业务键，便于按订单号在 Seata 控制台/实例表追溯。
+     * 结算上下文（商品快照、收货信息、支付配置）在启动状态机前只读构建，不写任何表。
      */
     public OrderDetailVO checkout(Long userId, CheckoutRequest request) {
         String orderNo = OrderNoUtils.getOrderNo();
-        Map<String, Object> checkout = new LinkedHashMap<>();
-        checkout.put("orderNo", orderNo);
-        checkout.put("userId", userId);
-        checkout.put("paymentType", request.getPaymentType());
-        checkout.put("paymentAppId", request.getPaymentAppId());
-        checkout.put("addressId", request.getAddressId());
-        checkout.put("receiverName", request.getReceiverName());
-        checkout.put("receiverPhone", request.getReceiverPhone());
-        checkout.put("receiverAddress", request.getReceiverAddress());
+        Map<String, Object> checkout;
+        try {
+            checkout = checkoutTxService.buildCheckoutContext(userId, request, orderNo);
+        } catch (RuntimeException e) {
+            throw new BizException("下单失败：" + rootMessage(e), e);
+        }
         Map<String, Object> startParams = new LinkedHashMap<>();
         startParams.put("checkout", checkout);
         StateMachineInstance instance;

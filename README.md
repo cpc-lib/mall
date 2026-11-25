@@ -1219,7 +1219,7 @@ PO 属于数据库适配层，不是跨领域数据契约。
 | `t_payment_info` | 渠道成交支付记录 |
 | `t_payment_channel` | 微信/支付宝渠道配置 |
 | `t_payment_app` | 渠道下应用配置 |
-| `t_inventory_reservation` | 订单库存预占记录 |
+| `t_inventory_reservation` | 订单库存预占记录（按订单号 + 商品唯一，预占先于落单，`order_item_id` 可空） |
 | `t_inventory_transaction` | 库存四桶变化流水 |
 | `t_order_shipment` | 发货与物流记录 |
 | `t_refund_order` | 退款业务单 |
@@ -1511,18 +1511,22 @@ flowchart TD
 #### 15.7.1 下单
 
 `CheckoutServiceImpl` 只做幂等编排：校验 `Idempotency-Key` → Redis 锁 + `t_order_request` 状态机 → 调用 `CheckoutSagaService`。
-`CheckoutSagaService` 生成 `orderNo` 并以它作为业务键驱动 Seata Saga 状态机 `order-checkout`
+`CheckoutSagaService` 生成 `orderNo`，先只读构建结算上下文（购物车、商品快照、支付配置、收货地址），
+再以它作为业务键驱动 Seata Saga 状态机 `order-checkout`
 （定义见 `mall-order-service/src/main/resources/statelang/order-checkout.json`）：
 
 ```text
-CreateOrder       本地事务：写 t_order_info / t_order_item + 延迟关单 Outbox   ──补偿──▶ CancelOrder
-ReserveInventory  商品服务 reserveForOrder：available → locked               ──补偿──▶ ReleaseInventory
+ReserveInventory  商品服务 reserveForOrder：available → locked                     ──补偿──▶ ReleaseInventory
+CreateOrder       本地事务：按结算上下文写 t_order_info / t_order_item + 延迟关单 Outbox  ──补偿──▶ CancelOrder
 ClearCart         清理购物车已选项
 ```
 
+预占先于落单：库存不足时第一步直接失败，不会写入 `t_order_info` / `t_local_message`，
+符合“库存不足必须让整个下单事务失败，不允许先生成有效订单后再补偿扣库存”。
 任一步失败由状态机反向补偿；补偿完成后接口返回业务失败，幂等记录置 `FAILED` 可重试。三个正向动作都可重放：
-同 `orderNo` 已落单时 `prepare` 直接返回既有上下文，库存预占以 `uk_reservation_order_item(order_item_id)` 为幂等闸门，
-关单为条件 UPDATE（只关闭 `WAIT_PAY + UNPAID` 订单），因此重复执行不会产生第二张订单、第二份预占或误关已支付订单。
+库存预占以 `uk_reservation_order_product(order_no, product_id)` 为幂等闸门（预占早于落单，`order_item_id` 允许为空），
+同 `orderNo` 已落单时直接返回既有上下文，关单为条件 UPDATE（只关闭 `WAIT_PAY + UNPAID` 订单），
+因此重复执行不会产生第二张订单、第二份预占或误关已支付订单。
 
 下单主流程：
 
@@ -1534,12 +1538,12 @@ flowchart TD
     D -->|"同键同请求"| D1["回放首次结果"]
     D -->|"同键不同请求"| D2["拒绝：幂等冲突"]
     D -->|"FAILED 可重试 / 首次"| E["CheckoutSagaService<br/>生成 orderNo<br/>engine.start(order-checkout, businessKey=orderNo)"]
-    E --> F["CreateOrder<br/>CheckoutTxService.prepare：写 t_order_info / t_order_item / Outbox"]
-    F --> G["ReserveInventory<br/>商品服务 reserveForOrder：available → locked"]
+    E --> F["ReserveInventory<br/>商品服务 reserveForOrder：available → locked"]
+    F --> G["CreateOrder<br/>CheckoutTxService.createOrder：写 t_order_info / t_order_item / Outbox"]
     G --> H["ClearCart<br/>清理购物车已选项"]
     H --> I["状态机 SUCCEEDED<br/>回读订单详情，返回支付入口"]
-    F -->|"失败"| X["补偿 CancelOrder<br/>未支付订单置 CLOSED / CANCELLED"]
-    G -->|"失败"| Y["补偿 ReleaseInventory → CancelOrder"]
+    F -->|"失败"| X["预占事务回滚<br/>不落单，无需补偿"]
+    G -->|"失败"| Y["补偿 CancelOrder → ReleaseInventory"]
     H -->|"失败"| Y
     X --> Z["返回业务失败，幂等记录 FAILED 可重试"]
     Y --> Z
@@ -1550,10 +1554,10 @@ flowchart TD
 ```text
 POST /api/checkout/orders（Idempotency-Key 必填）
   → OrderIdempotencyService：同键同请求回放 / 同键不同请求拒绝 / FAILED 可重试
-  → CheckoutSagaService：生成 orderNo，作为 Saga businessKey
+  → CheckoutSagaService：生成 orderNo，只读构建结算上下文，作为 Saga businessKey
   → StateMachineEngine.startWithBusinessKey("order-checkout", null, orderNo, {"checkout": ...})
-      CreateOrder      [本地事务：落单 + 明细 + 延迟关单 Outbox]   ──补偿──▶ CancelOrder
       ReserveInventory [远程：商品服务 reserveForOrder]             ──补偿──▶ ReleaseInventory
+      CreateOrder      [本地事务：落单 + 明细 + 延迟关单 Outbox]   ──补偿──▶ CancelOrder
       ClearCart        [远程：购物车清空已选项]
   → SUCCEEDED：回读订单详情返回；失败：反向补偿完成后抛 BizException
 ```

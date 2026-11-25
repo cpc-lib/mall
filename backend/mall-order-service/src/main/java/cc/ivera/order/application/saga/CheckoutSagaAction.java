@@ -1,7 +1,6 @@
 package cc.ivera.order.application.saga;
 
 import cc.ivera.cart.application.CartService;
-import cc.ivera.order.application.dto.CheckoutRequest;
 import cc.ivera.order.application.impl.CheckoutTxService;
 import cc.ivera.product.application.InventoryService;
 import cc.ivera.product.domain.model.ReserveLine;
@@ -33,39 +32,7 @@ public class CheckoutSagaAction {
     }
 
     /**
-     * 步骤一：落单（本地事务）。同一 orderNo 已存在时返回既有上下文，保证重放幂等。
-     */
-    public Map<String, Object> createOrder(Map<String, Object> checkout) {
-        Long userId = asLong(checkout.get("userId"));
-        String orderNo = asString(checkout.get("orderNo"));
-        CheckoutRequest request = new CheckoutRequest();
-        request.setPaymentType(asString(checkout.get("paymentType")));
-        request.setPaymentAppId(asLong(checkout.get("paymentAppId")));
-        request.setAddressId(asLong(checkout.get("addressId")));
-        request.setReceiverName(asString(checkout.get("receiverName")));
-        request.setReceiverPhone(asString(checkout.get("receiverPhone")));
-        request.setReceiverAddress(asString(checkout.get("receiverAddress")));
-        try {
-            return checkoutTxService.prepare(userId, request, orderNo);
-        } catch (RuntimeException e) {
-            throw wrap("落单", e);
-        }
-    }
-
-    /**
-     * createOrder 的补偿：仅未支付订单会被关闭，重复执行安全。
-     */
-    public void cancelOrder(Map<String, Object> context) {
-        if (context == null) return;
-        try {
-            checkoutTxService.cancelIfUnpaid(asString(context.get("orderNo")));
-        } catch (RuntimeException e) {
-            throw wrap("订单取消补偿", e);
-        }
-    }
-
-    /**
-     * 步骤二：预占库存。reserveForOrder 自身以 (order_item_id) 唯一键作幂等闸门，可重放。
+     * 步骤一：预占库存。先于落单执行，以 (orderNo, productId) 唯一键作幂等闸门，库存不足时直接失败。
      */
     public void reserveInventory(Map<String, Object> context) {
         try {
@@ -85,6 +52,29 @@ public class CheckoutSagaAction {
                 new Date(asLong(context.get("expireTime"))), lines);
         } catch (RuntimeException e) {
             throw wrap("库存预占", e);
+        }
+    }
+
+    /**
+     * 步骤二：落单（本地事务）。入参为预占后的结算上下文；同一 orderNo 已存在时返回既有上下文，保证重放幂等。
+     */
+    public Map<String, Object> createOrder(Map<String, Object> checkout) {
+        try {
+            return checkoutTxService.createOrder(checkout);
+        } catch (RuntimeException e) {
+            throw wrap("落单", e);
+        }
+    }
+
+    /**
+     * createOrder 的补偿：仅未支付订单会被关闭，重复执行安全。
+     */
+    public void cancelOrder(Map<String, Object> context) {
+        if (context == null) return;
+        try {
+            checkoutTxService.cancelIfUnpaid(asString(context.get("orderNo")));
+        } catch (RuntimeException e) {
+            throw wrap("订单取消补偿", e);
         }
     }
 

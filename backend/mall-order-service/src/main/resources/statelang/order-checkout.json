@@ -1,9 +1,23 @@
 {
   "Name": "order-checkout",
-  "Comment": "下单 Saga：落单 -> 预占库存 -> 清空购物车，失败反向补偿",
-  "Version": "0.0.1",
-  "StartState": "CreateOrder",
+  "Comment": "下单 Saga：预占库存 -> 落单 -> 清空购物车，失败反向补偿；库存不足时不产生可见订单",
+  "Version": "0.0.2",
+  "StartState": "ReserveInventory",
   "States": {
+    "ReserveInventory": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "reserveInventory",
+      "Input": ["$.[checkout]"],
+      "CompensateState": "ReleaseInventory",
+      "Next": "CreateOrder"
+    },
+    "ReleaseInventory": {
+      "Type": "ServiceTask",
+      "ServiceName": "checkoutSagaAction",
+      "ServiceMethod": "releaseInventory",
+      "Input": ["$.[checkout]"]
+    },
     "CreateOrder": {
       "Type": "ServiceTask",
       "ServiceName": "checkoutSagaAction",
@@ -13,26 +27,12 @@
         "createOrderResult": "$.#root"
       },
       "CompensateState": "CancelOrder",
-      "Next": "ReserveInventory"
+      "Next": "ClearCart"
     },
     "CancelOrder": {
       "Type": "ServiceTask",
       "ServiceName": "checkoutSagaAction",
       "ServiceMethod": "cancelOrder",
-      "Input": ["$.[createOrderResult]"]
-    },
-    "ReserveInventory": {
-      "Type": "ServiceTask",
-      "ServiceName": "checkoutSagaAction",
-      "ServiceMethod": "reserveInventory",
-      "Input": ["$.[createOrderResult]"],
-      "CompensateState": "ReleaseInventory",
-      "Next": "ClearCart"
-    },
-    "ReleaseInventory": {
-      "Type": "ServiceTask",
-      "ServiceName": "checkoutSagaAction",
-      "ServiceMethod": "releaseInventory",
       "Input": ["$.[createOrderResult]"]
     },
     "ClearCart": {

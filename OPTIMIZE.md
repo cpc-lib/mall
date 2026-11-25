@@ -377,10 +377,20 @@
 #### 处理进展（2026-11-23）
 
 - ✅ 优化方案第 2 条已实现：`CheckoutTxService.cancelIfUnpaid` 在条件关单成功（rows > 0）后调用 `localMessageService.markConsumed(LocalMessage.BIZ_TYPE_ORDER_CLOSE, orderNo)`，补偿关单不再残留 30 分钟后投递的延迟关单消息。
-- ⏸ 优化方案第 1 条（`ReserveInventory` 前移）**暂缓，转为独立设计变更**，原因：
+- ⏸ 优化方案第 1 条（`ReserveInventory` 前移）当时**暂缓，转为独立设计变更**，原因：
   - 原文前提「`t_inventory_reservation` 按 `order_no + product_id` 唯一约束」与实际 schema 不符：`backend/env/sql/dm8/schema.sql` 中 `order_item_id BIGINT NOT NULL`，唯一键为 `uk_reservation_order_item(order_item_id)`；`InventoryServiceImpl.reserveForOrder` 对 `orderItemId == null` 直接抛异常，而 `orderItemId` 仅在 `CreateOrder` 落单后产生，因此无法在不改预占模型的前提下前移。
   - 若前移，需同步处理：`schema.sql` 唯一键与可空性迁移；`InventoryService` 预占契约改为按「订单 + 商品」幂等；`CheckoutTxService.prepare` 的可用库存校验（预占后可用库存已扣减，原校验会误报「库存不足」）；Saga 入参需从购物车构造预占行；并需核实所有读取 `reservation.order_item_id` 的退款/结算路径。
   - 按 `AGENTS.md` §2/§7，这属于设计变更 + DB schema 变更，需先出「现状 → 目标 → 影响面 → 回滚」评审并同步 `README.md` 第 15 章，不在 P1 收尾阶段直接实施。
+
+#### 处理进展（2026-11-25）：优化方案第 1 条已落地
+
+- **现状 → 目标**：Saga 正向顺序由 `CreateOrder → ReserveInventory → ClearCart` 调整为 `ReserveInventory → CreateOrder → ClearCart`；库存不足在第一步直接失败，不写 `t_order_info` / `t_local_message`，不再出现“先可见订单后补偿扣库存”。
+- **预占契约**：`t_inventory_reservation.order_item_id` 改为可空，唯一键由 `uk_reservation_order_item(order_item_id)` 改为 `uk_reservation_order_product(order_no, product_id)`；`InventoryService.reserveForOrder` 允许 `orderItemId == null`，流水 `biz_no` 在无明细 id 时用 `productId` 代替。
+- **结算上下文前移**：`CheckoutTxService.prepare` 拆为只读的 `buildCheckoutContext`（购物车、商品快照、支付配置、收货地址，含商品可售与库存前置校验）与本地事务 `createOrder`；`CheckoutSagaService` 在启动状态机前构建上下文，Saga 入参不再回读购物车，落单直接使用上下文快照。
+- **补偿链**：`ReserveInventory` 失败时预占自身事务回滚、不产生订单；`CreateOrder` / `ClearCart` 失败仍按 `CancelOrder → ReleaseInventory` 反向补偿，`cancelIfUnpaid` 继续在关单成功（rows > 0）时 `markConsumed`。
+- **影响面**：仅下单链路与库存预占表结构；已核验 `reservation.order_item_id` 只在 `InventoryServiceImpl` 内部用于流水，退款/结算/账单均不读取，故可空不影响其它上下文。
+- **回滚**：回退本提交即可；存量预占无论按旧 `order_item_id` 还是新 `(order_no, product_id)` 都能正常提交/释放，可空列对旧数据无影响。
+- **验证**：新增 `CheckoutSagaDefinitionTest` 守护状态顺序；`InventoryServiceImplTest` 增加“预占早于落单时以 productId 生成 biz_no”用例；`mvn clean test` 通过。
 
 ---
 

@@ -16,7 +16,8 @@ import java.util.List;
 public interface InventoryService {
 
     /**
-     * 下单预占：按订单明细逐项锁定库存（available-=qty, locked+=qty）。
+     * 下单预占：按订单行（订单号 + 商品）逐项锁定库存（available-=qty, locked+=qty）。
+     * 预占先于落单执行，orderItemId 可为空，幂等键为 (order_no, product_id)。
      * 任一项库存不足抛 BizException，整体事务回滚。
      */
     void reserveForOrder(String orderNo, Date expireTime, List<ReserveLine> lines);

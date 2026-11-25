@@ -78,7 +78,7 @@ available_stock + locked_stock + sold_stock + lost_stock = 入库总量
 
 1. 使用条件 UPDATE 保证桶数量不为负；
 2. 写 `t_inventory_transaction`；
-3. 使用 `biz_no`（典型格式 `TYPE:单号:itemId`）作为幂等锚；
+3. 使用 `biz_no`（典型格式 `TYPE:单号:itemId`；下单预占先于落单，此时用 `productId` 代替 `itemId`）作为幂等锚；
 4. 依赖数据库唯一键作为最终兜底。
 
 防超卖根闸门是 `ProductMapper.reserveStock`：
@@ -91,7 +91,7 @@ WHERE available_stock >= qty
 
 ### 5.2 库存状态语义
 
-- 下单：`available → locked`，预占状态 `LOCKED`。
+- 下单：`available → locked`，预占状态 `LOCKED`。预占先于落单执行，幂等键为 `(order_no, product_id)`，`order_item_id` 落单后回填，因此库存不足时不会产生可见订单。
 - 支付成功：预占 `LOCKED → COMMITTED`，**库存数量不变，仍在 locked 桶**。
 - 超时关单/取消：`locked → available`，预占 `LOCKED → RELEASED`。
 - 确认收货（用户手动或送达超时自动）：`locked → sold`。

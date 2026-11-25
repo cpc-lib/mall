@@ -2,6 +2,7 @@ package cc.ivera.product.application.impl;
 
 import cc.ivera.product.domain.enums.ReservationStatus;
 import cc.ivera.product.domain.model.InventoryReservation;
+import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.OrderItemStockLine;
 import cc.ivera.product.domain.model.RefundStockLine;
 import cc.ivera.product.domain.model.ReserveLine;
@@ -10,12 +11,14 @@ import cc.ivera.product.domain.repository.InventoryTransactionRepository;
 import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -74,12 +77,24 @@ class InventoryServiceImplTest {
     @Test
     void reserveForOrderDuplicateReservationIsIdempotent() throws Exception {
         ReserveLine line = reserveLine(1L, 999L, 5);
-        doThrow(new DuplicateKeyException("uk_reservation_order_item")).when(reservationRepo)
+        doThrow(new DuplicateKeyException("uk_reservation_order_product")).when(reservationRepo)
             .insert(any(InventoryReservation.class));
 
         service.reserveForOrder("ORD-1", new Date(), List.of(line));
 
         verifyNoMoreInteractions(productRepo);
+    }
+
+    @Test
+    void reserveForOrderBeforeOrderCreationUsesProductIdAsBizKey() throws Exception {
+        ReserveLine line = new ReserveLine(null, 100L, 2);
+        when(productRepo.reserveStock(eq(100L), eq(2))).thenReturn(1);
+
+        service.reserveForOrder("ORD-1", new Date(), List.of(line));
+
+        ArgumentCaptor<InventoryTransaction> captor = ArgumentCaptor.forClass(InventoryTransaction.class);
+        verify(txnRepo).append(captor.capture());
+        assertEquals("ORDER_RESERVE:ORD-1:100", captor.getValue().getBizNo());
     }
 
     // ==================== commitReservation ====================

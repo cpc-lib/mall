@@ -853,13 +853,15 @@ ON COLUMN t_payment_deal.paid_time IS '渠道支付成功时间';
 -- ----------------------------
 -- t_inventory_reservation 库存预占（V2：未支付阶段防超卖）
 -- 状态机：LOCKED → COMMITTED（支付成功）/ RELEASED（关单/取消）
+-- 预占先于落单执行，幂等键为 (order_no, product_id)；order_item_id 落单后回填，
+-- 落单前为空，因此列可空、不再作为唯一键。
 -- ----------------------------
 CREATE TABLE t_inventory_reservation
 (
     id             BIGINT IDENTITY(1, 1) NOT NULL,
     reservation_no VARCHAR(64)                  NOT NULL,
     order_no       VARCHAR(50)                  NOT NULL,
-    order_item_id  BIGINT                       NOT NULL,
+    order_item_id  BIGINT,
     product_id     BIGINT                       NOT NULL,
     quantity       INT                          NOT NULL,
     status         VARCHAR(32) DEFAULT 'LOCKED' NOT NULL,
@@ -870,13 +872,13 @@ CREATE TABLE t_inventory_reservation
     update_time    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT pk_inventory_reservation PRIMARY KEY (id),
     CONSTRAINT uk_reservation_no UNIQUE (reservation_no),
-    CONSTRAINT uk_reservation_order_item UNIQUE (order_item_id)
+    CONSTRAINT uk_reservation_order_product UNIQUE (order_no, product_id)
 );
 CREATE INDEX idx_reservation_order_no ON t_inventory_reservation (order_no);
 CREATE INDEX idx_reservation_status ON t_inventory_reservation (status, expire_time);
 
 COMMENT
-ON TABLE t_inventory_reservation IS '库存预占：每条订单明细对应一条预占（1:1），锁定→提交/释放';
+ON TABLE t_inventory_reservation IS '库存预占：按订单号+商品唯一，锁定→提交/释放；预占先于落单，落单后回填订单明细id';
 COMMENT
 ON COLUMN t_inventory_reservation.id IS '预占id';
 COMMENT
@@ -884,7 +886,7 @@ ON COLUMN t_inventory_reservation.reservation_no IS '预占编号';
 COMMENT
 ON COLUMN t_inventory_reservation.order_no IS '商户订单编号';
 COMMENT
-ON COLUMN t_inventory_reservation.order_item_id IS '订单明细id（1:1 唯一）';
+ON COLUMN t_inventory_reservation.order_item_id IS '订单明细id（预占先于落单时为空，落单后回填）';
 COMMENT
 ON COLUMN t_inventory_reservation.product_id IS '商品id（库存单元）';
 COMMENT
@@ -932,7 +934,7 @@ ON TABLE t_inventory_transaction IS '库存流水：每次预占/提交/释放/�
 COMMENT
 ON COLUMN t_inventory_transaction.id IS '流水id';
 COMMENT
-ON COLUMN t_inventory_transaction.biz_no IS '幂等业务号：TYPE:orderNo:itemId 或 REFUND_RESTOCK:refundNo:itemId 或 MANUAL_ADJUST:productId:UUID';
+ON COLUMN t_inventory_transaction.biz_no IS '幂等业务号：TYPE:orderNo:itemId（未落单时用 productId 代替 itemId）或 REFUND_RESTOCK:refundNo:itemId 或 MANUAL_ADJUST:productId:UUID';
 COMMENT
 ON COLUMN t_inventory_transaction.biz_type IS '流水类型：ORDER_RESERVE-下单预占，ORDER_COMMIT-支付提交（数量不变），ORDER_SOLD-确认收货结转已售，ORDER_RELEASE-关单释放，REFUND_RESTOCK-退款回补，REFUND_LOST-仅退款货损核销，MANUAL_ADJUST-管理员手工调整';
 COMMENT

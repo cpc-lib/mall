@@ -69,10 +69,10 @@ public class CheckoutTxService {
     }
 
     /**
-     * 落单本地事务，返回 Saga 后续步骤与补偿所需的上下文（只含可 JSON 序列化的基础类型）。
-     * 同一 orderNo 重复执行时直接返回既有订单上下文，保证状态机重试幂等。
+     * 构建结算上下文（只读，不写任何表）：作为 Saga 入参，包含预占与落单所需的商品快照、收货信息与支付配置。
+     * 商品可售与库存前置校验在此完成；库存的权威闸门仍是商品服务 reserveStock 条件 UPDATE。
      */
-    public Map<String, Object> prepare(Long userId, CheckoutRequest request, String orderNo) {
+    public Map<String, Object> buildCheckoutContext(Long userId, CheckoutRequest request, String orderNo) {
         OrderInfo existing = orderRepository.findByOrderNo(orderNo);
         if (existing != null && Objects.equals(existing.getUserId(), userId)) {
             return context(existing, orderRepository.listItemsByOrderNo(orderNo));
@@ -89,7 +89,7 @@ public class CheckoutTxService {
         Map<Long, Product> productById = productRepository.findByIds(productIds).stream()
             .collect(Collectors.toMap(Product::getId, product -> product));
         int total = 0;
-        List<Product> products = new ArrayList<>();
+        List<Map<String, Object>> items = new ArrayList<>();
         for (CartItemVO cart : selected) {
             Product p = productById.get(cart.getProductId());
             if (p == null || !CommonStatus.ENABLED.getType().equals(p.getProductStatus()))
@@ -97,38 +97,66 @@ public class CheckoutTxService {
             if (p.getStock() == null || p.getStock() < cart.getQuantity())
                 throw new BizException("当前库存不足，productId=" + cart.getProductId());
             total = Math.addExact(total, Math.multiplyExact(p.getPrice(), cart.getQuantity()));
-            products.add(p);
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("productId", p.getId());
+            line.put("title", p.getTitle());
+            line.put("price", p.getPrice());
+            line.put("quantity", cart.getQuantity());
+            items.add(line);
         }
         // 收货信息（模拟物流对接）：addressId 优先取地址簿，否则用手工输入，最后兜底模拟值。
         ShippingAddress addr = request.getAddressId() != null
             ? addressService.getById(userId, request.getAddressId())
             : null;
-        String receiverName;
-        String receiverPhone;
-        String receiverAddress;
-        if (addr != null) {
-            receiverName = addr.getReceiverName();
-            receiverPhone = addr.getReceiverPhone();
-            receiverAddress = addr.getProvince() + addr.getCity() + addr.getDistrict() + addr.getDetail();
-        } else {
-            receiverName = trimOrDefault(request.getReceiverName(), "模拟收货人");
-            receiverPhone = trimOrDefault(request.getReceiverPhone(), "13800000000");
-            receiverAddress = trimOrDefault(request.getReceiverAddress(), "模拟地址-请勿发货");
-        }
         Date expireTime = new Date(System.currentTimeMillis() + orderExpireMinutes * 60 * 1000);
+
+        Map<String, Object> checkout = new LinkedHashMap<>();
+        checkout.put("orderNo", orderNo);
+        checkout.put("userId", userId);
+        checkout.put("paymentType", request.getPaymentType());
+        checkout.put("paymentAppId", payConfig.getAppId());
+        checkout.put("channelCode", channelCode);
+        checkout.put("expireTime", expireTime.getTime());
+        checkout.put("title", items.size() == 1
+            ? (String) items.get(0).get("title")
+            : "多商品订单(" + items.size() + "项)");
+        checkout.put("firstProductId", items.get(0).get("productId"));
+        checkout.put("total", total);
+        checkout.put("receiverName", addr != null ? addr.getReceiverName()
+            : trimOrDefault(request.getReceiverName(), "模拟收货人"));
+        checkout.put("receiverPhone", addr != null ? addr.getReceiverPhone()
+            : trimOrDefault(request.getReceiverPhone(), "13800000000"));
+        checkout.put("receiverAddress", addr != null
+            ? addr.getProvince() + addr.getCity() + addr.getDistrict() + addr.getDetail()
+            : trimOrDefault(request.getReceiverAddress(), "模拟地址-请勿发货"));
+        checkout.put("items", items);
+        return checkout;
+    }
+
+    /**
+     * 落单本地事务：按结算上下文的商品快照写订单、明细与延迟关单 Outbox。
+     * 同一 orderNo 重复执行时直接返回既有订单上下文，保证状态机重试幂等。
+     */
+    public Map<String, Object> createOrder(Map<String, Object> checkout) {
+        String orderNo = asString(checkout.get("orderNo"));
+        Long userId = asLong(checkout.get("userId"));
+        OrderInfo existing = orderRepository.findByOrderNo(orderNo);
+        if (existing != null && Objects.equals(existing.getUserId(), userId)) {
+            return context(existing, orderRepository.listItemsByOrderNo(orderNo));
+        }
         OrderInfo order = OrderInfo.createNew(
-            products.size() == 1 ? products.get(0).getTitle() : "多商品订单(" + products.size() + "项)",
+            asString(checkout.get("title")),
             orderNo,
             userId,
-            products.get(0).getId(), //兼容旧字段，真实商品组成以 t_order_item 为准
-            total,
-            request.getPaymentType(),
-            payConfig.getAppId(),
-            channelCode,
-            expireTime,
-            receiverName,
-            receiverPhone,
-            receiverAddress);
+            asLong(checkout.get("firstProductId")),
+            asInt(checkout.get("total")),
+            asString(checkout.get("paymentType")),
+            asLong(checkout.get("paymentAppId")),
+            asString(checkout.get("channelCode")),
+            new Date(asLong(checkout.get("expireTime"))),
+            asString(checkout.get("receiverName")),
+            asString(checkout.get("receiverPhone")),
+            asString(checkout.get("receiverAddress")));
 
         return transactionTemplate.execute(status -> {
             OrderInfo persisted = orderRepository.findByOrderNo(orderNo);
@@ -137,11 +165,11 @@ public class CheckoutTxService {
             }
             orderRepository.save(order);
             List<OrderItem> items = new ArrayList<>();
-            for (int i = 0; i < selected.size(); i++) {
-                CartItemVO cart = selected.get(i);
-                Product product = products.get(i);
-                OrderItem item = OrderItem.createSnapshot(order.getId(), order.getOrderNo(),
-                    product.getId(), product.getTitle(), product.getPrice(), cart.getQuantity());
+            for (Object raw : asList(checkout.get("items"))) {
+                Map<?, ?> line = (Map<?, ?>) raw;
+                OrderItem item = OrderItem.createSnapshot(order.getId(), orderNo,
+                    asLong(line.get("productId")), asString(line.get("title")),
+                    asInt(line.get("price")), asInt(line.get("quantity")));
                 orderRepository.saveItem(item);
                 items.add(item);
             }
@@ -206,5 +234,30 @@ public class CheckoutTxService {
 
     private String trimOrDefault(String v, String def) {
         return (v == null || v.trim().isEmpty()) ? def : v.trim();
+    }
+
+    private static List<?> asList(Object value) {
+        if (value instanceof List<?>) {
+            return (List<?>) value;
+        }
+        throw new BizException("下单上下文缺少商品明细");
+    }
+
+    private static String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private static Long asLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return value instanceof Number ? ((Number) value).longValue() : Long.valueOf(String.valueOf(value));
+    }
+
+    private static int asInt(Object value) {
+        if (value == null) {
+            throw new BizException("下单上下文缺少数值");
+        }
+        return value instanceof Number ? ((Number) value).intValue() : Integer.parseInt(String.valueOf(value));
     }
 }

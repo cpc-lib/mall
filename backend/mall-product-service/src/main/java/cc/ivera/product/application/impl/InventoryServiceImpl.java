@@ -50,8 +50,8 @@ public class InventoryServiceImpl implements InventoryService {
             .sorted(Comparator.comparing(ReserveLine::getProductId))
             .collect(Collectors.toList());
         for (ReserveLine line : sorted) {
-            if (line.getOrderItemId() == null || line.getProductId() == null || line.getQuantity() == null || line.getQuantity() <= 0) {
-                throw new BizException("库存预占明细数据非法，orderItemId=" + line.getOrderItemId());
+            if (line.getProductId() == null || line.getQuantity() == null || line.getQuantity() <= 0) {
+                throw new BizException("库存预占明细数据非法，productId=" + line.getProductId());
             }
             InventoryReservation reservation = new InventoryReservation();
             reservation.setReservationNo(OrderNoUtils.getReservationNo());
@@ -62,10 +62,10 @@ public class InventoryServiceImpl implements InventoryService {
             reservation.setStatus(ReservationStatus.LOCKED.getType());
             reservation.setExpireTime(expireTime);
             try {
-                // 唯一键 uk_reservation_order_item(order_item_id) 兼作幂等闸门：已预占则整项跳过。
+                // 唯一键 uk_reservation_order_product(order_no, product_id) 兼作幂等闸门：已预占则整项跳过。
                 reservationRepository.insert(reservation);
             } catch (DuplicateKeyException e) {
-                log.info("库存预占已存在，幂等跳过，orderItemId={}", line.getOrderItemId());
+                log.info("库存预占已存在，幂等跳过，orderNo={}, productId={}", orderNo, line.getProductId());
                 continue;
             }
             int reserved = productRepository.reserveStock(line.getProductId(), line.getQuantity());
@@ -237,7 +237,9 @@ public class InventoryServiceImpl implements InventoryService {
     private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
                                    Long productId, int availableDelta, int lockedDelta, int soldDelta, int lostDelta) {
         InventoryTransaction transaction = new InventoryTransaction();
-        transaction.setBizNo(bizType.name() + ":" + (refundNo != null ? refundNo : orderNo) + ":" + orderItemId);
+        // 预占可能先于落单执行，此时尚无 orderItemId，用 productId 作为同单同商品的流水幂等键。
+        Object bizKey = orderItemId != null ? orderItemId : productId;
+        transaction.setBizNo(bizType.name() + ":" + (refundNo != null ? refundNo : orderNo) + ":" + bizKey);
         transaction.setBizType(bizType.getType());
         transaction.setOrderNo(orderNo);
         transaction.setOrderItemId(orderItemId);
