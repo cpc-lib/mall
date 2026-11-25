@@ -96,5 +96,5 @@ management:
 
 - [x] 设置 `JAVA_HOME=D:\develop\java\jdk21.0.11_10` 后执行 `mvn -o -B -ntp -T 1C clean test`
 - [x] 确认测试总数 ≥ 74 且全绿
-- [ ] `git status` 仅包含本 Spec 涉及文件；11 个既有无关脏文件保持未暂存
-- [ ] 提交（提交信息不含 Agent/模型署名），推送 `origin`
+- [x] `git status` 仅包含本 Spec 涉及文件；11 个既有无关脏文件保持未暂存
+- [x] 提交（提交信息不含 Agent/模型署名），推送 `origin`
