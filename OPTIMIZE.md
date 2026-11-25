@@ -146,6 +146,8 @@
 - **优化方案**：
   反转执行顺序或让唯一键冲突回滚事务：在同一个本地事务内**先插入 `t_inventory_transaction`**（依赖 `uk_inventory_biz_no` 数据库唯一索引做原子抢占），若捕获 `DuplicateKeyException` 则直接幂等 `continue`（不执行 `t_product` 更新）；只有流水插入成功才执行 `t_product` 条件 UPDATE（若条件 UPDATE 影响行数为 0 则抛 `BizException` 触发整个事务连同流水一起回滚）。
 
+**处理进展（2026-11-25）**：已落地。`convertToSoldOnReceipt`、`restockForRefund`、`writeOffLostForRefund` 均改为先 `tryAppendTransaction`（唯一键冲突返回 false → 幂等跳过），再执行四桶条件 UPDATE；UPDATE 未命中改为抛 `BizException` 回滚整笔事务（含刚插入的流水），避免流水与库存桶不一致。`InventoryServiceImplTest` 新增 2 条用例（流水冲突不更新库存、结转未命中抛异常），`mall-product-service` 18 条测试全绿。
+
 ---
 
 ### P0-5：`ExceptionRefundServiceImpl` 重复/晚到支付自动冲正重试短路 Bug（渠道失败后重试误判幂等直接丢弃）
@@ -259,6 +261,12 @@
 - **优化方案**：
   1. 在 `InternalFeignConfiguration` 中通过 `RequestInterceptor` 自动注入内部调用令牌请求头（如 `X-Internal-Token: ${INTERNAL_AUTH_TOKEN}`），并在 `WebMvcAuthConfig` 中为 `/internal/**` 注册 `InternalTokenInterceptor` 进行常量时间比对（`MessageDigest.isEqual`）。
   2. 在 `PaymentChannelController` 返回前端 VO 时对 `privateKey`、`apiV3Key`、`partnerKey`、`merchantPrivateKey` 进行掩码脱敏（如 `"******"`），更新时若前端传入掩码值则保留数据库原值。
+
+**处理进展（2026-11-25）**：已落地。
+1. 新增 `cc.ivera.shared.security.InternalTokenInterceptor`，`WebMvcAuthConfig` 对 `/internal/**` 注册该拦截器，使用 `MessageDigest.isEqual` 常量时间比较 `X-Internal-Token` 与 `internal.auth.token`（环境变量 `INTERNAL_AUTH_TOKEN`）。
+2. `mall-remote` 新增 `InternalTokenFeignConfiguration`，配置令牌后为所有 Feign 调用自动附加 `X-Internal-Token`；未配置时客户端不附加、服务端拦截器关闭，保持本地直连（`NACOS_ENABLED=false`）可用。
+3. `PaymentChannelServiceImpl` 对 `getById`、`listEnabledChannels`、`listAllChannels`、`create/update/status` 的返回统一掩码 `privateKey/apiV3Key/partnerKey/merchantPrivateKey`；更新时前端回传 `******` 则保留数据库原值。`getByChannelCode` 供支付签名内部使用，保持原始凭据。
+4. `PaymentChannelServiceImplTest` 新增 3 条用例（列表脱敏、掩码回传保留原值、内部查询不脱敏）。
 
 ---
 

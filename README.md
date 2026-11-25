@@ -2403,6 +2403,8 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `CORS_ALLOWED_ORIGINS` | 网关 CORS 允许来源，默认 `http://localhost:3000,http://localhost:3002`（`"*"` 不再作为默认值） |
 | `X-Forwarded-For` | 网关 `TrustedForwardedHeaderFilter` 会用直连来源地址覆盖客户端传入值，下游 BFF 取首个元素作为客户端 IP；直接访问 BFF 时回落到 `RemoteAddr` |
 | `prod` profile | 激活后 `ProductionSecretGuard` 校验 DM / RabbitMQ / Redis 口令、JWT 密钥、MinIO 凭据与 Nacos 密码，命中仓库默认值或为空即启动失败 |
+| `INTERNAL_AUTH_TOKEN` | 内部契约 `/internal/**` 令牌（`internal.auth.token`）。配置后服务端校验 `X-Internal-Token`，Feign 自动附加；未配置时保持本地直连可用，生产必须注入 |
+| 支付渠道凭据 | `/api/payment-channel/**`、`/api/payment-app/channels` 返回的 `privateKey/apiV3Key/partnerKey/merchantPrivateKey` 统一掩码为 `******`；编辑回传掩码值时保留数据库原值 |
 | `stock.import.storage` | 商品服务 Excel 导入存储：默认 `local`，可切 `minio` |
 | `stock.import.dir` | 商品服务本地文件目录 |
 | `stock.import.minio.*` | 商品服务 MinIO 配置 |

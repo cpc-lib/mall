@@ -132,20 +132,17 @@ public class InventoryServiceImpl implements InventoryService {
                 log.info("确认收货结转数量为0，跳过，orderNo={}, orderItemId={}", orderNo, item.getOrderItemId());
                 continue;
             }
-            String bizNo = InventoryBizType.ORDER_SOLD.name() + ":" + orderNo + ":" + item.getOrderItemId();
-            if (transactionRepository.countByBizNo(bizNo) > 0) {
+            // 先插流水抢占 uk_inventory_biz_no：并发重入时唯一键冲突即幂等跳过，避免双倍结转库存。
+            if (!tryAppendTransaction(InventoryBizType.ORDER_SOLD, orderNo, item.getOrderItemId(), null,
+                item.getProductId(), 0, -qty, qty, 0)) {
                 log.info("确认收货结转流水已存在，幂等跳过，orderNo={}, orderItemId={}", orderNo, item.getOrderItemId());
                 continue;
             }
             int converted = productRepository.commitSoldStock(item.getProductId(), qty);
             if (converted == 0) {
-                // 旧模型存量在途单的锁定已在支付时被扣减，无法结转：不阻塞收货，仅告警留痕。
-                log.warn("确认收货结转失败（锁定库存不足），跳过，orderNo={}, orderItemId={}, productId={}, qty={}",
-                    orderNo, item.getOrderItemId(), item.getProductId(), qty);
-                continue;
+                // 条件 UPDATE 未命中：抛出回滚整笔事务（连同刚插入的流水），避免流水与库存桶不一致。
+                throw new BizException("锁定库存不足，无法结转，productId=" + item.getProductId());
             }
-            insertTransaction(InventoryBizType.ORDER_SOLD, orderNo, item.getOrderItemId(), null,
-                item.getProductId(), 0, -qty, qty);
         }
     }
 
@@ -191,8 +188,11 @@ public class InventoryServiceImpl implements InventoryService {
             return;
         }
         for (RefundStockLine item : items) {
-            String bizNo = InventoryBizType.REFUND_RESTOCK.name() + ":" + refundNo + ":" + item.getOrderItemId();
-            if (transactionRepository.countByBizNo(bizNo) > 0) {
+            // 先插流水抢占 uk_inventory_biz_no：并发重入时唯一键冲突即幂等跳过，避免双倍回补库存。
+            if (!tryAppendTransaction(InventoryBizType.REFUND_RESTOCK, null, item.getOrderItemId(), refundNo,
+                item.getProductId(), item.getRefundQty(),
+                afterReceipt ? 0 : -item.getRefundQty(),
+                afterReceipt ? -item.getRefundQty() : 0, 0)) {
                 log.info("退款回补流水已存在，幂等跳过，refundNo={}, orderItemId={}", refundNo, item.getOrderItemId());
                 continue;
             }
@@ -205,10 +205,6 @@ public class InventoryServiceImpl implements InventoryService {
                     ? "已售库存不足，无法回补，productId=" + item.getProductId()
                     : "库存预占释放失败，productId=" + item.getProductId());
             }
-            insertTransaction(InventoryBizType.REFUND_RESTOCK, null, item.getOrderItemId(), refundNo,
-                item.getProductId(), item.getRefundQty(),
-                afterReceipt ? 0 : -item.getRefundQty(),
-                afterReceipt ? -item.getRefundQty() : 0);
         }
     }
 
@@ -219,8 +215,12 @@ public class InventoryServiceImpl implements InventoryService {
             return;
         }
         for (RefundStockLine item : items) {
-            String bizNo = InventoryBizType.REFUND_LOST.name() + ":" + refundNo + ":" + item.getOrderItemId();
-            if (transactionRepository.countByBizNo(bizNo) > 0) {
+            // 先插流水抢占 uk_inventory_biz_no：并发重入时唯一键冲突即幂等跳过，避免双倍核销库存。
+            if (!tryAppendTransaction(InventoryBizType.REFUND_LOST, null, item.getOrderItemId(), refundNo,
+                item.getProductId(), 0,
+                afterReceipt ? 0 : -item.getRefundQty(),
+                afterReceipt ? -item.getRefundQty() : 0,
+                item.getRefundQty())) {
                 log.info("退款货损核销流水已存在，幂等跳过，refundNo={}, orderItemId={}", refundNo, item.getOrderItemId());
                 continue;
             }
@@ -233,22 +233,22 @@ public class InventoryServiceImpl implements InventoryService {
                     ? "已售库存不足，无法核销货损，productId=" + item.getProductId()
                     : "锁定库存不足，无法核销货损，productId=" + item.getProductId());
             }
-            insertTransaction(InventoryBizType.REFUND_LOST, null, item.getOrderItemId(), refundNo,
-                item.getProductId(), 0,
-                afterReceipt ? 0 : -item.getRefundQty(),
-                afterReceipt ? -item.getRefundQty() : 0,
-                item.getRefundQty());
         }
     }
 
     private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
                                    Long productId, int availableDelta, int lockedDelta, int soldDelta) {
-        insertTransaction(bizType, orderNo, orderItemId, refundNo, productId,
+        tryAppendTransaction(bizType, orderNo, orderItemId, refundNo, productId,
             availableDelta, lockedDelta, soldDelta, 0);
     }
 
-    private void insertTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
-                                   Long productId, int availableDelta, int lockedDelta, int soldDelta, int lostDelta) {
+    /**
+     * 追加库存流水：返回 true 表示本次抢占成功；唯一键冲突返回 false，由调用方幂等跳过。
+     * biz_no 唯一键是四桶并发变更的原子闸门，必须先于 t_product 条件 UPDATE 执行。
+     */
+    private boolean tryAppendTransaction(InventoryBizType bizType, String orderNo, Long orderItemId, String refundNo,
+                                         Long productId, int availableDelta, int lockedDelta, int soldDelta,
+                                         int lostDelta) {
         InventoryTransaction transaction = new InventoryTransaction();
         // 预占可能先于落单执行，此时尚无 orderItemId，用 productId 作为同单同商品的流水幂等键。
         Object bizKey = orderItemId != null ? orderItemId : productId;
@@ -264,9 +264,11 @@ public class InventoryServiceImpl implements InventoryService {
         transaction.setLostDelta(lostDelta);
         try {
             transactionRepository.append(transaction);
+            return true;
         } catch (DuplicateKeyException e) {
             // 审计流水唯一键冲突：同一动作已落流水，幂等跳过。
             log.info("库存流水已存在，幂等跳过，bizNo={}", transaction.getBizNo());
+            return false;
         }
     }
 }

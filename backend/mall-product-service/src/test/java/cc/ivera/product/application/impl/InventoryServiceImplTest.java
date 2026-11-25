@@ -238,6 +238,31 @@ class InventoryServiceImplTest {
         verify(productRepo).writeOffLostStock(100L, 3);
     }
 
+    // ==================== 流水唯一键抢占（P0-4 TOCTOU） ====================
+
+    @Test
+    void restockSkipsStockUpdateWhenTransactionAlreadyExists() throws Exception {
+        RefundStockLine line = refundLine(1L, 100L, 3);
+        doThrow(new DuplicateKeyException("dup")).when(txnRepo).append(any(InventoryTransaction.class));
+
+        service.restockForRefund("REF-1", List.of(line), true);
+
+        verify(productRepo, never()).releaseSoldStock(anyLong(), anyInt());
+        verify(productRepo, never()).releaseReservedStock(anyLong(), anyInt());
+    }
+
+    @Test
+    void convertToSoldThrowsWhenStockUpdateMisses() {
+        OrderItemStockLine line = new OrderItemStockLine();
+        line.setOrderItemId(1L);
+        line.setProductId(100L);
+        line.setQuantity(5);
+        line.setRestockedQty(0);
+        when(productRepo.commitSoldStock(eq(100L), eq(5))).thenReturn(0);
+
+        assertThrows(BizException.class, () -> service.convertToSoldOnReceipt("ORD-1", List.of(line)));
+    }
+
     // ==================== helpers ====================
 
     private static ReserveLine reserveLine(Long orderItemId, Long productId, int qty) {

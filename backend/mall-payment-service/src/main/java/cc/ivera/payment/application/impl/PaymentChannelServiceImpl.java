@@ -17,6 +17,8 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
 
     private static final String ENABLED = "ENABLED";
     private static final String DISABLED = "DISABLED";
+    /** 返回前端的私钥/密钥掩码；前端回传该值表示不修改原值。 */
+    private static final String MASKED_VALUE = "******";
 
     private final PaymentChannelRepository paymentChannelRepository;
     private final ObjectMapper objectMapper;
@@ -29,22 +31,23 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
 
     @Override
     public PaymentChannel getById(Long id) {
-        return paymentChannelRepository.findById(id);
+        return maskSecrets(paymentChannelRepository.findById(id));
     }
 
     @Override
     public PaymentChannel getByChannelCode(String channelCode) {
+        // 供支付/退款流程内部使用，必须保留原始凭据，不能掩码
         return paymentChannelRepository.findByChannelCode(channelCode);
     }
 
     @Override
     public List<PaymentChannel> listEnabledChannels() {
-        return paymentChannelRepository.listEnabled();
+        return maskSecrets(paymentChannelRepository.listEnabled());
     }
 
     @Override
     public List<PaymentChannel> listAllChannels() {
-        return paymentChannelRepository.listAll();
+        return maskSecrets(paymentChannelRepository.listAll());
     }
 
     @Override
@@ -54,7 +57,7 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
         PaymentChannel channel = new PaymentChannel();
         copyRequestToEntity(request, channel);
         paymentChannelRepository.save(channel);
-        return channel;
+        return maskSecrets(channel);
     }
 
     @Override
@@ -69,7 +72,7 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
         validateRequest(request, id);
         copyRequestToEntity(request, exist);
         paymentChannelRepository.update(exist);
-        return paymentChannelRepository.findById(id);
+        return maskSecrets(paymentChannelRepository.findById(id));
     }
 
     @Override
@@ -84,7 +87,7 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
         }
         channel.setChannelStatus(status);
         paymentChannelRepository.update(channel);
-        return paymentChannelRepository.findById(id);
+        return maskSecrets(paymentChannelRepository.findById(id));
     }
 
     @Override
@@ -129,13 +132,13 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
         channel.setAppid(trimToNull(request.getAppid()));
         channel.setMchId(trimToNull(request.getMchId()));
         channel.setMchSerialNo(trimToNull(request.getMchSerialNo()));
-        channel.setPrivateKey(trimToNull(request.getPrivateKey()));
-        channel.setApiV3Key(trimToNull(request.getApiV3Key()));
-        channel.setPartnerKey(trimToNull(request.getPartnerKey()));
+        channel.setPrivateKey(keepIfMasked(request.getPrivateKey(), channel.getPrivateKey()));
+        channel.setApiV3Key(keepIfMasked(request.getApiV3Key(), channel.getApiV3Key()));
+        channel.setPartnerKey(keepIfMasked(request.getPartnerKey(), channel.getPartnerKey()));
         // 支付宝商户信息
         channel.setAlipayAppId(trimToNull(request.getAlipayAppId()));
         channel.setSellerId(trimToNull(request.getSellerId()));
-        channel.setMerchantPrivateKey(trimToNull(request.getMerchantPrivateKey()));
+        channel.setMerchantPrivateKey(keepIfMasked(request.getMerchantPrivateKey(), channel.getMerchantPrivateKey()));
         channel.setAlipayPublicKey(trimToNull(request.getAlipayPublicKey()));
         channel.setSortOrder(request.getSortOrder() == null ? 0 : request.getSortOrder());
     }
@@ -165,5 +168,34 @@ public class PaymentChannelServiceImpl implements PaymentChannelService {
 
     private String trimToNull(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /**
+     * 前端回传掩码值时保留数据库原值，避免编辑非密钥字段时把密钥覆盖成 "******"。
+     */
+    private String keepIfMasked(String value, String current) {
+        return MASKED_VALUE.equals(value) ? current : trimToNull(value);
+    }
+
+    private PaymentChannel maskSecrets(PaymentChannel channel) {
+        if (channel == null) {
+            return null;
+        }
+        channel.setPrivateKey(mask(channel.getPrivateKey()));
+        channel.setApiV3Key(mask(channel.getApiV3Key()));
+        channel.setPartnerKey(mask(channel.getPartnerKey()));
+        channel.setMerchantPrivateKey(mask(channel.getMerchantPrivateKey()));
+        return channel;
+    }
+
+    private List<PaymentChannel> maskSecrets(List<PaymentChannel> channels) {
+        if (channels != null) {
+            channels.forEach(this::maskSecrets);
+        }
+        return channels;
+    }
+
+    private String mask(String value) {
+        return StringUtils.hasText(value) ? MASKED_VALUE : value;
     }
 }
