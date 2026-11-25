@@ -8,26 +8,40 @@ import org.junit.jupiter.api.Test;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
- * 架构约束回归：退款域 domain 层不得依赖 Spring / MyBatis-Plus / infrastructure / interfaces / application。
- * <p>对应 AGENTS.md 第 4 节的依赖方向约束，防止领域模型被框架与上层实现污染。</p>
+ * 架构约束回归：退款域四层依赖方向（domain 隔离 + application 只依赖 domain 端口）。
+ * 对应 AGENTS.md 第 4 节强制要求。
  */
 class RefundDomainArchitectureTest {
 
-    private final JavaClasses domainClasses = new ClassFileImporter().importPackages("cc.ivera.refund.domain");
+    private static final String PKG = "cc.ivera.refund";
+
+    private final JavaClasses classes = new ClassFileImporter().importPackages(PKG);
 
     @Test
     void domainMustNotDependOnFrameworksOrOuterLayers() {
         ArchRule rule = noClasses()
-            .that().resideInAPackage("cc.ivera.refund.domain..")
+            .that().resideInAPackage(PKG + ".domain..")
             .should().dependOnClassesThat().resideInAnyPackage(
                 "org.springframework..",
                 "org.apache.ibatis..",
                 "com.baomidou..",
-                "cc.ivera.refund.infrastructure..",
-                "cc.ivera.refund.interfaces..",
-                "cc.ivera.refund.application.."
+                PKG + ".infrastructure..",
+                PKG + ".interfaces..",
+                PKG + ".application.."
             )
             .because("domain 层只允许依赖领域模型、枚举与端口接口");
-        rule.check(domainClasses);
+        rule.check(classes);
+    }
+
+    @Test
+    void applicationMustNotDependOnInterfacesOrPo() {
+        ArchRule rule = noClasses()
+            .that().resideInAPackage(PKG + ".application..")
+            .should().dependOnClassesThat().resideInAnyPackage(
+                PKG + ".interfaces..",
+                PKG + ".infrastructure.persistence.po.."
+            )
+            .because("application 层只能依赖 domain 端口，不得反向引用 interfaces 或 PO");
+        rule.check(classes);
     }
 }

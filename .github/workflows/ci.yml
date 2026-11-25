@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   JAVA_VERSION: '21'
   NODE_VERSION: '20'
@@ -13,6 +17,7 @@ jobs:
   backend:
     name: Backend build & test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -24,11 +29,12 @@ jobs:
           distribution: temurin
           cache: maven
       - name: Maven build and test
-        run: mvn -B clean test
+        run: mvn -B -ntp -T 1C clean test
 
   frontend:
     name: Frontend ${{ matrix.app }} build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -46,7 +52,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Logic tests
-        if: matrix.app == 'user-ui'
         run: npm run test:logic
       - name: Build
         run: npm run build
