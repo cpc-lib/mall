@@ -26,7 +26,7 @@
 
 ## T4 回归与交付
 
-- [ ] 设置 `JAVA_HOME=D:\develop\java\jdk21.0.11_10` 后执行 `mvn -o -B -ntp -T 1C clean test`
-- [ ] `git status` 确认只含预期文件（4 个 Java + OPTIMIZE.md，必要时 README.md）
-- [ ] 提交 `fix: 收敛退款锁键并补齐订单状态推进锁` 并推送 `origin/main`
+- [x] 设置 `JAVA_HOME=D:\develop\java\jdk21.0.11_10` 后执行 `mvn -o -B -ntp -T 1C clean test`
+- [x] `git status` 确认只含预期文件（4 个 Java + OPTIMIZE.md，必要时 README.md）
+- [x] 提交 `fix: 收敛退款锁键并补齐订单状态推进锁` 并推送 `origin/main`
 - 验证：构建全绿、工作区干净（无关脏文件保持 stash，不提交）。
