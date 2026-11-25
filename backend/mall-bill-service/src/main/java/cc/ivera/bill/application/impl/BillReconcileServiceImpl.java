@@ -686,12 +686,13 @@ public class BillReconcileServiceImpl implements BillReconcileService {
         summary.setMatchedCount(billImport.getMatchedCount() == null ? 0 : billImport.getMatchedCount());
         summary.setDiscrepancyCount(discrepancyCount);
         summary.setOpenDiscrepancyCount(openCount);
-        summary.setBalanced(channelPayCount == localPays.size()
-            && channelRefundCount == localRefunds.size()
-            && channelPayAmount == localPayAmount
-            && channelRefundAmount == localRefundAmount
-            && channelNet == localNet
-            && openCount == 0);
+        summary.setBalanced(cc.ivera.bill.domain.policy.BillBalancedRule.isBalanced(
+            channelPayCount, localPays.size(),
+            channelRefundCount, localRefunds.size(),
+            channelPayAmount, localPayAmount,
+            channelRefundAmount, localRefundAmount,
+            channelNet, localNet,
+            openCount));
         return summary;
     }
 
