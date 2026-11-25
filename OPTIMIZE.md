@@ -289,6 +289,8 @@
   1. 在 `InternalFeignConfiguration` 中注册 `RequestInterceptor`：当 `FenceTokenHolder.get() != null` 时，向 `/internal/**` 请求注入 Header `X-Fence-Token: <token>`。
   2. 在 `mall-infra` 中提供 `FenceTokenServletFilter`（仅作用于 `/internal/**` 且需通过内部鉴权）：若当前线程未持本地锁且请求头包含合法的 `X-Fence-Token`，则在请求生命周期内绑定至 `FenceTokenHolder`，并在 `finally` 中释放。
 
+**处理进展（2026-11-25）**：已落地。`mall-remote` 的 `InternalFeignConfiguration` 在持有本地锁（`FenceTokenHolder.get() != null`）时对 `/internal/**` 请求注入 `X-Fence-Token`；`mall-infra` 的 `InternalFenceTokenFilter` 在内部鉴权通过后将请求头令牌绑定至 `FenceTokenHolder`，请求结束 `finally` 释放，跨服务状态推进恢复围栏 CAS。
+
 ---
 
 ### P1-2：同一聚合根（`orderNo`）的分布式锁 Key 命名碎片化，导致并发操作互不互斥且引发 `fence_token` 逆序误拒
@@ -319,6 +321,8 @@
   - 同一订单的支付状态推进/查单/关单统一收敛到订单级支付锁：`payment:order:{orderNo}`；
   - 同一退款单的受理/签收/重试/渠道通知/状态同步统一收敛到退款单级锁：`refund:order:{refundNo}`（创建退款申请时锁定 `refund:create:{orderNo}`）。
 
+**处理进展（2026-11-25）**：已落地。支付服务 11 类锁键统一收敛为 `payment:order:{orderNo}`（建单阶段尚无订单号，仍按 `productId+支付应用` 加锁）；退款 V2 统一为 `refund:order:{refundNo}` 与创建 `refund:create:{orderNo}`。本轮补齐 V1 兼容链路：`RefundApplicationServiceImpl` 的 `approve`/`reject`/`queryRefundStatus` 改用 `refund:order:{refundNo}`、`reconcileOrderRefundStatus` 改用 `refund:create:{orderNo}`，`RefundInfoServiceImpl.createRefundApplication` 与 `OrderRefundStatusService.refreshOrderRefundStatus` 改用 `refund:create:{orderNo}`。已核无锁序环（`refund:create` 内不再获取 `refund:order`），同线程重入由 Redisson 可重入锁与 `FenceTokenHolder` 嵌套栈（取最大令牌）承接。
+
 ---
 
 ### P1-3：多处核心状态推进缺失分布式锁或 CAS 条件（含锁外脏对象覆盖 Bug）
@@ -341,6 +345,8 @@
   - 在 `RefundOrderServiceImpl.queryRefundStatus` 中移除第 590–592 行的锁外冗余更新（`RefundSucceededListener` / `RefundQuotaReleasedListener` 已在锁内完成了 `t_refund_order` 结算/失败回写），直接重新 `getRequired(refundNo)` 返回最新状态。
   - 为 `RefundQuotaReleasedListener` 和 `PasswordResetRequestServiceImpl` 补齐基于前置状态的 CAS 条件 UPDATE。
   - 为 `AliPayServiceImpl.cancelOrder` 及订单状态推进统一加锁。
+
+**处理进展（2026-11-25）**：①②③⑤已在前序轮次落地：`RefundOrderServiceImpl.queryRefundStatus` 改为条件 UPDATE 同步、`RefundQuotaReleasedListener` 使用 `markFailedIfStatusIn`、支付宝 `cancelOrder`/`checkOrderStatus` 已加 `payment:order:` 锁、`PasswordResetRequestServiceImpl.handle/reject` 已加事务与 `markResolvedIfStatusIn` CAS。本轮补齐第④项：`OrderInfoServiceImpl.updateStatusByOrderNoIfStatus` 统一在 `order:status:{orderNo}` 锁内执行 CAS、库存提交/释放、关闭活跃支付单与 Outbox 收口，覆盖 `PaymentSucceededConsumer`、`OrderCloseConsumer`、`TimeoutOrderCloseScheduler`、`AdminOrderShipmentController.forceClose` 与内部 `closeIfNotPay`；锁内只有本地 DB 写与 afterCommit 注册，无远程调用。
 
 ---
 
@@ -368,6 +374,8 @@
    - **定位**：`backend/mall-refund-service/src/main/java/cc/ivera/refund/application/impl/RefundOrderServiceImpl.java:290-298, 503-513, 551-557`
    - **问题**：在 `doCreate`、`prepareAccept`、`prepareConfirmReturn` 的本地事务中，先通过 Feign 调用了 `orderRefundQuotaApi.addRestockedQty` 和 `refundInventoryGateway.restockForRefund / writeOffLostForRefund`（在订单服务和商品服务已独立提交事务），紧接着调用 `initiateChannelRefund(refundOrder)`（内部远程调用 `paymentOrderCommandApi.freezeChannelRefund`）。若 `initiateChannelRefund` 失败抛出异常，`mall-refund-service` 本地事务回滚，但**商品服务已回补/核销的库存和订单服务已累加的 `restocked_qty` 没有回滚，导致库存虚增**。
    - **修复**：先执行 `paymentOrderCommandApi.freezeChannelRefund` 资金冻结，成功后再执行 `addRestockedQty` 与库存回补/核销；或者将资金冻结、库存结转纳入可重入的状态阶段，避免本地事务回滚导致跨服务状态悬空。
+
+**处理进展（2026-11-25）**：4 项均已落地。未发货取消/受理/签收统一走 `restockWithGuard`/`writeOffLostWithGuard`（先 `addRestockedQty` CAS 再调商品服务）；`forceClose`、微信与支付宝 `cancelOrder` 关单前均先查 `t_payment_deal` 成交事实，已成交转 `markPaid` 并拒绝关单；MQ 消费者与超时扫描在订单已终态时仍幂等调用 `ensureReservationCommitted/Released`；退款链路改为先 `freezeChannelRefund` 冻结渠道资金、成功后再回补/核销库存，避免本地事务回滚造成库存虚增。
 
 ---
 
@@ -451,6 +459,8 @@
 - **优化方案**：
   在 `RefundOrderServiceImpl.executeChannelRefund` 和 `ExceptionRefundServiceImpl.executeChannelRefund` 中，当渠道退款返回 `PROCESSING`（或发起成功后尚未终态）时，调用 `refundStatusSyncMessageService.sendRefundStatusSyncMessage(refundNo)`。
 
+**处理进展（2026-11-25）**：已落地。`RefundOrderServiceImpl.executeChannelRefund` 与 `ExceptionRefundServiceImpl.executeChannelRefund` 在渠道返回 `PROCESSING` 时均调用 `sendRefundStatusSyncMessage`，V2 主链路不再只依赖 `RefundStatusSyncScheduler` 兜底。
+
 ---
 
 ### P1-8：多实例定时任务惊群效应与 `catch (RuntimeException)` 降级无 `LIMIT` 全表扫描风险
@@ -473,6 +483,8 @@
 - **优化方案**：
   1. 立即移除 `OrderRepositoryImpl` 和 `RefundInfoRepositoryImpl` 中的 `catch (RuntimeException dmLimitSyntax)` 无 `LIMIT` 回退分支（或改用 MyBatis-Plus `Page<>(1, safeBatch, false)` 分页插件，天然兼容 DM8）。
   2. 为 6 个定时任务统一加上非阻塞任务锁（抢不到锁的实例直接跳过本轮调度）。
+
+**处理进展（2026-11-25）**：两项均已落地。`OrderRepositoryImpl.listTimeoutNotPay` 与 `RefundInfoRepositoryImpl.listProcessingApproved` 已移除非必要的 `catch (RuntimeException)` 无 LIMIT 回退，只保留 `limit 100` 查询；7 个 `@Scheduled`（超时关单、自动收货、模拟物流、下单幂等清理、退款同步、Outbox 投递、Outbox 清理）均通过 `DistributedLockTemplate.tryExecute` 非阻塞抢主，多实例下抢不到锁的节点直接跳过本轮。
 
 ---
 

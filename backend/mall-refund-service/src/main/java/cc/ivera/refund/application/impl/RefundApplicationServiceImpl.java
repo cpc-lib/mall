@@ -67,7 +67,7 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @DistributedLock(key = "'payment:refund:approve:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public void approve(String refundNo, String approveRemark) {
         RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
         if (refundInfo == null) {
@@ -104,7 +104,7 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(rollbackFor = Exception.class)
-    @DistributedLock(key = "'payment:refund:reject:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public void reject(String refundNo, String approveRemark) {
         refundInfoService.markApprovalRejected(refundNo, approveRemark);
     }
@@ -121,7 +121,7 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @DistributedLock(key = "'payment:refund:query:' + #refundNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:order:' + #refundNo", waitTimeMillis = 5000L)
     public RefundInfo queryRefundStatus(String refundNo) {
         RefundInfo refundInfo = refundInfoService.getByRefundNo(refundNo);
         if (refundInfo == null) {
@@ -144,7 +144,7 @@ public class RefundApplicationServiceImpl implements RefundApplicationService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @DistributedLock(key = "'payment:refund:reconcile:' + #orderNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public List<RefundInfo> reconcileOrderRefundStatus(String orderNo) {
         OrderInfo orderInfo = orderQueryApi.findByOrderNo(orderNo);
         if (orderInfo == null) {

@@ -84,7 +84,7 @@ public class RefundInfoServiceImpl implements RefundInfoService {
 
     @Override
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    @DistributedLock(key = "'payment:refund:create:' + #orderNo", waitTimeMillis = 5000L)
+    @DistributedLock(key = "'refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public RefundInfo createRefundApplication(String orderNo, Integer refundAmount, String reason) {
         try {
             if (orderNo == null || orderNo.trim().isEmpty()) {

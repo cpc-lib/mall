@@ -1576,6 +1576,7 @@ POST /api/checkout/orders（Idempotency-Key 必填）
 #### 15.7.3 订单状态成功/关闭后的库存终态
 
 `OrderInfoServiceImpl.updateStatusByOrderNoIfStatus` 在订单 CAS 成功后注册：
+（该方法整体运行在 `order:status:<orderNo>` 锁内，MQ 消费者、超时扫描、强制关单与内部 `closeIfNotPay` 共用同一临界区，围栏令牌随锁写入。）
 
 ```text
 SUCCESS → commitReservationAfterCommit(orderNo)
@@ -1600,7 +1601,7 @@ CLOSED/CANCEL → releaseReservationAfterCommit(orderNo)
 `cc.ivera.shared.infrastructure.lock.RedissonDistributedLockTemplate`。锁只负责把临界区串行化，最终一致性仍由
 fence 围栏 CAS、`biz_no` 幂等与数据库唯一键兜底。
 
-同时提供声明式用法：在方法上标注 `@cc.ivera.shared.domain.lock.DistributedLock(key = "'payment:wx:notify:pay:' + #orderNo")`，
+同时提供声明式用法：在方法上标注 `@cc.ivera.shared.domain.lock.DistributedLock(key = "'payment:order:' + #orderNo")`，
 由 `cc.ivera.shared.infrastructure.lock.DistributedLockConfiguration` 注册的 `DistributedLockInterceptor` 复用同一模板加锁
 （使用 `StaticMethodMatcherPointcut` 直接匹配方法注解，不经过 AspectJ 表达式解析）。`key` 支持 SpEL（参数名与 `#p0/#a0`），
 `waitTimeMillis` 默认 3000，`holdWarnMillis` 默认 5000（持有超过该值记录 WARN，`<= 0` 关闭）；拦截器优先级高于事务通知，
@@ -1793,9 +1794,9 @@ cc.ivera.api.payment.PaymentChannelRefundApi
 - 退款成功/处理中/失败的状态回写由退款域 `RefundInfoService.applyChannelRefundResult` 完成。
 - P5 物理拆分后退款服务通过 `PaymentChannelRefundRemoteAdapter` 调用同一契约；微信退款通知链路为
   `WxPayRefundNotifyController → PaymentChannelRefundApi.processRefundNotify → RefundApplicationService.applyRefundSync`，
-  锁键保持 `payment:wx:notify:refund:<refundNo>`。
-- 发起渠道退款必须与退款状态推进处于同一把分布式锁内：管理端受理/签收/重试在 `refund:accept|confirm-return|retry:<refundNo>` 锁内执行，
-  未发货取消的自动受理在 `refund:create:<orderNo>` 锁内完成事务提交与渠道调用，避免事务提交后锁已释放导致同一退款单被并发重复提交渠道。
+  锁键保持 `refund:order:<refundNo>`。
+- 发起渠道退款必须与退款状态推进处于同一把分布式锁内：管理端受理/签收/重试与 V1 兼容受理/查询在 `refund:order:<refundNo>` 锁内执行，
+  未发货取消的自动受理与订单维度退款对账在 `refund:create:<orderNo>` 锁内完成事务提交与渠道调用，避免事务提交后锁已释放导致同一退款单被并发重复提交渠道。
 - `t_refund_info` 持有 `fence_token`，状态推进 UPDATE 同样带 `fence_token <= newToken` 围栏 CAS。
 
 ### 15.10 RabbitMQ 设计

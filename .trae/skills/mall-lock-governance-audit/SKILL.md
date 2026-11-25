@@ -79,7 +79,7 @@ description: "Scan mall backend for leftover SELECT FOR UPDATE / pessimistic DB 
 2. 补锁模式参照 `RefundApplicationServiceImpl.approve`：外层
    `@Transactional(propagation = NOT_SUPPORTED)` + `distributedLockTemplate.execute(lockKey, 5000L, ...)`
    + 锁内 `transactionTemplate.execute(...)`；锁键按业务维度命名（如
-   `payment:refund:create:{orderNo}`、`payment:ali:check:order:{orderNo}`）。
+   `refund:create:{orderNo}`、`payment:order:{orderNo}`）。
 3. 删除顺序：端口接口方法 → 实现类方法 → Mapper 接口方法 → XML SQL → 调用点改普通读
    （`findByXxx`）。
 4. 同步文档：`AGENTS.md` 领域不变量、`README.md` 第 15 章并发机制章节（机制表/流程图节点/

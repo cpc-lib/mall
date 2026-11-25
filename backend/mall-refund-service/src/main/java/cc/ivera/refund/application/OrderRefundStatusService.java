@@ -52,7 +52,7 @@ public class OrderRefundStatusService {
      */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void refreshOrderRefundStatus(String orderNo) {
-        distributedLockTemplate.execute("refund:status:" + orderNo, 5000L, () ->
+        distributedLockTemplate.execute("refund:create:" + orderNo, 5000L, () ->
             transactionTemplate.execute(status -> {
                 doRefreshOrderRefundStatus(orderNo);
                 return null;

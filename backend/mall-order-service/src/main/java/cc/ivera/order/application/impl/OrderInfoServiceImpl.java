@@ -38,6 +38,7 @@ import java.util.List;
 public class OrderInfoServiceImpl implements OrderInfoService, OrderPaymentApi {
 
     private static final long ORDER_CREATE_LOCK_WAIT_MS = 3000L;
+    private static final long ORDER_STATUS_LOCK_WAIT_MS = 3000L;
     private final ProductQueryApi productRepository;
     private final OrderRepository orderRepository;
     private final PaymentOrderCommandApi paymentOrderRepository;
@@ -186,7 +187,13 @@ public class OrderInfoServiceImpl implements OrderInfoService, OrderPaymentApi {
         if (!StringUtils.hasText(orderNo) || currentStatus == null || targetStatus == null) {
             return false;
         }
+        // 订单状态推进统一收敛到订单级锁：markPaid、MQ 消费者、强制关单与内部 closeIfNotPay 都经过本方法，
+        // 持锁后才能写入围栏令牌并按聚合串行，避免与支付/退款链路的并发推进交错。
+        return distributedLockTemplate.execute("order:status:" + orderNo, ORDER_STATUS_LOCK_WAIT_MS,
+            () -> casLegacyStatusAdvance(orderNo, currentStatus, targetStatus));
+    }
 
+    private boolean casLegacyStatusAdvance(String orderNo, OrderStatus currentStatus, OrderStatus targetStatus) {
         log.info("条件更新订单状态 ===> orderNo={}, {} -> {}",
             orderNo,
             currentStatus.getType(),
