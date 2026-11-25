@@ -2431,7 +2431,15 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端 30 条测试基线：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则）覆盖四层依赖方向；`mall-refund-service` 的 `RefundPolicyTest`（8 条）覆盖尾差与防超退不变量；`mall-order-service` 的 `AutoReceiptSchedulerTest`（2 条）、`mall-cart-service` 的 `CartServiceImplTest`（2 条）、`mall-infra` 的 `LocalMessageSendJobTest`（3 条）分别覆盖基础设施与业务回归。前端逻辑测试扩展至 9 条：`user-ui` 原有 1 条 refresh-single-flight + 新增 5 条 refund-quota（与后端 `RefundPolicy` 口径一致）；`admin-ui` 新增 3 条 stock-aoa（库存 Excel 导入 AOA 校验）。前端通过 Node 原生 `node --test "tests/*.test.mjs"` 执行，后端统一走 `mvn clean test`。
+后端 **72 条全绿**（原 30 → +42）：
+
+- **纯域策略**（零依赖 JUnit）：`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
+- **领域基础设施**（Mockito mock Repository）：`mall-infra` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义：嵌套单调不减 + 多线程隔离）、`RedissonDistributedLockTemplateTest`（6 条：参数校验 + 加锁失败 + supplier/`nextFenceToken` 异常均 finally 解锁防 Watchdog 泄漏）、`LocalMessageSendJobTest`（3 条域隔离锁键）
+- **应用服务状态机**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（13 条：排序防死锁 + 幂等跳过 + 四桶 restock/核销 + 状态机 LOCKED/COMMITTED/RELEASED 分支）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条：渠道交易号幂等 + 首次成交关其它活跃 + 同 paymentNo 幂等 + 不同 paymentNo 重复支付检测发 DUPLICATE）、`mall-user-service` `AuthServiceImplRefreshTest`（6 条：Replay Detection 吊销会话 + 版本失效 + 正常轮换三步 + 空参数 + 格式错误）
+- **定时任务回归**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
+- **架构守护**：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则，domain 隔离 + application 不反向依赖）
+
+前端逻辑测试 **9 条全绿**：`user-ui` 原有 1 条 refresh-single-flight + 新增 5 条 refund-quota（与后端 `RefundPolicy` 口径一致）；`admin-ui` 3 条 stock-aoa（库存 Excel 导入 AOA 校验）。
 
 命令：
 
@@ -2447,7 +2455,12 @@ cd user-ui
 npm run test:logic
 ```
 
-当前验证 Refresh Token single-flight。`admin-ui` 暂无独立自动化逻辑测试。
+管理前端：
+
+```powershell
+cd admin-ui
+npm run test:logic
+```
 
 ### 15.20 修改核心链路前必须掌握的规则
 

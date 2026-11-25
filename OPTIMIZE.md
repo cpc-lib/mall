@@ -929,7 +929,12 @@
 - P5-2：给 `mall-product-service`、`mall-user-service`、`mall-cart-service` 补齐 archunit 依赖（`archunit:1.5.1` test scope，与已有 `mall-refund-service`、`mall-order-service`、`mall-payment-service`、`mall-bill-service` 统一），7 个领域服务全部落地 `*DomainArchitectureTest`，每条测试覆盖 "domain 不依赖 Spring/MyBatis-Plus/外层四层" 与 "application 不依赖 interfaces/infrastructure.persistence.po" 两条规则；原有 `RefundDomainArchitectureTest` 也同步扩展为两条规则；全量 14 条 ArchUnit 测试通过。`mall-infra` 为跨域共享基础设施库而非限界上下文，不适用四层依赖规则，未加 ArchUnit。
 - P5-3：`admin-ui/package.json` 新增 `test:logic`（`node --test "tests/*.test.mjs"`），`user-ui` 的 `test:logic` 从单文件改为 glob 模式；新增 `admin-ui/tests/stock-aoa.test.mjs`（`validateStockAoa` 跳过表头/空行、解析数字字符串 ID、收集非法行）；新增 `user-ui/tests/refund-quota.test.mjs`（可退数量/金额预估/尾差规则/边界，口径与后端 `RefundPolicy` 一致）；同时把 `admin-ui/src/utils/stockAoa.jsx` 拆为纯 JS 核心 `stockAoaCore.js`（Node 测试可直接 import）和 React 入口 `stockAoa.jsx`（在核心基础上加 JSX `deltaCell`）。双端逻辑测试共 9 条全部通过，`admin-ui` 构建不受影响。
 - P5-4：`.github/workflows/ci.yml` 新增 `concurrency` 自动取消旧流水线，`mvn -B clean test` → `mvn -B -ntp -T 1C clean test`，`backend timeout-minutes: 15`、`frontend timeout-minutes: 10`，移除 `if: matrix.app == 'user-ui'` 让 `admin-ui` 也执行 `test:logic`。
-- P5-1（领域单测补齐）暂未落地：审计建议覆盖 5 个域（bill/payment/product/infra/user），每个域的可测试纯逻辑与 Mockito 场景差异大，需要单独一轮专题调研与编写，不在本次 P5 批量治理内；已在 README 第 15 章更新当前实际测试基线（30 条后端 + 9 条前端逻辑测试）。
+- P5-1（领域单测补齐）已落地：后端测试基线从 30 条 → **72 条全绿**，新增 42 条：
+  - `mall-infra`（11 条新增）：`FenceTokenHolderTest`（5 条 ThreadLocal 栈语义：嵌套单调不减、多线程隔离、栈空幂等 release、heldMillis 非负）、`RedissonDistributedLockTemplateTest`（6 条：参数校验 lockKey/supplier 空、加锁失败抛 BizException、`nextFenceToken` 异常时 finally 仍解锁防 Watchdog 永久泄漏、supplier 异常时 finally 解锁、成功路径审计记录）
+  - `mall-product-service`（13 条新增）：`InventoryServiceImplTest` Mockito mock 3 个 Repository，覆盖排序防死锁、幂等跳过（DuplicateKeyException 不调 reserveStock）、库存不足事务失败、LOCKED→COMMITTED 幂等已提交、已 RELEASED 预占不可提交、已 COMMITTED 预占不可释放、`convertToSoldOnReceipt` 的 restockedQty 扣减、restock/核销的 `afterReceipt` 桶分流（未收货从 locked 桶 / 已收货从 sold 桶）
+  - `mall-payment-service`（4 条新增）：`PaymentSuccessServiceImplTest` Mockito mock 6 个依赖，覆盖渠道交易号已绑定幂等、正常成交关其它渠道活跃 + 发 PAYMENT_SUCCEEDED、同 paymentNo 幂等返回 false、不同 paymentNo 触发 DUPLICATE_PAYMENT_DETECTED 冲正
+  - `mall-user-service`（6 条新增）：`AuthServiceImplRefreshTest` Mockito mock 6 个依赖，覆盖 Replay Detection（consumeRefresh 返回 null + 找到已用 sid 则 delete 吊销）、版本失效（改密码 bumpVersion 后旧 refresh token 抛异常）、正常轮换三步（rotate + saveRefresh + markRefreshUsed）、空参数、格式错误
+  - `mall-bill-service`（9 条新增）：抽 `BillBalancedRule` 纯静态类到 `domain/policy`（29 行 JDK 零依赖），内联 balanced 计算 6 条件 && 逻辑从 BillReconcileServiceImpl 搬入；9 条测试覆盖 6 条件全一致→true、任何条件不一致→false、**净额差为 0 但 open 差异存在→false**（AGENTS.md 严禁仅凭净额判平账）、日切无交易全 0→true
 
 ---
 
