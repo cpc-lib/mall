@@ -22,6 +22,9 @@
     <reconnectionDelay>10 second</reconnectionDelay>
     <encoder class="net.logstash.logback.encoder.LogstashEncoder">
       <customFields>{"app":"${APP_NAME}"}</customFields>
+      <!-- 只输出链路标识，避免任意 MDC 键把用户/凭据等敏感值带进 ES -->
+      <includeMdcKeyName>traceId</includeMdcKeyName>
+      <includeMdcKeyName>spanId</includeMdcKeyName>
       <timeZone>Asia/Shanghai</timeZone>
     </encoder>
   </appender>

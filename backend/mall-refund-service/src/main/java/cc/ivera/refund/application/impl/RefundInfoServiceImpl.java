@@ -16,6 +16,8 @@ import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
@@ -56,6 +58,7 @@ public class RefundInfoServiceImpl implements RefundInfoService {
     private final OrderRefundStatusService orderRefundStatusService;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
+    private final MeterRegistry meterRegistry;
     private final Map<RefundStatus, Consumer<String>> statusEventDispatch;
 
     public RefundInfoServiceImpl(
@@ -63,13 +66,15 @@ public class RefundInfoServiceImpl implements RefundInfoService {
         OrderQueryApi orderQueryApi,
         OrderRefundStatusService orderRefundStatusService,
         ApplicationEventPublisher eventPublisher,
-        TransactionTemplate transactionTemplate
+        TransactionTemplate transactionTemplate,
+        MeterRegistry meterRegistry
     ) {
         this.refundInfoRepository = refundInfoRepository;
         this.orderQueryApi = orderQueryApi;
         this.orderRefundStatusService = orderRefundStatusService;
         this.eventPublisher = eventPublisher;
         this.transactionTemplate = transactionTemplate;
+        this.meterRegistry = meterRegistry;
         Map<RefundStatus, Consumer<String>> dispatch = new EnumMap<>(RefundStatus.class);
         dispatch.put(RefundStatus.SUCCESS, refundNo -> eventPublisher.publishEvent(new RefundSucceededEvent(refundNo)));
         dispatch.put(RefundStatus.FAILED, refundNo -> eventPublisher.publishEvent(new RefundQuotaReleasedEvent(refundNo)));
@@ -81,10 +86,22 @@ public class RefundInfoServiceImpl implements RefundInfoService {
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     @DistributedLock(key = "'payment:refund:create:' + #orderNo", waitTimeMillis = 5000L)
     public RefundInfo createRefundApplication(String orderNo, Integer refundAmount, String reason) {
-        if (orderNo == null || orderNo.trim().isEmpty()) {
-            throw new BizException("订单号不能为空");
+        try {
+            if (orderNo == null || orderNo.trim().isEmpty()) {
+                throw new BizException("订单号不能为空");
+            }
+            RefundInfo created = transactionTemplate.execute(
+                status -> doCreateRefundApplication(orderNo, refundAmount, reason));
+            recordRefundApply("success");
+            return created;
+        } catch (RuntimeException e) {
+            recordRefundApply("failure");
+            throw e;
         }
-        return transactionTemplate.execute(status -> doCreateRefundApplication(orderNo, refundAmount, reason));
+    }
+
+    private void recordRefundApply(String result) {
+        Counter.builder("mall.refund.apply").tag("result", result).register(meterRegistry).increment();
     }
 
     private RefundInfo doCreateRefundApplication(String orderNo, Integer refundAmount, String reason) {

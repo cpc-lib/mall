@@ -99,6 +99,22 @@ local-message:
   relay-biz-types: REFUND_SYNC # 仅中继本域产生的 Outbox 消息
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,redis,rabbit
+  metrics:
+    tags:
+      application: ${spring.application.name}
   tracing:
     sampling:
       probability: ${TRACING_SAMPLING_PROBABILITY:1.0}

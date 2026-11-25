@@ -18,6 +18,8 @@ import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import cc.ivera.shared.domain.mq.DuplicatePaymentMessage;
 import cc.ivera.shared.domain.mq.PaymentSucceededMessage;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -47,18 +49,22 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
 
     private final TransactionTemplate tx;
 
+    private final MeterRegistry meterRegistry;
+
     public PaymentSuccessServiceImpl(OrderPaymentApi orderInfoService,
                                      PaymentOrderRepository paymentOrderRepository,
                                      PaymentOrderService paymentOrderService,
                                      PaymentDealRepository paymentDealRepository,
                                      LocalMessageService localMessageService,
-                                     TransactionTemplate tx) {
+                                     TransactionTemplate tx,
+                                     MeterRegistry meterRegistry) {
         this.orderInfoService = orderInfoService;
         this.paymentOrderRepository = paymentOrderRepository;
         this.paymentOrderService = paymentOrderService;
         this.paymentDealRepository = paymentDealRepository;
         this.localMessageService = localMessageService;
         this.tx = tx;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -153,6 +159,7 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         deal.setPaidAmount(actualPaid);
         deal.setPaidTime(new Date());
         if (paymentDealRepository.insert(deal)) {
+            recordDeal("success");
             // 首次有效成交：关闭同订单其它渠道活跃支付单，并发出支付成交事件。
             int closed = paymentOrderRepository.closeActiveByOrderNoExceptPaymentNo(orderNo, paymentOrder.getPaymentNo());
             if (closed > 0) {
@@ -171,9 +178,14 @@ public class PaymentSuccessServiceImpl implements PaymentSuccessService {
         }
         // 另一笔真实支付：保留本次支付单 SUCCESS 与资金记录，交由退款侧按本次 paymentNo 原路冲正。
         log.warn("检测到同订单重复支付，发起冲正事件，orderNo={}, paymentNo={}", orderNo, paymentOrder.getPaymentNo());
+        recordDeal("duplicate");
         localMessageService.saveAndPublishAfterCommit(LocalMessage.BIZ_TYPE_DUPLICATE_PAYMENT_DETECTED,
             paymentOrder.getPaymentNo(), duplicatePaymentMessage(deal));
         return true;
+    }
+
+    private void recordDeal(String result) {
+        Counter.builder("mall.payment.deal").tag("result", result).register(meterRegistry).increment();
     }
 
     private PaymentSucceededMessage paymentSucceededMessage(PaymentDeal deal) {

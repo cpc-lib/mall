@@ -9,6 +9,7 @@ import cc.ivera.payment.domain.model.PaymentOrder;
 import cc.ivera.payment.domain.repository.PaymentDealRepository;
 import cc.ivera.payment.domain.repository.PaymentOrderRepository;
 import cc.ivera.shared.domain.mq.LocalMessageService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -46,7 +47,8 @@ class PaymentSuccessServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new PaymentSuccessServiceImpl(orderApi, orderRepo, orderService, dealRepo, messageService, tx);
+        service = new PaymentSuccessServiceImpl(orderApi, orderRepo, orderService, dealRepo, messageService, tx,
+            new SimpleMeterRegistry());
     }
 
     // ==================== 正常成功：关其它渠道活跃 + 发 PAYMENT_SUCCEEDED ====================

@@ -10,6 +10,7 @@ import cc.ivera.product.domain.repository.InventoryReservationRepository;
 import cc.ivera.product.domain.repository.InventoryTransactionRepository;
 import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.shared.domain.exception.BizException;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
@@ -42,7 +43,8 @@ class InventoryServiceImplTest {
     private final ProductRepository productRepo = mock(ProductRepository.class);
     private final InventoryReservationRepository reservationRepo = mock(InventoryReservationRepository.class);
     private final InventoryTransactionRepository txnRepo = mock(InventoryTransactionRepository.class);
-    private final InventoryServiceImpl service = new InventoryServiceImpl(productRepo, reservationRepo, txnRepo);
+    private final InventoryServiceImpl service = new InventoryServiceImpl(productRepo, reservationRepo, txnRepo,
+        new SimpleMeterRegistry());
 
     // ==================== reserveForOrder ====================
 

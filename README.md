@@ -2409,9 +2409,12 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `management.zipkin.tracing.endpoint` | Zipkin 上报地址，默认 `http://127.0.0.1:9411/api/v2/spans`（`ZIPKIN_ENDPOINT` 覆盖） |
 | `management.tracing.sampling.probability` | 链路采样率，默认 `1.0`（`TRACING_SAMPLING_PROBABILITY` 覆盖） |
 | `logging.logstash.destination` | Logstash TCP 地址，默认 `127.0.0.1:5000`（`LOGSTASH_DESTINATION` 覆盖），由 `logback-spring.xml` 的 `springProperty` 读取 |
+| `management.endpoints.web.exposure.include` | Actuator 暴露端点，10 个进程统一为 `health,info,metrics,prometheus` |
+| `management.endpoint.health.probes.enabled` | 开启 `/actuator/health/liveness` 与 `/actuator/health/readiness` 探针 |
+| `management.metrics.tags.application` | 指标公共标签，取 `${spring.application.name}`，Prometheus 按进程区分 |
 | `mybatis-plus.configuration.log-impl` | `Slf4jImpl`：SQL 经 slf4j 输出，默认 `info` 级别不打印；排查时临时把 Mapper 包调为 `debug` |
 
-#### 15.18.1 可观测性：Zipkin 调用追踪与 ELK 日志采集
+#### 15.18.1 可观测性：指标、健康探针、调用追踪与日志采集
 
 追踪与日志都只是旁路观测，不参与任何业务事务，也不改变领域行为：
 
@@ -2436,7 +2439,36 @@ BFF 无状态化：两个 BFF 的依赖树中不再出现 `com.dameng`、`org.re
 
 日志配置：公共 `logback-spring.xml` 位于 `mall-remote/src/main/resources/`，classpath 中存在即被 Spring Boot 加载；
 控制台保留可读文本（含 `traceId/spanId`），同时通过 `LogstashTcpSocketAppender` 输出 JSON（`app` 字段取
-`spring.application.name`）。`mall-product-service` 与 `mall-gateway` 各保留一份内容一致的文件。
+`spring.application.name`）。JSON 通过 `includeMdcKeyName` 只输出 `traceId`/`spanId` 两个 MDC 键，防止任意 MDC
+把用户或凭据等敏感值带进 Elasticsearch。`mall-product-service` 与 `mall-gateway` 各保留一份内容一致的文件。
+
+指标与健康探针：`mall-remote`、`mall-gateway`、`mall-product-service` 声明 `micrometer-registry-prometheus`，
+10 个可运行进程统一暴露 `/actuator/health`、`/actuator/info`、`/actuator/metrics` 与 `/actuator/prometheus`，
+并通过 `management.metrics.tags.application` 给全部指标打上进程名标签。探针开启
+`management.endpoint.health.probes.enabled`，`/actuator/health/liveness` 只依赖 `livenessState`；
+`/actuator/health/readiness` 按进程真实依赖组合：
+
+```text
+mall-user-bff / mall-admin-bff / mall-gateway      → readinessState
+mall-user-service                                  → readinessState,db,redis
+mall-cart-service / mall-product-service           → readinessState,db
+mall-order-service / mall-payment-service
+  / mall-refund-service / mall-bill-service        → readinessState,db,redis,rabbit
+```
+
+业务计数器（仅内存自增，失败分支在重抛原异常前计数，不改变异常与事务语义）：
+
+| 计数器 | 标签 | 埋点 |
+|---|---|---|
+| `mall.outbox.publish` | `result=ack\|retry\|failed` | `LocalMessageServiceImpl` 的 broker ACK / 排期重试 / 重试超限 |
+| `mall.order.checkout` | `result=success\|failure` | `CheckoutTxService.createOrder` 落单本地事务 |
+| `mall.payment.deal` | `result=success\|duplicate` | `PaymentSuccessServiceImpl` 首次成交与重复支付冲正 |
+| `mall.refund.apply` | `result=success\|failure` | `RefundInfoServiceImpl.createRefundApplication` |
+| `mall.inventory.reserve` | `result=success\|insufficient\|duplicate` | `InventoryServiceImpl.reserveForOrder` |
+
+追踪口径：`/internal/**` 的系统异常（`code >= 500`）返回 HTTP 500，Feign `ErrorDecoder` 与 `feign-micrometer`
+能将其识别为失败 span；Feign 调用随 `mall-remote` 的 `feign-micrometer` 自动埋点，`spring.cloud.openfeign.client.config.<service>`
+的连接/读超时即 span 内的调用预算，慢调用直接以 Zipkin 中 `httpclient` span 的 `duration` 判别，无额外本地埋点。
 
 Logstash 管道：`backend/env/logstash/pipeline/mall-logstash.conf`（`json_lines` 输入 → Elasticsearch 输出），
 容器编排在 `backend/env/docker-compose.yml`（zipkin / elasticsearch / logstash / kibana）。

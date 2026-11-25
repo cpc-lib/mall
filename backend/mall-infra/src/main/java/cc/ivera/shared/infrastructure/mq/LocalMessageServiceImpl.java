@@ -4,6 +4,8 @@ import cc.ivera.shared.domain.mq.LocalMessageBizType;
 import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.infrastructure.util.JsonUtils;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -35,9 +37,13 @@ public class LocalMessageServiceImpl implements LocalMessageService {
 
     private final RabbitTemplate rabbitTemplate;
 
-    public LocalMessageServiceImpl(LocalMessageMapper localMessageMapper, RabbitTemplate rabbitTemplate) {
+    private final MeterRegistry meterRegistry;
+
+    public LocalMessageServiceImpl(LocalMessageMapper localMessageMapper, RabbitTemplate rabbitTemplate,
+                                   MeterRegistry meterRegistry) {
         this.localMessageMapper = localMessageMapper;
         this.rabbitTemplate = rabbitTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -123,6 +129,7 @@ public class LocalMessageServiceImpl implements LocalMessageService {
                 .orTimeout(BROKER_CONFIRM_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .whenCompleteAsync((confirm, throwable) -> {
                     if (throwable == null && confirm != null && confirm.isAck()) {
+                        recordPublish("ack");
                         markSent(message.getId());
                     } else {
                         scheduleRetry(message, throwable != null ? throwable.getMessage() : "发送者确认失败");
@@ -160,16 +167,22 @@ public class LocalMessageServiceImpl implements LocalMessageService {
             .set(LocalMessage::getUpdateTime, now);
         if (nextRetryCount > MAX_RETRY_COUNT) {
             updateWrapper.set(LocalMessage::getStatus, LocalMessage.STATUS_FAILED);
+            recordPublish("failed");
             log.error("本地消息投递重试超限，置为 FAILED 待人工补偿，bizType={}, bizNo={}, reason={}",
                 message.getBizType(), message.getBizNo(), reason);
         } else {
             long delayMs = (long) Math.pow(3, nextRetryCount) * 1000;
             updateWrapper.set(LocalMessage::getStatus, LocalMessage.STATUS_PENDING)
                 .set(LocalMessage::getNextRetryTime, new Date(now.getTime() + delayMs));
+            recordPublish("retry");
             log.warn("本地消息投递失败，第{}次重试已排期，bizType={}, bizNo={}, reason={}",
                 nextRetryCount, message.getBizType(), message.getBizNo(), reason);
         }
         localMessageMapper.update(null, updateWrapper);
+    }
+
+    private void recordPublish(String result) {
+        Counter.builder("mall.outbox.publish").tag("result", result).register(meterRegistry).increment();
     }
 
     /**

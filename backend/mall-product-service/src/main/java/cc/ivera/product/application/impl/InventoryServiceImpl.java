@@ -9,6 +9,8 @@ import cc.ivera.product.domain.repository.InventoryTransactionRepository;
 import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -31,12 +33,16 @@ public class InventoryServiceImpl implements InventoryService {
     private final InventoryReservationRepository reservationRepository;
     private final InventoryTransactionRepository transactionRepository;
 
+    private final MeterRegistry meterRegistry;
+
     public InventoryServiceImpl(ProductRepository productRepository,
                                 InventoryReservationRepository reservationRepository,
-                                InventoryTransactionRepository transactionRepository) {
+                                InventoryTransactionRepository transactionRepository,
+                                MeterRegistry meterRegistry) {
         this.productRepository = productRepository;
         this.reservationRepository = reservationRepository;
         this.transactionRepository = transactionRepository;
+        this.meterRegistry = meterRegistry;
     }
 
     @Override
@@ -65,17 +71,24 @@ public class InventoryServiceImpl implements InventoryService {
                 // 唯一键 uk_reservation_order_product(order_no, product_id) 兼作幂等闸门：已预占则整项跳过。
                 reservationRepository.insert(reservation);
             } catch (DuplicateKeyException e) {
+                recordReserve("duplicate");
                 log.info("库存预占已存在，幂等跳过，orderNo={}, productId={}", orderNo, line.getProductId());
                 continue;
             }
             int reserved = productRepository.reserveStock(line.getProductId(), line.getQuantity());
             if (reserved == 0) {
+                recordReserve("insufficient");
                 // 抛出后整个下单事务回滚（含预占记录），可用库存不变。
                 throw new BizException("库存不足，productId=" + line.getProductId());
             }
             insertTransaction(InventoryBizType.ORDER_RESERVE, orderNo, line.getOrderItemId(), null,
                 line.getProductId(), -line.getQuantity(), line.getQuantity(), 0);
         }
+        recordReserve("success");
+    }
+
+    private void recordReserve(String result) {
+        Counter.builder("mall.inventory.reserve").tag("result", result).register(meterRegistry).increment();
     }
 
     @Override

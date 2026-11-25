@@ -19,6 +19,8 @@ import cc.ivera.shared.domain.mq.LocalMessageService;
 import cc.ivera.shared.infrastructure.mq.LocalMessage;
 import cc.ivera.user.application.ShippingAddressService;
 import cc.ivera.user.domain.model.ShippingAddress;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +50,7 @@ public class CheckoutTxService {
     private final ShippingAddressService addressService;
     private final LocalMessageService localMessageService;
     private final TransactionTemplate transactionTemplate;
+    private final MeterRegistry meterRegistry;
 
     @Value("${payment.order.expire-minutes:3}")
     private long orderExpireMinutes;
@@ -57,7 +60,8 @@ public class CheckoutTxService {
                              OrderCloseMessageService orderCloseMessageService,
                              ShippingAddressService addressService,
                              LocalMessageService localMessageService,
-                             TransactionTemplate transactionTemplate) {
+                             TransactionTemplate transactionTemplate,
+                             MeterRegistry meterRegistry) {
         this.cartService = cartService;
         this.productRepository = productRepository;
         this.orderRepository = orderRepository;
@@ -66,6 +70,7 @@ public class CheckoutTxService {
         this.addressService = addressService;
         this.localMessageService = localMessageService;
         this.transactionTemplate = transactionTemplate;
+        this.meterRegistry = meterRegistry;
     }
 
     /**
@@ -158,25 +163,36 @@ public class CheckoutTxService {
             asString(checkout.get("receiverPhone")),
             asString(checkout.get("receiverAddress")));
 
-        return transactionTemplate.execute(status -> {
-            OrderInfo persisted = orderRepository.findByOrderNo(orderNo);
-            if (persisted != null && Objects.equals(persisted.getUserId(), userId)) {
-                return context(persisted, orderRepository.listItemsByOrderNo(orderNo));
-            }
-            orderRepository.save(order);
-            List<OrderItem> items = new ArrayList<>();
-            for (Object raw : asList(checkout.get("items"))) {
-                Map<?, ?> line = (Map<?, ?>) raw;
-                OrderItem item = OrderItem.createSnapshot(order.getId(), orderNo,
-                    asLong(line.get("productId")), asString(line.get("title")),
-                    asInt(line.get("price")), asInt(line.get("quantity")));
-                orderRepository.saveItem(item);
-                items.add(item);
-            }
-            // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
-            orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
-            return context(order, items);
-        });
+        try {
+            Map<String, Object> created = transactionTemplate.execute(status -> {
+                OrderInfo persisted = orderRepository.findByOrderNo(orderNo);
+                if (persisted != null && Objects.equals(persisted.getUserId(), userId)) {
+                    return context(persisted, orderRepository.listItemsByOrderNo(orderNo));
+                }
+                orderRepository.save(order);
+                List<OrderItem> items = new ArrayList<>();
+                for (Object raw : asList(checkout.get("items"))) {
+                    Map<?, ?> line = (Map<?, ?>) raw;
+                    OrderItem item = OrderItem.createSnapshot(order.getId(), orderNo,
+                        asLong(line.get("productId")), asString(line.get("title")),
+                        asInt(line.get("price")), asInt(line.get("quantity")));
+                    orderRepository.saveItem(item);
+                    items.add(item);
+                }
+                // 事务性发件箱：延迟关单消息与订单同事务落库本地消息表，提交后投递 MQ
+                orderCloseMessageService.sendCloseOrderMessage(order.getOrderNo(), order.getPaymentType());
+                return context(order, items);
+            });
+            recordCheckout("success");
+            return created;
+        } catch (RuntimeException e) {
+            recordCheckout("failure");
+            throw e;
+        }
+    }
+
+    private void recordCheckout(String result) {
+        Counter.builder("mall.order.checkout").tag("result", result).register(meterRegistry).increment();
     }
 
     /**

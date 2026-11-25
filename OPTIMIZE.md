@@ -14,6 +14,7 @@
 - [6. P4：前端工程（`user-ui` & `admin-ui`）交互、性能与代码治理](#6-p4前端工程user-ui--admin-ui交互性能与代码治理)
 - [7. P5：测试覆盖率、ArchUnit 架构守护与 CI/CD 流水线优化](#7-p5测试覆盖率archunit-架构守护与-cicd-流水线优化)
 - [8. 建议落地路线图（Roadmap）](#8-建议落地路线图roadmap)
+- [9. P8：可观测性（指标 / 健康探针 / 日志 / 追踪）](#9-p8可观测性指标--健康探针--日志--追踪)
 
 ---
 
@@ -973,3 +974,60 @@
 4. **阶段四：微服务模块依赖治理、测试矩阵与 CI 升级（`refactor/*` / `update/*`，预计 2~3 天）**
    - 落地 **P3-1 ~ P3-6**（统一 Feign 错误解码与 `feign-hc5` 连接池、剥离 `mall-api-*` 中的基础设施实现、清理 `mall-core` 僵尸类、补齐 `mall-product-service` 的 `logback-spring.xml` 与 `TimeZoneConfig/ProductionSecretGuard`）；
    - 落地 **P5-1 ~ P5-4**（补齐 5 个核心模块的领域单测与全模块 ArchUnit 守护，升级 `.github/workflows/ci.yml`），并同步更新 `README.md` 第 15 章。
+5. **阶段五：可观测性（`refactor/*`，见第 9 章）**
+   - 落地 **P8-1 ~ P8-5**（Prometheus 指标暴露、liveness/readiness 探针、核心交易业务计数器、日志 MDC 收敛、Feign 与 `/internal/**` 追踪口径）。
+
+---
+
+## 9. P8：可观测性（指标 / 健康探针 / 日志 / 追踪）
+
+> **处理进展（2026-11-25）**：P8-1 ~ P8-5 已落地。Roadmap 的 P6（第 4 章 P2-1~P2-6）与 P7（第 5 章 P3-1~P3-6）此前已闭环，本章只覆盖可观测性，不改变任何领域行为。
+
+观测能力全部为旁路，不参与业务事务、不改变状态机、锁与 CAS 顺序。
+
+### P8-1 Prometheus 指标暴露
+
+- 依赖：`mall-remote`、`mall-gateway`、`mall-product-service` 三处声明 `io.micrometer:micrometer-registry-prometheus`（版本由父 BOM 管理）。领域服务经 `mall-infra → mall-remote` 获得，两个 BFF 经 `mall-core → mall-remote` 获得，均不新增 DB/Redis/MQ 依赖。
+- 暴露：10 个可运行进程的 `management.endpoints.web.exposure.include` 统一为 `health,info,metrics,prometheus`。
+- 公共标签：`management.metrics.tags.application=${spring.application.name}`，Prometheus 侧可直接按 `application` 区分进程，无需在每个指标点上手工加 tag。
+
+### P8-2 健康探针
+
+- 10 个进程统一开启 `management.endpoint.health.probes.enabled=true`，提供 `/actuator/health/liveness` 与 `/actuator/health/readiness`。
+- readiness 只组合该进程真实存在的指示器，避免组状态恒为 `UNKNOWN`：
+  - 两个 BFF 与 `mall-gateway`：`readinessState`；
+  - `mall-user-service`：`readinessState,db,redis`；
+  - `mall-cart-service` / `mall-product-service`：`readinessState,db`；
+  - `mall-order-service` / `mall-payment-service` / `mall-refund-service` / `mall-bill-service`：`readinessState,db,redis,rabbit`。
+- liveness 统一只依赖 `livenessState`，不把外部依赖抖动误判为进程死亡。
+
+### P8-3 业务计数器
+
+直接在各域现有装配点构造注入 `MeterRegistry`，不新增共享组件或 AOP 切面：
+
+| 计数器 | 标签 | 埋点 |
+|---|---|---|
+| `mall.outbox.publish` | `result=ack\|retry\|failed` | `LocalMessageServiceImpl`：broker ACK、排期重试、重试超限置 FAILED |
+| `mall.order.checkout` | `result=success\|failure` | `CheckoutTxService.createOrder`：落单本地事务结果 |
+| `mall.payment.deal` | `result=success\|duplicate` | `PaymentSuccessServiceImpl`：首次成交事实写入、同订单重复支付冲正 |
+| `mall.refund.apply` | `result=success\|failure` | `RefundInfoServiceImpl.createRefundApplication`：退款受理结果 |
+| `mall.inventory.reserve` | `result=success\|insufficient\|duplicate` | `InventoryServiceImpl.reserveForOrder`：预占整单成功、库存不足、幂等跳过 |
+
+计数器仅内存自增，失败分支在重抛原异常前计数，不改变异常类型、消息与事务语义。
+
+### P8-4 日志治理
+
+- 三份 `logback-spring.xml`（`mall-remote`、`mall-gateway`、`mall-product-service`）内容保持一致，JSON 输出继续携带 `app`，并通过 `includeMdcKeyName` 将 MDC 字段收敛为 `traceId`/`spanId`，避免未来任意 MDC 键把用户或凭据带进 Elasticsearch。
+- 全仓库无手工 `MDC.put`；`prod` profile 由 `ProductionSecretGuard` 拦截仓库默认口令。
+
+### P8-5 追踪口径
+
+- `/internal/**` 的系统异常（`code >= 500`）已由 `GlobalExceptionHandler` 返回 HTTP 500，Feign `ErrorDecoder` 与 `feign-micrometer` 能将其识别为失败 span，无需额外改造。
+- Feign 观测随 `mall-remote` 的 `feign-micrometer` 自动生效；`spring.cloud.openfeign.client.config.<service>` 的超时即该 span 的调用预算，慢调用直接以 Zipkin 中 `httpclient` span 的 `duration` 判别，不新增本地埋点。
+
+### 验收标准与影响面
+
+- 验收：`cd backend; mvn clean test` 全绿且测试数不少于 74；10 份 `application.yml` 均含 `prometheus` 暴露、`probes.enabled` 与 `metrics.tags.application`；3 份 `logback-spring.xml` 内容一致。
+- 兼容性：仅新增依赖、actuator 端点与配置键，`/api/**`、`/internal/**`、DB/MQ 契约不变。
+- 安全：`/actuator/health`、`/actuator/prometheus` 与现网 `/actuator/health` 一致，由网关与网络策略隔离，本次不做认证改造。
+- 回滚：删除新增依赖与对应 `management` 配置；业务计数器为旁路代码，回滚不涉及数据迁移。
