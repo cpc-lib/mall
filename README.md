@@ -330,7 +330,8 @@ mall/
 │   ├── mall-api-user/                # 用户应用契约、DTO/VO 与跨进程领域模型
 │   ├── mall-api-product/             # 商品与库存应用契约、DTO/VO 与跨进程领域模型
 │   ├── mall-api-refund/              # 退款账查询契约与退款账模型（纯契约，无 MQ 实现）
-│   ├── mall-infra/                   # 分布式锁、Outbox、RabbitMQ 公共可靠性、Feign 公共配置等基础设施实现（纯 jar 库）
+│   ├── mall-remote/                  # 远程调用契约：Feign 信封解码、围栏令牌透传、调用观测与公共日志（纯 jar 库，无持久层/MQ/锁）
+│   ├── mall-infra/                   # 分布式锁、Outbox、RabbitMQ 公共可靠性、微信通知验签等基础设施实现（纯 jar 库）
 │   ├── mall-core/                    # BFF 远程适配器与共享配置（纯 jar 库）
 │   │   ├── src/main/java/cc/ivera/
 │   │   │   ├── shared/
@@ -612,7 +613,7 @@ backend/mall-refund-service/src/main/resources/application.yml    # 端口 8087�
 backend/mall-bill-service/src/main/resources/application.yml      # 端口 8088、账单服务自有 DM8/Redis、用户/支付/退款服务远程地址配置
 backend/mall-user-bff/src/main/resources/application.yml          # 端口 8081、应用名
 backend/mall-admin-bff/src/main/resources/application.yml         # 端口 8082、应用名、关闭 MQ 监听
-backend/mall-infra/src/main/resources/logback-spring.xml          # 公共日志配置（控制台 + Logstash JSON），依赖 mall-infra 的进程自动生效
+backend/mall-remote/src/main/resources/logback-spring.xml         # 公共日志配置（控制台 + Logstash JSON），依赖 mall-remote 的进程自动生效
 backend/mall-product-service/src/main/resources/logback-spring.xml # 商品服务日志配置（不依赖 mall-infra，内容与上面一致）
 backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日志配置（独立工程，内容与上面一致）
 ```
@@ -659,7 +660,7 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 
 ### 10.3 启动用户服务、商品服务、订单服务、支付服务、退款服务、账单服务、BFF 与网关
 
-`backend` 是 Maven 聚合工程，`mall-core`、`mall-api-*`、`mall-infra` 是纯 jar 库，不单独启动；当前有九个可运行进程：
+`backend` 是 Maven 聚合工程，`mall-core`、`mall-remote`、`mall-api-*`、`mall-infra` 是纯 jar 库，不单独启动；当前有九个可运行进程：
 
 | 进程 | 端口 | 职责 |
 |---|---|---|
@@ -973,7 +974,8 @@ flowchart TB
 
     subgraph LIBS["共享 jar 库（编译期依赖，无独立进程）"]
         COMMON["mall-common<br/>Web / 异常 / 认证上下文"]
-        INFRA["mall-infra<br/>分布式锁 / Outbox / MQ / Feign"]
+        REMOTE["mall-remote<br/>Feign 契约 / 观测 / 日志"]
+        INFRA["mall-infra<br/>分布式锁 / Outbox / MQ"]
         CORE["mall-core<br/>BFF 远程适配器 + 共享配置"]
         APIS["mall-api-*<br/>cc.ivera.api.* 内部契约"]
     end
@@ -1036,7 +1038,7 @@ flowchart TB
 - 实线是外部 HTTP 入口（客户端 → 网关 → BFF / 领域服务），虚线是进程间 `OpenFeign /internal/**` 调用，全部经 Nacos 服务发现。
 - 网关是唯一公网入口，按前缀分流到 BFF 或领域服务，不转发 `/internal/**`；BFF 不持有独立写权限，只做入口聚合与远程适配。
 - 每张表只有一个写者：用户/购物车/商品库存/订单/支付/退款/账单分别只由对应领域服务写入。
-- `mall-common`、`mall-infra`、`mall-core`、`mall-api-*` 是编译期 jar 依赖，运行时不产生独立进程，因此图中不与运行节点连线。
+- `mall-common`、`mall-remote`、`mall-infra`、`mall-core`、`mall-api-*` 是编译期 jar 依赖，运行时不产生独立进程，因此图中不与运行节点连线。
 - 外部渠道只在支付服务适配；退款服务的渠道退款统一经 `PaymentChannelRefundApi` 交给支付服务执行。
 
 网关只做入口收敛，不承载业务写权限，也不转发 `/internal/**`。两个 BFF 只承载各自侧 Controller；用户领域实现独立在
@@ -1081,6 +1083,7 @@ mall/
 │   ├── mall-api-user/            # 用户应用服务接口、DTO/VO、跨进程领域模型
 │   ├── mall-api-product/         # 商品/库存应用服务接口、DTO/VO、跨进程领域模型
 │   ├── mall-api-refund/          # 退款账查询契约与退款账模型（纯契约，无 MQ 实现）
+│   ├── mall-remote/              # 远程调用契约：Feign 信封解码、围栏令牌透传、调用观测与公共日志（jar 库）
 │   ├── mall-infra/               # 分布式锁、Outbox、RabbitMQ 公共可靠性实现（jar 库）
 │   ├── mall-core/                # BFF 远程适配器与共享配置（jar 库）
 │   │   ├── src/main/java/cc/ivera/
@@ -2417,11 +2420,17 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
           → 仪表板「商城日志概览」：日志级别分布（饼图）、应用日志量（表格）、日志时间趋势（按级别堆叠柱状图）
 ```
 
-依赖落点：`mall-infra` 统一引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、
-`zipkin-reporter-brave`、`feign-micrometer` 与 `logstash-logback-encoder`，依赖它的进程自动具备追踪与 JSON 日志能力；
-`mall-product-service`（不依赖 `mall-infra`）与 `mall-gateway`（独立工程、WebFlux 栈）各自声明同样的依赖。
+依赖落点：`mall-remote` 统一引入 `spring-boot-starter-actuator`、`micrometer-tracing-bridge-brave`、
+`zipkin-reporter-brave`、`feign-micrometer`、`feign-hc5` 与 `logstash-logback-encoder`，依赖它的进程自动具备追踪与 JSON 日志能力；
+`mall-infra` 依赖 `mall-remote`，因此各领域服务无需重复声明；两个 BFF 通过 `mall-core → mall-remote` 传递获得，**不再依赖 `mall-infra`**，
+从而不引入 MyBatis-Plus / Redisson / RabbitMQ / DM8 驱动；`mall-product-service`（不依赖 `mall-infra`）与 `mall-gateway`（独立工程、WebFlux 栈）各自声明同样的依赖。
 
-日志配置：公共 `logback-spring.xml` 位于 `mall-infra/src/main/resources/`，classpath 中存在即被 Spring Boot 加载；
+BFF 无状态化：两个 BFF 的依赖树中不再出现 `com.dameng`、`org.redisson`、`spring-boot-starter-amqp` 与 `com.baomidou`；
+`mall-common` 的 `MyBatisPlusConfig`（含 `@MapperScan`）以 `@ConditionalOnClass(MybatisPlusInterceptor.class)` 守卫，
+在缺少 MyBatis-Plus 的 BFF 进程中整体跳过，避免无持久层进程启动失败。`application-core.yml` 与 Nacos 侧两份 BFF 配置已移除
+`datasource / data.redis / rabbitmq / mybatis-plus`，两进程以 `NACOS_ENABLED=false` 可独立启动（不连接数据库、MQ 与 Redis）。
+
+日志配置：公共 `logback-spring.xml` 位于 `mall-remote/src/main/resources/`，classpath 中存在即被 Spring Boot 加载；
 控制台保留可读文本（含 `traceId/spanId`），同时通过 `LogstashTcpSocketAppender` 输出 JSON（`app` 字段取
 `spring.application.name`）。`mall-product-service` 与 `mall-gateway` 各保留一份内容一致的文件。
 
@@ -2434,7 +2443,7 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 后端 **72 条全绿**（原 30 → +42）：
 
 - **纯域策略**（零依赖 JUnit）：`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
-- **领域基础设施**（Mockito mock Repository）：`mall-infra` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义：嵌套单调不减 + 多线程隔离）、`RedissonDistributedLockTemplateTest`（6 条：参数校验 + 加锁失败 + supplier/`nextFenceToken` 异常均 finally 解锁防 Watchdog 泄漏）、`LocalMessageSendJobTest`（3 条域隔离锁键）
+- **领域基础设施**（Mockito mock 协作对象）：`mall-common` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义：嵌套单调不减 + 多线程隔离）；`mall-infra` `RedissonDistributedLockTemplateTest`（6 条：参数校验 + 加锁失败 + supplier/`nextFenceToken` 异常均 finally 解锁防 Watchdog 泄漏）、`LocalMessageSendJobTest`（3 条域隔离锁键）
 - **应用服务状态机**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（13 条：排序防死锁 + 幂等跳过 + 四桶 restock/核销 + 状态机 LOCKED/COMMITTED/RELEASED 分支）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条：渠道交易号幂等 + 首次成交关其它活跃 + 同 paymentNo 幂等 + 不同 paymentNo 重复支付检测发 DUPLICATE）、`mall-user-service` `AuthServiceImplRefreshTest`（6 条：Replay Detection 吊销会话 + 版本失效 + 正常轮换三步 + 空参数 + 格式错误）
 - **定时任务回归**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
 - **架构守护**：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则，domain 隔离 + application 不反向依赖）

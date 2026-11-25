@@ -25,9 +25,10 @@
       <groupId>cc.ivera</groupId>
       <artifactId>mall-api-product</artifactId>
     </dependency>
+    <!--远程调用契约：Feign 信封解码 + 围栏令牌透传 + 调用观测；不包含持久层/MQ/Redis-->
     <dependency>
       <groupId>cc.ivera</groupId>
-      <artifactId>mall-infra</artifactId>
+      <artifactId>mall-remote</artifactId>
     </dependency>
     <dependency>
       <groupId>org.springframework.cloud</groupId>
@@ -72,19 +73,6 @@
       <artifactId>archunit</artifactId>
       <version>${archunit.version}</version>
       <scope>test</scope>
-    </dependency>
-
-    <!--Redisson：分布式锁，支持看门狗自动续期-->
-    <dependency>
-      <groupId>org.redisson</groupId>
-      <artifactId>redisson-spring-boot-starter</artifactId>
-      <version>${redisson.version}</version>
-    </dependency>
-
-    <dependency>
-      <groupId>com.dameng</groupId>
-      <artifactId>DmJdbcDriver18</artifactId>
-      <version>8.1.2.192</version>
     </dependency>
 
   </dependencies>

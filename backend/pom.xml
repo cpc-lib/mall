@@ -11,6 +11,7 @@
 
   <modules>
     <module>mall-common</module>
+    <module>mall-remote</module>
     <module>mall-api-order</module>
     <module>mall-api-payment</module>
     <module>mall-api-refund</module>
@@ -74,6 +75,11 @@
       <dependency>
         <groupId>cc.ivera</groupId>
         <artifactId>mall-common</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>cc.ivera</groupId>
+        <artifactId>mall-remote</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

@@ -18,48 +18,13 @@ spring:
   jackson:
     date-format: yyyy-MM-dd HH:mm:ss
     time-zone: GMT+8
-  rabbitmq:
-    host: ${RABBITMQ_HOST:127.0.0.1}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USERNAME:mall}
-    password: ${RABBITMQ_PASSWORD:Cpc2026#@Mq}
-    publisher-confirm-type: correlated # 发送者确认：异步回调确认消息到达交换机（回调见 RabbitReliabilityConfig）
-    publisher-returns: true # 消息不可路由到队列时退回发送者（配合 template.mandatory）
-    template:
-      mandatory: true
-    listener:
-      simple:
-        acknowledge-mode: manual # 消费者手动确认：业务处理 + markConsumed 成功后 basicAck；异常继续抛给 Spring Retry，耗尽后 reject 进入 Failure DLQ
-        retry:
-          enabled: true # 消费异常指数回避重试：2s→6s→18s，共 4 次后放弃
-          max-attempts: 4
-          initial-interval: 2000
-          multiplier: 3.0
-          max-interval: 20000
-        default-requeue-rejected: false # 重试耗尽后 reject；release queue 通过 DLX 进入独立 failure queue，不回原队列；DB 兜底任务继续负责业务最终收敛
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      database: 0
-      timeout: 3000ms
-      password: ${REDIS_PASSWORD:cpc!23#@}
-  datasource:
-    # 达梦 DM8：默认由 docker-compose.infra.yml 暴露到本机 5236
-    driver-class-name: dm.jdbc.driver.DmDriver
-    url: jdbc:dm://${DM_HOST:127.0.0.1}:${DM_PORT:5236}?schema=${DM_SCHEMA:SYSDBA}&connectTimeout=30000&socketTimeout=60000
-    username: ${DM_USERNAME:SYSDBA}
-    password: ${DM_PASSWORD:Cpc2026#@Dm}
-
-mybatis-plus:
-  configuration: #sql日志
-    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
-  mapper-locations: classpath:mapper/*.xml
+  # BFF 为无状态进程：不连接数据库、Redis 与 RabbitMQ，故不包含 datasource / redis / rabbitmq / mybatis-plus 配置。
 
 logging:
   level:
     root: info
 
+# Nacos 关闭时 BFF 通过 Feign 直连各领域服务；Nacos 开启时使用 lb:// 服务名，base-url 留空即可。
 user:
   service:
     base-url: ${USER_SERVICE_BASE_URL:}
@@ -71,10 +36,3 @@ cart:
 product:
   service:
     base-url: ${PRODUCT_SERVICE_BASE_URL:}
-
-payment:
-  refund:
-    status-sync-delay-ms: 60000 # MQ 退款状态同步延迟；BFF 声明队列参数时读取，必须与 refund-service 保持一致
-
-local-message:
-  relay-enabled: false # Outbox 中继已按领域拆分到 order/refund/payment 服务，BFF 不再扫描 t_local_message

@@ -408,7 +408,16 @@
 - 三域分别中继：`mall-order-service` → `ORDER_CLOSE,PAYMENT_LATE_ARRIVED`；`mall-refund-service` → `REFUND_SYNC`；`mall-payment-service` → `PAYMENT_SUCCEEDED,DUPLICATE_PAYMENT_DETECTED`。
 - `mall-user-bff` / `mall-admin-bff` / `mall-bill-service` 设 `relay-enabled=false`；`mall-user-bff` 移除 `@EnableScheduling`。
 - 新增 `mall-infra` 单测 `LocalMessageSendJobTest`（biz_type 过滤、按应用名隔离锁键、抢锁失败跳过）。
-- 遗留：`mall-user-bff` 的 DM8/Redis 传递依赖来自 `mall-core`，真正无状态化需拆 `mall-core` 的 infra 依赖，另立重构项。
+- 遗留项已于 P6 阶段闭环（见下方「P1-6 遗留闭环」）。
+
+**P1-6 遗留闭环（2026-11-25）**：两个 BFF 真正无状态化。
+
+- 新增轻量模块 `mall-remote`（Feign 信封解码 `InternalFeignConfiguration` / 围栏令牌透传 / Actuator + Micrometer Tracing + Zipkin + `feign-micrometer` + `feign-hc5` + Logstash 公共日志），并承载公共 `logback-spring.xml`。
+- `FenceTokenHolder`、`LockContext`、`LockStatus` 下沉到 `mall-common`（同包名，调用方零改动），使 Feign 配置不再依赖 `mall-infra`。
+- 依赖方向：`mall-infra → mall-remote`（领域服务无感）、`mall-core → mall-remote`（BFF 无感）；`mall-core` 移除 `mall-infra`、`redisson-spring-boot-starter`、`DmJdbcDriver18`。
+- `mall-common` 的 `MyBatisPlusConfig` 增加 `@ConditionalOnClass(MybatisPlusInterceptor.class)` 守卫，无 MyBatis-Plus 的 BFF 进程中整个配置（含 `@MapperScan`）跳过。
+- 清理 `application-core.yml` 与两份 Nacos BFF 配置中的 `datasource / data.redis / rabbitmq / mybatis-plus`；`mall-user-bff` 移除 `@EnableRabbit` 与 `spring-boot-starter-amqp`，`mall-admin-bff` 移除 `spring.rabbitmq.listener.simple.auto-startup`。
+- 验证：`mall-user-bff` / `mall-admin-bff` 依赖树中 `com.dameng / org.redisson / spring-boot-starter-amqp / com.baomidou` 命中数为 0；打包 jar 仅含 `mall-core` + `mall-remote`（无 `mall-infra`）；两进程以 `NACOS_ENABLED=false` 分别 7.2s / 7.3s 启动成功，不连接数据库、MQ 与 Redis。
 
 ---
 

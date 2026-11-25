@@ -4,11 +4,17 @@ import com.baomidou.mybatisplus.extension.plugins.MybatisPlusInterceptor;
 import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInterceptor;
 import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 
+/**
+ * 持久层装配。MyBatis-Plus 在 mall-common 中以 optional 引入，BFF 等无持久层进程不会传递到该依赖，
+ * 因此用 {@link ConditionalOnClass} 守卫：类缺失时整个配置（含 @MapperScan）不参与装配，避免无状态进程启动失败。
+ */
 @Configuration
+@ConditionalOnClass(MybatisPlusInterceptor.class)
 @MapperScan(basePackages = "cc.ivera", annotationClass = Mapper.class)
 @EnableTransactionManagement
 public class MyBatisPlusConfig {

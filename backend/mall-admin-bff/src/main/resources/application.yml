@@ -32,11 +32,6 @@ spring:
           mall-product-service:
             connect-timeout: 3000
             read-timeout: 30000
-  rabbitmq:
-    listener:
-      simple:
-        # 后台 MQ 消费只在 user-bff 进程执行，管理端 BFF 不启动监听容器
-        auto-startup: false
 
 management:
   tracing:
