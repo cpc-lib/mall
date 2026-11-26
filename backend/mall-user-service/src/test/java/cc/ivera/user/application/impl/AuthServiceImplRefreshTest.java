@@ -1,6 +1,8 @@
 package cc.ivera.user.application.impl;
 
 import cc.ivera.shared.domain.exception.BizException;
+import cc.ivera.shared.security.AuthPrincipal;
+import cc.ivera.user.application.dto.PasswordChangeRequest;
 import cc.ivera.user.domain.gateway.LoginGuardPort;
 import cc.ivera.user.domain.gateway.PasswordHashPort;
 import cc.ivera.user.domain.gateway.TokenPort;
@@ -106,6 +108,31 @@ class AuthServiceImplRefreshTest {
         verify(sessionRepo).rotate(eq("sid-abc"), anyString(), anyLong(), anyLong());
         verify(sessionRepo).saveRefresh(anyString(), eq(100L), eq(5L), eq("sid-abc"), anyLong());
         verify(sessionRepo).markRefreshUsed(anyString(), eq("sid-abc"), anyLong());
+    }
+
+    @Test
+    void changePasswordBumpsVersionAndDeletesAllSessions() {
+        AuthPrincipal principal = new AuthPrincipal();
+        principal.setUserId(100L);
+        PasswordChangeRequest request = new PasswordChangeRequest();
+        request.setOldPassword("old-password");
+        request.setNewPassword("new-password");
+        UserAccount user = new UserAccount();
+        user.setId(100L);
+        user.setPasswordSalt("old-salt");
+        user.setPasswordHash("old-hash");
+        when(userRepo.findById(100L)).thenReturn(user);
+        when(passwordHasher.matches("old-password", "old-salt", "old-hash")).thenReturn(true);
+        when(passwordHasher.newSalt()).thenReturn("new-salt");
+        when(passwordHasher.hash("new-password", "new-salt")).thenReturn("new-hash");
+
+        service.changePassword(principal, request);
+
+        verify(userRepo).update(user);
+        verify(versionStore).bumpVersion(100L);
+        verify(sessionRepo).deleteAll(100L);
+        assert "new-salt".equals(user.getPasswordSalt());
+        assert "new-hash".equals(user.getPasswordHash());
     }
 
     // ==================== 空参数 ====================

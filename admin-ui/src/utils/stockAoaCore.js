@@ -30,3 +30,17 @@ export function validateStockAoa(aoa) {
   })
   return { items, issues }
 }
+
+export function aoaToLuckysheet(aoa) {
+  const celldata = []
+  aoa.forEach((row, r) => (row || []).forEach((v, c) => {
+    if (v === null || v === undefined || v === '') return
+    celldata.push({ r, c, v: { v, m: String(v) } })
+  }))
+  return [{
+    name: '库存调整', order: 0, status: 1, config: {},
+    row: Math.max(aoa.length + 20, 30),
+    column: Math.max((aoa[0] || STOCK_HEADER).length + 5, 8),
+    celldata
+  }]
+}

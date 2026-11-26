@@ -976,6 +976,11 @@
   - `mall-user-service`（6 条新增）：`AuthServiceImplRefreshTest` Mockito mock 6 个依赖，覆盖 Replay Detection（consumeRefresh 返回 null + 找到已用 sid 则 delete 吊销）、版本失效（改密码 bumpVersion 后旧 refresh token 抛异常）、正常轮换三步（rotate + saveRefresh + markRefreshUsed）、空参数、格式错误
   - `mall-bill-service`（9 条新增）：抽 `BillBalancedRule` 纯静态类到 `domain/policy`（29 行 JDK 零依赖），内联 balanced 计算 6 条件 && 逻辑从 BillReconcileServiceImpl 搬入；9 条测试覆盖 6 条件全一致→true、任何条件不一致→false、**净额差为 0 但 open 差异存在→false**（AGENTS.md 严禁仅凭净额判平账）、日切无交易全 0→true
 
+**复核补强（2026-11-26）**：P5-2/P5-4 无回退；Roadmap 的 P6 即第 4 章 P2-1～P2-6，复核仍为闭环，本轮无对应生产代码改动。
+- P5-1：新增 `BillReconcileServiceImplTest` 5 条（同订单多支付尝试按渠道流水逐笔匹配、双向单边账、金额/状态差异、上海日切半开区间、差错相抵但 OPEN 差异存在时不平账）、`LocalMessageServiceImplTest` 4 条（3s/9s 指数退避、超限 FAILED、ACK 后 SENT）与订单域 `PaymentSucceededConsumerTest` 1 条（已关单发 `PAYMENT_LATE_ARRIVED`，且业务→去重→ACK 顺序）。晚到支付事件归属订单消费者，未错误塞进支付成交服务。后端基线增至 **83 条**；另补 `AuthServiceImplRefreshTest` 修改密码后 bumpVersion 并删除全部会话 1 条。
+- P5-3：新增用户端 `auth-store.test.mjs` 3 条、管理端 `refresh-single-flight.test.mjs` 2 条与 `aoaToLuckysheet` 2 条；将纯函数 `aoaToLuckysheet` 原样搬入 `stockAoaCore.js` 供页面与 Node 测试共用。双端逻辑测试共 **16 条**（user-ui 9、admin-ui 7）。
+- 回归：后端 `mvn clean test`、双端 `npm run test:logic` 与 `npm run build` 全部通过。
+
 ---
 
 ## 8. 建议落地路线图（Roadmap）
@@ -1051,3 +1056,5 @@
 - 兼容性：仅新增依赖、actuator 端点与配置键，`/api/**`、`/internal/**`、DB/MQ 契约不变。
 - 安全：`/actuator/health`、`/actuator/prometheus` 与现网 `/actuator/health` 一致，由网关与网络策略隔离，本次不做认证改造。
 - 回滚：删除新增依赖与对应 `management` 配置；业务计数器为旁路代码，回滚不涉及数据迁移。
+
+**复核补强（2026-11-26）**：P7（第 5 章 P3-1～P3-6）与 P8-1/2/3/5 逐项复核无回退；10 份进程配置的 Prometheus 暴露、探针与应用标签齐全，5 个业务计数器埋点及 Feign/内部异常追踪口径保持原实现。P8-4 的 XML 配置体原本一致，但三份文件头注释存在漂移，且共享文件来源误写为 `mall-infra`；本轮统一注释并修正为按类路径加载，未改变日志行为，处理后三份 `logback-spring.xml` 的 SHA-256 完全一致。后端 83 条测试、双端 16 条逻辑测试与生产构建全部通过。

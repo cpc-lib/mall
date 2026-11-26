@@ -2,7 +2,7 @@
 <!--
   统一日志配置：控制台保留可读文本，同时把 JSON 日志推送到 Logstash（→ Elasticsearch → Kibana）。
   traceId / spanId 由 Micrometer Tracing 写入 MDC，JSON 编码器会自动落成独立字段，便于按链路检索。
-  商品服务不依赖 mall-infra，因此保留一份与 mall-infra 中同名配置一致的文件。
+  共享库与独立进程中的三份同名配置保持一致，按各进程类路径加载。
 -->
 <configuration>
   <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="mall"/>

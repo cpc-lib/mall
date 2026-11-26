@@ -4,20 +4,7 @@ import { Button, Space, Spin, Tag, message } from 'antd'
 import stockApi from '@/api/adminStock'
 import { loadLuckysheet } from '@/utils/luckysheet'
 import { STOCK_HEADER as HEADER, validateStockAoa } from '@/utils/stockAoa'
-
-function aoaToLuckysheet(aoa) {
-  const celldata = []
-  aoa.forEach((row, r) => (row || []).forEach((v, c) => {
-    if (v === null || v === undefined || v === '') return
-    celldata.push({ r, c, v: { v, m: String(v) } })
-  }))
-  return [{
-    name: '库存调整', order: 0, status: 1, config: {},
-    row: Math.max(aoa.length + 20, 30),
-    column: Math.max((aoa[0] || HEADER).length + 5, 8),
-    celldata
-  }]
-}
+import { aoaToLuckysheet } from '@/utils/stockAoaCore'
 
 const normalizeCell = cell => {
   if (cell === null || cell === undefined) return null

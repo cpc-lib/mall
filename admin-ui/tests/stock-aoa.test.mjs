@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { validateStockAoa } from '../src/utils/stockAoaCore.js'
+import { aoaToLuckysheet, validateStockAoa } from '../src/utils/stockAoaCore.js'
 
 test('validateStockAoa 跳过表头、空行与无调整量行，收集合法项与非法行问题', () => {
   const aoa = [
@@ -35,4 +35,32 @@ test('validateStockAoa 空 AOA 返回空结果', () => {
   const { items, issues } = validateStockAoa([])
   assert.deepEqual(items, [])
   assert.deepEqual(issues, [])
+})
+
+test('aoaToLuckysheet 保留单元格坐标并跳过空值', () => {
+  const [sheet] = aoaToLuckysheet([
+    ['商品ID', '商品名称', '调整量'],
+    [12, null, -3],
+    [],
+    [13, '', 4]
+  ])
+
+  assert.equal(sheet.row, 30)
+  assert.equal(sheet.column, 8)
+  assert.deepEqual(sheet.celldata, [
+    { r: 0, c: 0, v: { v: '商品ID', m: '商品ID' } },
+    { r: 0, c: 1, v: { v: '商品名称', m: '商品名称' } },
+    { r: 0, c: 2, v: { v: '调整量', m: '调整量' } },
+    { r: 1, c: 0, v: { v: 12, m: '12' } },
+    { r: 1, c: 2, v: { v: -3, m: '-3' } },
+    { r: 3, c: 0, v: { v: 13, m: '13' } },
+    { r: 3, c: 2, v: { v: 4, m: '4' } }
+  ])
+})
+
+test('aoaToLuckysheet 空输入使用默认表头列数与最小行数', () => {
+  const [sheet] = aoaToLuckysheet([])
+  assert.equal(sheet.row, 30)
+  assert.equal(sheet.column, 8)
+  assert.deepEqual(sheet.celldata, [])
 })
