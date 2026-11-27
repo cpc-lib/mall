@@ -72,6 +72,10 @@ order:
     recovery-scan-ms: 60000 # 恢复调度扫描周期
   request:
     ttl-hours: 24 # 下单幂等记录保留时长
+  saga-history:
+    clean-enabled: false # Seata Saga 成功终态实例历史清理开关：默认关闭，运维确认备份后显式开启
+    retention-days: 30 # 成功终态实例保留天数
+    clean-scan-ms: 600000 # 历史清理扫描周期，默认 10 分钟
 
 logistics:
   mock:

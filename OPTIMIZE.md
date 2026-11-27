@@ -667,13 +667,15 @@
 | `t_cart_item` | `schema.sql:8524-8526` | 已有唯一约束 `uk_cart_user_product(user_id, product_id)`，最左列已是 `user_id` | 删除冗余索引 `idx_cart_item_user(user_id)` |
 
 #### 3. 持续增长的系统表缺少定期清理任务
-- `t_order_request` 已配备 `OrderRequestCleanupScheduler`，但 **`t_local_message`**（状态为 `CONSUMED` 且超过 7 天的已消费 Outbox 记录）、**`t_consumer_dedupe`**（超过 7~30 天的去重记录）以及 **`seata_state_machine_inst` / `seata_state_inst`**（已 `SU` 成功的下单 Saga 历史实例）目前无任何过期清理任务，长期运行会持续膨胀。建议参照 `OrderRequestCleanupScheduler` 增加分批（`LIMIT 500`）定期归档/清理调度。
+- `t_order_request` 已配备 `OrderRequestCleanupScheduler`；**`t_local_message`** / **`t_consumer_dedupe`** 已由 `LocalMessageCleanupScheduler` 分批清理；**`seata_state_machine_inst` / `seata_state_inst`** 的成功终态历史实例已由 `SagaHistoryCleanupScheduler`（默认关闭）分批清理。本节所列增长表现已全部配备清理任务（Seata 仅清成功终态，非成功状态永不自动清理）。
 
 **处理进展（2026-11-24）**：
 
 1. `backend/env/sql/dm8/schema.sql` 已修正字段容量：`t_product.title` 由 `VARCHAR(20)` 扩为 `VARCHAR(256) NOT NULL`（创建服务已校验非空）；`t_stock_import.items_json` 由 `VARCHAR(4000)` 改为 `CLOB NOT NULL`，避免大批量导入 JSON 溢出。
 2. 索引已按上表落地：新增 `idx_order_user_create_time`、`idx_order_wait_ship`、`idx_order_timeout_scan`、`idx_refund_info_sync_scan`、`idx_refund_order_payment_apply`、`idx_shipment_status_shipped_time`、`idx_shipment_status_transit_time`；`idx_inventory_tx_product` 升级为 `idx_inventory_tx_product_time(product_id, create_time DESC, id DESC)`；删除与 `uk_cart_user_product` 左前缀重复的 `idx_cart_item_user`。脚本仍为破坏性重建（先 `DROP TABLE ... CASCADE` 再建），可重复执行。
 3. 清理任务：新增 `LocalMessageCleanupScheduler`（`mall-infra`，`@ConditionalOnProperty local-message.relay-enabled`），按 `local-message.clean-scan-ms`（默认 10 分钟）分批（每批 500）清理 `CONSUMED` 且超过 7 天的 `t_local_message` 与超过 30 天的 `t_consumer_dedupe`；全局锁 `scheduler:local-message-cleanup` 保证多进程串行，单批失败只记录日志。**Seata 状态机存储暂不引入应用侧重删**：`seata_state_machine_inst` / `seata_state_inst` 由 Seata 引擎维护时序，直接删除存在干扰在途实例的风险，需按官方机制单独评估归档方案，故本轮仅记录为待办。
+
+4. Seata Saga 历史清理（2026-11-27）：经核实 Seata 2.6.0 官方 `StateLogStore` 无删除/保留期 API（`clearUp()` 仅清理线程上下文），新增 `SagaHistoryCleanupScheduler`（`mall-order-service`，`@ConditionalOnProperty order.saga-history.clean-enabled`，默认关闭）：仅清理超过 `order.saga-history.retention-days`（默认 30 天）的成功终态根实例（`status=SU`、`compensation_status` 为空、`is_running=0`、`parent_id IS NULL`、无子实例），`RU/UN/FA/SK`、补偿中、已补偿、仍运行的记录永不自动清理；单批 500 条在本地事务内先删 `seata_state_inst` 再带终态 CAS 守卫删 `seata_state_machine_inst`，删除数与选中数不一致则回滚；全局锁 `scheduler:saga-history-cleanup` 串行。`schema.sql` 新增清理索引 `idx_seata_sm_inst_cleanup(status, is_running, gmt_end, id)`。不删除 `seata_state_machine_def`。开启前需先备份。
 
 ---
 

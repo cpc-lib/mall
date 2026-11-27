@@ -1496,6 +1496,8 @@ CREATE TABLE seata_state_machine_inst
     CONSTRAINT pk_seata_state_machine_inst PRIMARY KEY (id)
 );
 CREATE INDEX idx_seata_sm_inst_business_key ON seata_state_machine_inst (business_key);
+-- 历史实例清理：SagaHistoryCleanupScheduler 按终态 + 结束时间范围扫描，避免周期任务全表扫描。
+CREATE INDEX idx_seata_sm_inst_cleanup ON seata_state_machine_inst (status, is_running, gmt_end, id);
 COMMENT
 ON TABLE seata_state_machine_inst IS 'Seata Saga 状态机实例：按 business_key（订单号）检索与恢复';
 

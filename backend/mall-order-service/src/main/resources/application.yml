@@ -122,6 +122,10 @@ order:
     enabled: true # 送达后超时自动确认收货开关
     timeout-ms: 604800000 # 送达后等待用户确认收货的时限，默认 7 天
     scan-ms: 60000 # 自动确认收货 DB 扫描周期
+  saga-history:
+    clean-enabled: false # Seata Saga 成功终态实例历史清理开关：默认关闭，运维确认备份后显式开启
+    retention-days: 30 # 成功终态实例保留天数
+    clean-scan-ms: 600000 # 历史清理扫描周期，默认 10 分钟
 
 logistics:
   mock:

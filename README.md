@@ -644,6 +644,9 @@ backend/mall-gateway/src/main/resources/logback-spring.xml         # 网关日�
 | `SEATA_SAGA_ENABLED` | 是否启用 Saga 状态机，默认 `true` |
 | `order.request.clean-scan-ms` | 过期下单幂等记录清理周期，默认 `60000ms` |
 | `order.request.ttl-hours` | 下单幂等记录 `t_order_request` 保留时长，默认 24 小时 |
+| `order.saga-history.clean-enabled` | Seata Saga 成功终态实例历史清理总开关，默认 `false`，由 `@ConditionalOnProperty` 控制；开启前需先备份 |
+| `order.saga-history.retention-days` | Saga 成功终态实例保留天数，默认 `30` |
+| `order.saga-history.clean-scan-ms` | `SagaHistoryCleanupScheduler` 扫描周期，默认 `600000ms`（10 分钟） |
 | `local-message.clean-scan-ms` | 已消费 Outbox（7 天）与消费去重（30 天）清理周期，默认 `600000ms` |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | `RefundStatusSyncScheduler` DB 兜底扫描周期，默认 60000ms |
@@ -799,7 +802,7 @@ http://localhost:3002
 
 ### 后端
 
-后端测试由纯域策略、Mockito 应用服务/基础设施、MQ 消费者、控制器/拦截器安全守卫与 ArchUnit 架构守护组成，覆盖退款防超退、库存四桶、支付成交与晚到支付、账账核对、Outbox、认证轮换、鉴权白名单、订单归属校验和分布式锁。总计 **99 条**（含 14 条 ArchUnit），全部不启动 Spring、不依赖 DM8；明细见第 15.19 节。`mall-infra` 为跨域共享库，不适用四层依赖规则，未加 ArchUnit。
+后端测试由纯域策略、Mockito 应用服务/基础设施、MQ 消费者、控制器/拦截器安全守卫与 ArchUnit 架构守护组成，覆盖退款防超退、库存四桶、支付成交与晚到支付、账账核对、Outbox、Saga 历史清理、认证轮换、鉴权白名单、订单归属校验和分布式锁。总计 **102 条**（含 14 条 ArchUnit），全部不启动 Spring、不依赖 DM8；明细见第 15.19 节。`mall-infra` 为跨域共享库，不适用四层依赖规则，未加 ArchUnit。
 
 ```powershell
 cd backend
@@ -1980,6 +1983,7 @@ RabbitMQ 不允许用不同 arguments 重新声明同名已有队列。因此旧
 | `AutoReceiptScheduler` | `mall-order-service` | 每批最多 200 条扫描送达超时且仍待收货、无退款的运单，复用手动确认收货的锁/CAS/库存结转链路；单笔失败不阻塞同批其它运单 |
 | `OrderRequestCleanupScheduler` | `mall-order-service` | 按 `order.request.clean-scan-ms` 周期清理过期 `t_order_request` 幂等记录（每批最多 500 条）；单批失败只记录日志 |
 | `LocalMessageCleanupScheduler` | `mall-order-service` / `mall-refund-service` / `mall-payment-service` | 按 `local-message.clean-scan-ms` 周期分批（每批最多 500 条）清理 `CONSUMED` 且超过 7 天的 `t_local_message`、超过 30 天的 `t_consumer_dedupe`；全局锁 `scheduler:local-message-cleanup` 保证每轮只有一个实例执行，单批失败只记录日志 |
+| `SagaHistoryCleanupScheduler` | `mall-order-service` | 默认关闭（`order.saga-history.clean-enabled=false`），开启后按 `order.saga-history.clean-scan-ms` 周期分批（每批最多 500 条）清理超过 `order.saga-history.retention-days`（默认 30 天）的成功终态 Saga 根实例（`status=SU`、`compensation_status` 为空、未运行、无子实例）；单批事务内先删 `seata_state_inst` 再条件删 `seata_state_machine_inst`，终态 CAS 校验不一致则回滚；全局锁 `scheduler:saga-history-cleanup` 串行，非成功状态永不自动清理，开启前需先备份 |
 
 注意：
 
@@ -1999,7 +2003,7 @@ Outbox 中继按领域拆分后，`LocalMessageSendJob` 在各域服务内只扫
 锁键按应用名隔离（`scheduler:local-message-send:{spring.application.name}`），避免多进程共用单键导致其它域消息长期得不到投递；
 `mall-user-bff`、`mall-admin-bff` 与 `mall-bill-service` 配置 `local-message.relay-enabled=false`，不再扫描 `t_local_message`。
 `LocalMessageCleanupScheduler` 复用同一开关，仅在开启 Outbox 中继的域服务内生效，以全局锁串行执行，避免多进程重复清理。
-Seata 状态机存储（`seata_state_machine_inst` / `seata_state_inst`）由 Seata 引擎持有时序，暂不引入应用侧重删，待后续按官方机制评估归档。
+Seata 状态机存储（`seata_state_machine_inst` / `seata_state_inst`）由 Seata 引擎持有时序；`SagaHistoryCleanupScheduler`（默认关闭）按官方机制评估后只清理超过保留期的成功终态根实例，非成功状态（`RU/UN/FA/SK`、补偿中、已补偿、仍运行）永不自动清理，开启前需先备份。
 `mall-admin-bff` 刻意不开启 `@EnableScheduling` / `@EnableRabbit`，并通过 `spring.rabbitmq.listener.simple.auto-startup=false`
 关闭 MQ 监听，避免重复消费或重复执行定时扫描。
 
@@ -2398,6 +2402,9 @@ Controller 保留原包名 `cc.ivera.<context>.interfaces`，仅物理位置在�
 | `order.auto-receipt.enabled` | 送达超时自动确认收货开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
 | `order.auto-receipt.timeout-ms` | 送达后自动确认收货等待时限，默认 `604800000`（7 天） |
 | `order.auto-receipt.scan-ms` | AutoReceiptScheduler DB 扫描周期，默认 `60000ms` |
+| `order.saga-history.clean-enabled` | Saga 成功终态实例历史清理开关，默认 `false`，由 `@ConditionalOnProperty` 控制 |
+| `order.saga-history.retention-days` | Saga 成功终态实例保留天数，默认 `30` |
+| `order.saga-history.clean-scan-ms` | SagaHistoryCleanupScheduler 扫描周期，默认 `600000ms` |
 | `payment.refund.status-sync-delay-ms` | Refund Sync MQ 延迟时间，默认 60000ms |
 | `payment.refund.status-sync-scan-ms` | RefundStatusSyncScheduler DB 兜底扫描周期，默认 60000ms |
 | `refund.status-sync-enabled` | 退款状态同步兜底扫描开关，默认 `true`，由 `@ConditionalOnProperty` 控制 |
@@ -2479,12 +2486,12 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端 **99 条全绿**：
+后端 **102 条全绿**：
 
 - **纯域策略**（零依赖 JUnit）：`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
 - **领域基础设施与鉴权拦截**（Mockito mock 协作对象）：`mall-common` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义）、`AuthInterceptorTest`（4 条白名单默认拒绝、账单与渠道退款查询仅管理员、支付回调免登录）；`mall-infra` `RedissonDistributedLockTemplateTest`（6 条锁获取/释放与异常兜底）、`LocalMessageSendJobTest`（3 条域隔离锁键）、`LocalMessageServiceImplTest`（4 条指数退避、超限 FAILED 与 ACK 后 SENT）
 - **应用服务状态机与访问守卫**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（16 条）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条）、`PaymentChannelServiceImplTest`（3 条凭据脱敏）、`OrderAccessGuardTest`（5 条支付侧订单归属校验）、`mall-user-service` `AuthServiceImplRefreshTest`（7 条，含修改密码后全设备下线）、`mall-bill-service` `BillReconcileServiceImplTest`（5 条：1:N 支付逐笔匹配、双向单边账、金额/状态差异、上海日切与 OPEN 差异防误判平账）
-- **定时任务、Saga 定义与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`CheckoutSagaDefinitionTest`（1 条预占前移顺序）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
+- **定时任务、Saga 定义/历史清理与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`CheckoutSagaDefinitionTest`（1 条预占前移顺序）、`SagaHistoryCleanupServiceImplTest`（3 条：空候选短路、先删状态明细再删实例、终态 CAS 数量不一致抛异常回滚）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
 - **架构守护**：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则，domain 隔离 + application 不反向依赖）
 
 前端逻辑测试 **16 条全绿**：`user-ui` 9 条（refresh-single-flight、refund-quota、auth-store）；`admin-ui` 7 条（refresh-single-flight、库存 Excel AOA 校验与 Luckysheet 转换）。
