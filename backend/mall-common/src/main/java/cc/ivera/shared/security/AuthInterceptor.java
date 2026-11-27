@@ -90,14 +90,18 @@ public class AuthInterceptor implements HandlerInterceptor {
         if (uri.startsWith("/doc.html") || uri.startsWith("/swagger-ui/")
             || uri.startsWith("/v3/api-docs") || uri.startsWith("/webjars/")) return true;
 
-        // 7. 含 /notify 的其他回调（兜底，避免漏加时渠道通知被拦）
-        if (uri.contains("/notify")) return true;
+        // 7. 微信 JSAPI 支付回调（其余回调已在上方逐条声明，不做 /notify 兜底放行）
+        if (uri.equals("/api/wx-pay/jsapi/notify/v1")) return true;
 
         // 默认：不放行，需要登录
         return false;
     }
 
     private boolean requiresAdmin(String uri, String method) {
+        // 渠道账单下载/查询与渠道退款原始报文查询仅管理员：响应含商户全量交易/资金流水或渠道报文
+        if (uri.startsWith("/api/wx-pay/querybill/") || uri.startsWith("/api/wx-pay/downloadbill/")
+            || uri.startsWith("/api/ali-pay/bill/") || uri.startsWith("/api/wx-pay/query-refund/")
+            || uri.startsWith("/api/ali-pay/trade/fastpay/refund/")) return true;
         if (uri.startsWith("/api/auth/admin/") || uri.startsWith("/api/admin/") || uri.contains("/admin/")) return true;
         if (uri.startsWith("/api/refund-applies/") && (uri.endsWith("/accept") || uri.endsWith("/reject"))) return true;
         return uri.startsWith("/api/payment-app") || uri.startsWith("/api/payment-channel") || uri.startsWith("/api/payment-config") || uri.startsWith("/api/reconciliation") || uri.startsWith("/api/refund-info");

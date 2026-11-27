@@ -65,6 +65,11 @@
 - **优化方案**：
   將 `AuthInterceptor.isPublic()` 改为严格的**白名单机制**（默认返回 `false`），仅放行明确声明的公开路径（登录/注册/刷新/申请重置密码、商品分页与详情、行政区划树、支付/退款渠道异步回调 `/api/wx-pay/native/notify`、`/api/wx-pay-v2/native/notify`、`/api/wx-pay/refunds/notify`、`/api/ali-pay/trade/notify` 及 Swagger 文档路径）；同时对账单下载、渠道退款查询等管理接口补充 `AuthContext.requireAdmin()` 校验。
 
+**处理进展（2026-11-27）**：白名单已落地（`isPublic` 默认拒绝，仅逐条声明公开路径）；本轮补齐两处残留：
+1. 移除 `uri.contains("/notify")` 兜底放行，改为显式声明 `/api/wx-pay/jsapi/notify/v1`，避免未来任意含 `notify` 字样的接口被误判为公开。
+2. `requiresAdmin` 增加 `/api/wx-pay/querybill/`、`/api/wx-pay/downloadbill/`、`/api/ali-pay/bill/`、`/api/wx-pay/query-refund/`、`/api/ali-pay/trade/fastpay/refund/`，渠道账单查询/下载与渠道退款原始报文查询仅管理员可访问（此前任意登录用户可拉取商户全量交易与资金流水或探测渠道退款原始报文）。
+3. 新增 `AuthInterceptorTest`（4 条）：账单未登录 401、账单与渠道退款查询普通用户 403 / 管理员放行、未声明路径默认拒绝、支付回调免登录。
+
 ---
 
 ### P0-2：`OrderInfoController` 水平越权（IDOR）与全库用户订单隐私泄露
@@ -78,6 +83,8 @@
 - **优化方案**：
   - 若 `/api/order-info/list` 仅供管理端排障，增加 `AuthContext.requireAdmin()` 并改为服务端分页；若供普通用户使用，必须强制过滤 `user_id = AuthContext.requireLogin().getUserId()`。
   - 在 `query-order-status/{orderNo}` 及支付发起接口（`WxPayController.nativePayByOrderNo`、`AliPayController.tradePagePayByOrderNo`）中校验当前登录用户是否为订单拥有者（或管理员）。
+
+**处理进展（2026-11-27）**：`OrderInfoController.list` 已限管理员、`query-order-status` 已校验 owner。本轮补齐支付侧与 V1 退款兼容入口同源越权：新增 `cc.ivera.payment.interfaces.OrderAccessGuard`（普通用户仅可操作 `OrderInfo.userId` 等于本人的订单，管理员免校验，订单不存在或 `userId` 为空一律按“订单不存在或无权访问”拒绝），并接入 `WxPayController` 的 `cancel` / `query` / `check-order-status` / `jsapi`（带 `orderNo` 时）与 `AliPayController` 的 `trade/close` / `trade/query`；`RefundInfoServiceImpl.doCreateRefundApplication` 同步在非管理员登录上下文下校验订单归属（覆盖 `/api/wx-pay/refunds` 与 `/api/ali-pay/trade/refund`）。复用既有 `OrderPaymentApi.getOrderByOrderNo` / `OrderQueryApi.findByOrderNo`，无需新增跨上下文契约；两个前端均未调用这些接口，无兼容性影响。新增 `OrderAccessGuardTest`（5 条）。
 
 ---
 
@@ -267,6 +274,14 @@
 2. `mall-remote` 新增 `InternalTokenFeignConfiguration`，配置令牌后为所有 Feign 调用自动附加 `X-Internal-Token`；未配置时客户端不附加、服务端拦截器关闭，保持本地直连（`NACOS_ENABLED=false`）可用。
 3. `PaymentChannelServiceImpl` 对 `getById`、`listEnabledChannels`、`listAllChannels`、`create/update/status` 的返回统一掩码 `privateKey/apiV3Key/partnerKey/merchantPrivateKey`；更新时前端回传 `******` 则保留数据库原值。`getByChannelCode` 供支付签名内部使用，保持原始凭据。
 4. `PaymentChannelServiceImplTest` 新增 3 条用例（列表脱敏、掩码回传保留原值、内部查询不脱敏）。
+
+**P0 复核（2026-11-27）**：P0-2/3/5/6/7/8 逐项核对，代码均已落地，此前仅缺进展记录：
+- P0-2：`OrderInfoController.list` 校验 `ROLE_ADMIN`，`query-order-status` 校验订单 owner 或管理员。
+- P0-3：`RedissonDistributedLockTemplate.finally` 已把 `lock.unlock()` 与 `context` 解耦，`locked=true` 必定释放。
+- P0-5：`doExceptionPaymentRefund` 先查 `findByPaymentNoAndApplyType`，非 `SUCCESS` 复用已有退款单继续渠道幂等调用，仅 `existing == null` 时才冻结。
+- P0-6：`listTimeoutNotPay` 已用 `in(UNPAID, PAYING)` 且约束 `order_status = WAIT_PAY`、`limit 100`。
+- P0-7：`OrderNoUtils` 改为 `DateTimeFormatter(yyyyMMddHHmmssSSS)` + `AtomicInteger` + `ThreadLocalRandom`，无共享可变状态。
+- P0-8：`HttpClientUtils` 使用单例连接池 + `SSLContexts.createDefault()`，不再 trust-all，超时齐全。
 
 ---
 

@@ -16,6 +16,8 @@ import cc.ivera.refund.domain.repository.RefundInfoRepository;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.domain.lock.DistributedLock;
 import cc.ivera.shared.infrastructure.util.OrderNoUtils;
+import cc.ivera.shared.security.AuthContext;
+import cc.ivera.shared.security.AuthPrincipal;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -108,6 +110,12 @@ public class RefundInfoServiceImpl implements RefundInfoService {
         OrderInfo orderInfo = orderQueryApi.findByOrderNo(orderNo);
         if (orderInfo == null) {
             throw new BizException("订单不存在");
+        }
+        AuthPrincipal principal = AuthContext.get();
+        if (principal != null && !"ROLE_ADMIN".equals(principal.getRole())) {
+            if (orderInfo.getUserId() == null || !orderInfo.getUserId().equals(principal.getUserId())) {
+                throw new BizException("订单不存在或无权访问");
+            }
         }
         if (orderInfo.getTotalFee() == null || orderInfo.getTotalFee() <= 0) {
             throw new BizException("订单金额非法");

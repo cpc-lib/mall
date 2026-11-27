@@ -41,14 +41,18 @@ public class WxPayController {
 
     private final WxPayNotifyHandler wxPayNotifyHandler;
 
+    private final OrderAccessGuard orderAccessGuard;
+
     public WxPayController(
         WxPayOrderFacade wxPayOrderFacade,
         WxPayBillFacade wxPayBillFacade,
-        WxPayNotifyHandler wxPayNotifyHandler
+        WxPayNotifyHandler wxPayNotifyHandler,
+        OrderAccessGuard orderAccessGuard
     ) {
         this.wxPayOrderFacade = wxPayOrderFacade;
         this.wxPayBillFacade = wxPayBillFacade;
         this.wxPayNotifyHandler = wxPayNotifyHandler;
+        this.orderAccessGuard = orderAccessGuard;
     }
 
     /**
@@ -93,6 +97,7 @@ public class WxPayController {
     @PostMapping("/cancel/{orderNo}")
     public R<?> cancel(@PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
         log.info("取消订单");
+        orderAccessGuard.assertOwnerOrAdmin(orderNo);
         wxPayOrderFacade.cancelOrder(orderNo);
         return R.ok().setMessage("订单已取消");
     }
@@ -108,6 +113,7 @@ public class WxPayController {
     public R<StringResultVO> queryOrder(@PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
         log.info("查询订单");
 
+        orderAccessGuard.assertOwnerOrAdmin(orderNo);
         String result = wxPayOrderFacade.queryOrder(orderNo);
         StringResultVO vo = new StringResultVO();
         vo.setResult(result);
@@ -125,6 +131,7 @@ public class WxPayController {
     public R<WxPayStatusVO> checkOrderStatus(@PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
         log.info("主动查询微信支付状态");
 
+        orderAccessGuard.assertOwnerOrAdmin(orderNo);
         WxPayStatusVO result = wxPayOrderFacade.queryPaymentStatus(orderNo);
         return R.ok(result).setMessage("查询成功");
     }
@@ -164,6 +171,9 @@ public class WxPayController {
     public R<WxPayJsapiVO> jsapiPay(OrderInfo orderInfo,
                                     @NotBlank(message = "openid不能为空") @Size(max = 128, message = "openid长度不能超过128个字符") String openid) {
         log.info("发起支付请求");
+        if (orderInfo != null && orderInfo.getOrderNo() != null) {
+            orderAccessGuard.assertOwnerOrAdmin(orderInfo.getOrderNo());
+        }
         WxPayJsapiVO map = wxPayOrderFacade.jsapiPay(orderInfo, openid);
         return R.ok(map);
     }

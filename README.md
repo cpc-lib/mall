@@ -799,7 +799,7 @@ http://localhost:3002
 
 ### 后端
 
-后端测试由纯域策略、Mockito 应用服务/基础设施、MQ 消费者与 ArchUnit 架构守护组成，覆盖退款防超退、库存四桶、支付成交与晚到支付、账账核对、Outbox、认证轮换和分布式锁。总计 **83 条**（含 14 条 ArchUnit），全部不启动 Spring、不依赖 DM8；明细见第 15.19 节。`mall-infra` 为跨域共享库，不适用四层依赖规则，未加 ArchUnit。
+后端测试由纯域策略、Mockito 应用服务/基础设施、MQ 消费者、控制器/拦截器安全守卫与 ArchUnit 架构守护组成，覆盖退款防超退、库存四桶、支付成交与晚到支付、账账核对、Outbox、认证轮换、鉴权白名单、订单归属校验和分布式锁。总计 **99 条**（含 14 条 ArchUnit），全部不启动 Spring、不依赖 DM8；明细见第 15.19 节。`mall-infra` 为跨域共享库，不适用四层依赖规则，未加 ArchUnit。
 
 ```powershell
 cd backend
@@ -2479,12 +2479,12 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端 **83 条全绿**：
+后端 **99 条全绿**：
 
 - **纯域策略**（零依赖 JUnit）：`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
-- **领域基础设施**（Mockito mock 协作对象）：`mall-common` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义）；`mall-infra` `RedissonDistributedLockTemplateTest`（6 条锁获取/释放与异常兜底）、`LocalMessageSendJobTest`（3 条域隔离锁键）、`LocalMessageServiceImplTest`（4 条指数退避、超限 FAILED 与 ACK 后 SENT）
-- **应用服务状态机**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（13 条）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条）、`mall-user-service` `AuthServiceImplRefreshTest`（7 条，含修改密码后全设备下线）、`mall-bill-service` `BillReconcileServiceImplTest`（5 条：1:N 支付逐笔匹配、双向单边账、金额/状态差异、上海日切与 OPEN 差异防误判平账）
-- **定时任务与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
+- **领域基础设施与鉴权拦截**（Mockito mock 协作对象）：`mall-common` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义）、`AuthInterceptorTest`（4 条白名单默认拒绝、账单与渠道退款查询仅管理员、支付回调免登录）；`mall-infra` `RedissonDistributedLockTemplateTest`（6 条锁获取/释放与异常兜底）、`LocalMessageSendJobTest`（3 条域隔离锁键）、`LocalMessageServiceImplTest`（4 条指数退避、超限 FAILED 与 ACK 后 SENT）
+- **应用服务状态机与访问守卫**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（16 条）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条）、`PaymentChannelServiceImplTest`（3 条凭据脱敏）、`OrderAccessGuardTest`（5 条支付侧订单归属校验）、`mall-user-service` `AuthServiceImplRefreshTest`（7 条，含修改密码后全设备下线）、`mall-bill-service` `BillReconcileServiceImplTest`（5 条：1:N 支付逐笔匹配、双向单边账、金额/状态差异、上海日切与 OPEN 差异防误判平账）
+- **定时任务、Saga 定义与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`CheckoutSagaDefinitionTest`（1 条预占前移顺序）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
 - **架构守护**：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则，domain 隔离 + application 不反向依赖）
 
 前端逻辑测试 **16 条全绿**：`user-ui` 9 条（refresh-single-flight、refund-quota、auth-store）；`admin-ui` 7 条（refresh-single-flight、库存 Excel AOA 校验与 Luckysheet 转换）。

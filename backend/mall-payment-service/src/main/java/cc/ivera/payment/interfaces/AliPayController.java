@@ -39,14 +39,18 @@ public class AliPayController {
 
     private final OrderPaymentApi orderPaymentApi;
 
+    private final OrderAccessGuard orderAccessGuard;
+
     public AliPayController(
         AliPayService aliPayService,
         PaymentConfigGateway paymentConfigLoader,
-        OrderPaymentApi orderPaymentApi
+        OrderPaymentApi orderPaymentApi,
+        OrderAccessGuard orderAccessGuard
     ) {
         this.aliPayService = aliPayService;
         this.paymentConfigLoader = paymentConfigLoader;
         this.orderPaymentApi = orderPaymentApi;
+        this.orderAccessGuard = orderAccessGuard;
     }
 
     @Operation(summary = "统一收单下单并支付页面接口的调用")
@@ -156,6 +160,7 @@ public class AliPayController {
     @PostMapping("/trade/close/{orderNo}")
     public R<?> cancel(@PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
         log.info("取消订单");
+        orderAccessGuard.assertOwnerOrAdmin(orderNo);
         aliPayService.cancelOrder(orderNo);
         return R.ok().setMessage("订单已取消");
     }
@@ -171,6 +176,7 @@ public class AliPayController {
     public R<StringResultVO> queryOrder(@PathVariable @NotBlank(message = "订单号不能为空") @Size(max = 50, message = "订单号长度不能超过50个字符") String orderNo) {
         log.info("查询订单");
 
+        orderAccessGuard.assertOwnerOrAdmin(orderNo);
         String result = aliPayService.queryOrder(orderNo);
         StringResultVO vo = new StringResultVO();
         vo.setResult(result);
