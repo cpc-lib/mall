@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -73,5 +74,25 @@ class SagaHistoryCleanupServiceImplTest {
         when(sagaHistoryRepository.deleteMachineInstancesTerminalBefore(cutoff, ids)).thenReturn(1);
 
         assertThrows(BizException.class, () -> cleanupService.cleanBatch(cutoff));
+    }
+
+    @Test
+    void sequentialNonEmptyBatchesDrainUntilZero() {
+        List<String> batch1 = List.of("inst-1", "inst-2");
+        List<String> batch2 = List.of("inst-3");
+        when(sagaHistoryRepository.findCleanableInstanceIds(cutoff, BATCH_SIZE))
+            .thenReturn(batch1, batch2, List.of());
+        when(sagaHistoryRepository.deleteStateInstancesByMachineInstIds(batch1)).thenReturn(2);
+        when(sagaHistoryRepository.deleteMachineInstancesTerminalBefore(cutoff, batch1)).thenReturn(2);
+        when(sagaHistoryRepository.deleteStateInstancesByMachineInstIds(batch2)).thenReturn(1);
+        when(sagaHistoryRepository.deleteMachineInstancesTerminalBefore(cutoff, batch2)).thenReturn(1);
+
+        assertEquals(2, cleanupService.cleanBatch(cutoff));
+        assertEquals(1, cleanupService.cleanBatch(cutoff));
+        assertEquals(0, cleanupService.cleanBatch(cutoff));
+
+        verify(sagaHistoryRepository, times(3)).findCleanableInstanceIds(cutoff, BATCH_SIZE);
+        verify(sagaHistoryRepository).deleteMachineInstancesTerminalBefore(cutoff, batch1);
+        verify(sagaHistoryRepository).deleteMachineInstancesTerminalBefore(cutoff, batch2);
     }
 }
