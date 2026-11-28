@@ -15,7 +15,7 @@
 - 后端按 8 个限界上下文组织：`shared`、`product`、`order`、`payment`、`refund`、`user`、`cart`、`bill`；P3–P7 阶段用户服务、商品服务、订单服务、支付服务、退款服务、账单服务与其他进程仍同库同 schema。
 - 每个业务上下文遵循四层结构：`interfaces / application / domain / infrastructure`。
 - 服务治理：所有可运行进程通过 Nacos 注册服务并从配置中心导入 `<应用名>.yaml`（`spring.config.import: optional:nacos:...`）；内部调用统一使用 Spring Cloud OpenFeign（`cc.ivera.infra.feign.InternalFeignConfiguration` 解包 `R` 信封），网关路由目标统一为 `lb://mall-xxx-service`。`NACOS_ENABLED=false` 时注册与配置导入关闭，此时必须用 `USER_SERVICE_BASE_URL` 等 base-url 与 `MALL_*_URI` 直连。微信/支付宝渠道客户端保持独立 SDK/HTTP 客户端，不得改成 Feign。
-- 后端测试基线已覆盖全部 7 个领域服务与共享库（共 103 条纯域策略、Mockito 单测与 14 条 ArchUnit 架构守护，均不启动 Spring 上下文、不依赖 DM8）：涵盖退款尾差与防超退（`RefundPolicyTest`）、账账核对与平账不变量（`BillBalancedRuleTest`、`BillReconcileServiceImplTest`）、库存四桶流转与幂等（`InventoryServiceImplTest`）、支付成交唯一性与凭据掩码（`PaymentSuccessServiceImplTest`、`PaymentChannelServiceImplTest`、`OrderAccessGuardTest`）、订单自动收货/晚到支付/Saga 顺序与历史清理（`AutoReceiptSchedulerTest`、`PaymentSucceededConsumerTest`、`CheckoutSagaDefinitionTest`、`SagaHistoryCleanupServiceImplTest`）、购物车批量快照（`CartServiceImplTest`）、认证轮换与重放检测（`AuthServiceImplRefreshTest`）、围栏令牌/分布式锁/Outbox 与鉴权白名单（`FenceTokenHolderTest`、`AuthInterceptorTest`、`RedissonDistributedLockTemplateTest`、`LocalMessageSendJobTest`、`LocalMessageServiceImplTest`）以及 7 个领域的 `*DomainArchitectureTest`。`user-ui` 有 9 条 Node 逻辑测试，`admin-ui` 有 7 条 Node 逻辑测试。CI 见 `.github/workflows/ci.yml`。
+- 后端测试基线已覆盖全部 7 个领域服务与共享库（共 110 条纯域策略、Mockito 单测与 14 条 ArchUnit 架构守护，均不启动 Spring 上下文、不依赖 DM8）：涵盖 SPU/销售规格与属性策略（`SpuSpecPolicyTest`）、退款尾差与防超退（`RefundPolicyTest`）、账账核对与平账不变量（`BillBalancedRuleTest`、`BillReconcileServiceImplTest`）、库存四桶流转与幂等（`InventoryServiceImplTest`）、支付成交唯一性与凭据掩码（`PaymentSuccessServiceImplTest`、`PaymentChannelServiceImplTest`、`OrderAccessGuardTest`）、订单自动收货/晚到支付/Saga 顺序与历史清理（`AutoReceiptSchedulerTest`、`PaymentSucceededConsumerTest`、`CheckoutSagaDefinitionTest`、`SagaHistoryCleanupServiceImplTest`）、购物车批量快照与 SPU 双层可售校验（`CartServiceImplTest`）、认证轮换与重放检测（`AuthServiceImplRefreshTest`）、围栏令牌/分布式锁/Outbox 与鉴权白名单（`FenceTokenHolderTest`、`AuthInterceptorTest`、`RedissonDistributedLockTemplateTest`、`LocalMessageSendJobTest`、`LocalMessageServiceImplTest`）以及 7 个领域的 `*DomainArchitectureTest`。`user-ui` 有 13 条 Node 逻辑测试，`admin-ui` 有 9 条 Node 逻辑测试。CI 见 `.github/workflows/ci.yml`。
 
 文档职责：
 
@@ -243,7 +243,7 @@ backend/env/sql/dm8/schema.sql
 
 ## 8. 测试规则
 
-后端测试基线由纯域策略单测、Mockito 应用服务/基础设施单测与 7 个领域服务的 ArchUnit 架构边界测试（`*DomainArchitectureTest`）组成，总计 103 条；均不启动 Spring 上下文、不依赖 DM8。变更验证以 `mvn clean test` 通过为准。CI（`.github/workflows/ci.yml`）执行 `mvn -B -ntp -T 1C clean test`，并对两个前端分别执行 `npm run test:logic` 与 `npm run build`。
+后端测试基线由纯域策略单测、Mockito 应用服务/基础设施单测与 7 个领域服务的 ArchUnit 架构边界测试（`*DomainArchitectureTest`）组成，总计 110 条；均不启动 Spring 上下文、不依赖 DM8。变更验证以 `mvn clean test` 通过为准。CI（`.github/workflows/ci.yml`）执行 `mvn -B -ntp -T 1C clean test`，并对两个前端分别执行 `npm run test:logic` 与 `npm run build`。
 
 必须执行的回归：
 

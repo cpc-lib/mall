@@ -15,9 +15,13 @@ public class OrderItemPO extends BaseEntity {
 
     private String orderNo;
 
+    private Long spuId;
+
     private Long productId;
 
     private String productTitle;
+
+    private String skuSpecText;
 
     private Integer unitPrice;
 

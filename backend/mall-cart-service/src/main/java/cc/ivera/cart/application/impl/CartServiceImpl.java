@@ -49,11 +49,13 @@ public class CartServiceImpl implements CartService {
             vo.setQuantity(item.getQuantity());
             vo.setSelected(item.getSelected());
             if (product != null) {
+                vo.setSpuId(product.getSpuId());
+                vo.setSpecText(product.getSpecText());
                 vo.setTitle(product.getTitle());
                 vo.setLatestPrice(product.getPrice());
                 vo.setAvailableStock(product.getStock());
                 vo.setProductStatus(product.getProductStatus());
-                vo.setAvailable(CommonStatus.ENABLED.getType().equals(product.getProductStatus())
+                vo.setAvailable(product.isEffectivelyEnabled()
                     && product.getStock() != null && product.getStock() > 0);
             } else {
                 vo.setAvailable(false);
@@ -71,7 +73,7 @@ public class CartServiceImpl implements CartService {
         if (product == null) {
             throw new BizException("商品不存在");
         }
-        if (!CommonStatus.ENABLED.getType().equals(product.getProductStatus())) {
+        if (!product.isEffectivelyEnabled()) {
             throw new BizException("商品已下架");
         }
         if (request.getQuantity() > product.getStock()) {

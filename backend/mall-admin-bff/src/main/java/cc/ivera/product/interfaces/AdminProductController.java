@@ -9,8 +9,11 @@ import cc.ivera.product.application.dto.ProductCreateRequest;
 import cc.ivera.product.application.dto.ProductStatusRequest;
 import cc.ivera.product.application.dto.ProductStockAdjustRequest;
 import cc.ivera.product.application.dto.ProductStockBatchAdjustRequest;
+import cc.ivera.product.application.dto.SpuSaveRequest;
 import cc.ivera.product.application.vo.BatchAdjustResultVO;
 import cc.ivera.product.application.vo.ProductDetailVO;
+import cc.ivera.product.application.vo.SpuDetailVO;
+import cc.ivera.product.application.vo.SpuSummaryVO;
 import cc.ivera.shared.domain.enums.CommonStatus;
 import cc.ivera.shared.domain.exception.BizException;
 import cc.ivera.shared.web.PageVO;
@@ -102,5 +105,38 @@ public class AdminProductController {
     public R<Product> setStatus(@PathVariable Long id, @Valid @RequestBody ProductStatusRequest req) {
         Product product = productService.changeStatus(id, req.getProductStatus());
         return R.ok(product).setMessage(CommonStatus.ENABLED.getType().equals(req.getProductStatus()) ? "商品已上架" : "商品已下架");
+    }
+
+    @Operation(summary = "SPU 商品列表（服务端分页）")
+    @GetMapping("/spu/page")
+    public R<PageVO<SpuSummaryVO>> spuPage(@RequestParam(defaultValue = "1") int page,
+                                           @RequestParam(defaultValue = "20") int size,
+                                           @RequestParam(required = false) String keyword) {
+        return R.ok(productService.pageSpu(page, size, keyword, false));
+    }
+
+    @Operation(summary = "SPU 商品详情（含基础展示属性、销售规格与 SKU 列表）")
+    @GetMapping("/spu/{spuId}")
+    public R<SpuDetailVO> spuDetail(@PathVariable Long spuId) {
+        return R.ok(productService.getSpuDetail(spuId));
+    }
+
+    @Operation(summary = "创建 SPU 商品（支持单规格/多规格、基础展示属性与销售规格）")
+    @PostMapping("/spu")
+    public R<SpuDetailVO> createSpu(@Valid @RequestBody SpuSaveRequest req) {
+        return R.ok(productService.createSpu(req)).setMessage("SPU 商品已创建");
+    }
+
+    @Operation(summary = "编辑 SPU 商品（不物理删除已有 SKU，保护四桶库存）")
+    @PutMapping("/spu/{spuId}")
+    public R<SpuDetailVO> updateSpu(@PathVariable Long spuId, @Valid @RequestBody SpuSaveRequest req) {
+        return R.ok(productService.updateSpu(spuId, req)).setMessage("SPU 商品已更新");
+    }
+
+    @Operation(summary = "SPU 上架/下架")
+    @PostMapping("/spu/{spuId}/status")
+    public R<SpuDetailVO> setSpuStatus(@PathVariable Long spuId, @Valid @RequestBody ProductStatusRequest req) {
+        SpuDetailVO detail = productService.changeSpuStatus(spuId, req.getProductStatus());
+        return R.ok(detail).setMessage(CommonStatus.ENABLED.getType().equals(req.getProductStatus()) ? "SPU 已上架" : "SPU 已下架");
     }
 }

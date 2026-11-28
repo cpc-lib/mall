@@ -7,6 +7,8 @@ import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.application.StockImportService;
 import cc.ivera.product.application.dto.*;
 import cc.ivera.product.application.vo.BatchAdjustResultVO;
+import cc.ivera.product.application.vo.SpuDetailVO;
+import cc.ivera.product.application.vo.SpuSummaryVO;
 import cc.ivera.product.domain.model.*;
 import cc.ivera.product.infrastructure.remote.client.ProductServiceClient;
 import cc.ivera.shared.domain.exception.BizException;
@@ -69,6 +71,33 @@ public class ProductServiceRemoteAdapter implements ProductService, ProductStock
         ProductStatusRequest request = new ProductStatusRequest();
         request.setProductStatus(productStatus);
         return unwrap(client.changeStatus(id, request));
+    }
+
+    @Override
+    public PageVO<SpuSummaryVO> pageSpu(int page, int size, String keyword, boolean onlyEnabled) {
+        return unwrap(client.pageSpu(page, size, keyword, onlyEnabled));
+    }
+
+    @Override
+    public SpuDetailVO getSpuDetail(Long spuId) {
+        return unwrap(client.getSpuDetail(spuId));
+    }
+
+    @Override
+    public SpuDetailVO createSpu(SpuSaveRequest request) {
+        return unwrap(client.createSpu(request));
+    }
+
+    @Override
+    public SpuDetailVO updateSpu(Long spuId, SpuSaveRequest request) {
+        return unwrap(client.updateSpu(spuId, request));
+    }
+
+    @Override
+    public SpuDetailVO changeSpuStatus(Long spuId, String spuStatus) {
+        ProductStatusRequest request = new ProductStatusRequest();
+        request.setProductStatus(spuStatus);
+        return unwrap(client.changeSpuStatus(spuId, request));
     }
 
     @Override

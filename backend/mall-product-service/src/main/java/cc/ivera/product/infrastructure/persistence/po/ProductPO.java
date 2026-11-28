@@ -9,7 +9,19 @@ import lombok.Data;
 @TableName("t_product")
 public class ProductPO extends BaseEntity {
 
+    private Long spuId; //所属SPU ID
+
+    private String skuCode; //商家SKU编码
+
     private String title; //商品名称
+
+    private String specKey; //规范化规格组合签名
+
+    private String specText; //可读规格摘要
+
+    private String specJson; //结构化规格JSON数组
+
+    private String isDefault; //是否默认SKU：'1'/'0'
 
     private Integer price; //价格（分）
 

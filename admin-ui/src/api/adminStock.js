@@ -13,5 +13,10 @@ export default {
   getImportFile: (id) => request.get(`/api/admin/stock/imports/${id}/file`),
   saveImportFile: (id, data) => request.put(`/api/admin/stock/imports/${id}/file`, data),
   confirmImport: (id) => request.post(`/api/admin/stock/imports/${id}/confirm`),
-  setStatus: (id, productStatus) => request.post(`/api/admin/products/${id}/status`, { productStatus })
+  setStatus: (id, productStatus) => request.post(`/api/admin/products/${id}/status`, { productStatus }),
+  spuPage: (params) => request.get('/api/admin/products/spu/page', { params }),
+  getSpu: (spuId) => request.get(`/api/admin/products/spu/${spuId}`),
+  createSpu: (data) => request.post('/api/admin/products/spu', data),
+  updateSpu: (spuId, data) => request.put(`/api/admin/products/spu/${spuId}`, data),
+  setSpuStatus: (spuId, productStatus) => request.post(`/api/admin/products/spu/${spuId}/status`, { productStatus })
 }

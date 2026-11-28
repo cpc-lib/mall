@@ -3,6 +3,8 @@ package cc.ivera.product.infrastructure.remote.client;
 import cc.ivera.infra.feign.InternalFeignConfiguration;
 import cc.ivera.product.application.dto.*;
 import cc.ivera.product.application.vo.BatchAdjustResultVO;
+import cc.ivera.product.application.vo.SpuDetailVO;
+import cc.ivera.product.application.vo.SpuSummaryVO;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.StockImport;
@@ -37,6 +39,24 @@ public interface ProductServiceClient {
 
     @PutMapping("/internal/product/products/{id}/status")
     R<Product> changeStatus(@PathVariable("id") Long id, @RequestBody ProductStatusRequest request);
+
+    @GetMapping("/internal/product/spus/page")
+    R<PageVO<SpuSummaryVO>> pageSpu(@RequestParam("page") int page,
+                                    @RequestParam("size") int size,
+                                    @RequestParam(value = "keyword", required = false) String keyword,
+                                    @RequestParam(value = "onlyEnabled", defaultValue = "false") boolean onlyEnabled);
+
+    @GetMapping("/internal/product/spus/{spuId}")
+    R<SpuDetailVO> getSpuDetail(@PathVariable("spuId") Long spuId);
+
+    @PostMapping("/internal/product/spus")
+    R<SpuDetailVO> createSpu(@RequestBody SpuSaveRequest request);
+
+    @PutMapping("/internal/product/spus/{spuId}")
+    R<SpuDetailVO> updateSpu(@PathVariable("spuId") Long spuId, @RequestBody SpuSaveRequest request);
+
+    @PutMapping("/internal/product/spus/{spuId}/status")
+    R<SpuDetailVO> changeSpuStatus(@PathVariable("spuId") Long spuId, @RequestBody ProductStatusRequest request);
 
     @PostMapping("/internal/product/stock/{id}/adjust")
     R<Product> adjust(@PathVariable("id") Long id, @RequestBody ProductStockAdjustRequest request);

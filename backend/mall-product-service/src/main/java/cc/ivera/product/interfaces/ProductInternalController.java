@@ -7,6 +7,8 @@ import cc.ivera.product.application.ProductStockService;
 import cc.ivera.product.application.StockImportService;
 import cc.ivera.product.application.dto.*;
 import cc.ivera.product.application.vo.BatchAdjustResultVO;
+import cc.ivera.product.application.vo.SpuDetailVO;
+import cc.ivera.product.application.vo.SpuSummaryVO;
 import cc.ivera.product.domain.model.InventoryTransaction;
 import cc.ivera.product.domain.model.Product;
 import cc.ivera.product.domain.model.StockAdjustLine;
@@ -60,6 +62,34 @@ public class ProductInternalController {
     @PutMapping("/products/{id}/status")
     public R<Product> changeStatus(@PathVariable Long id, @Valid @RequestBody ProductStatusRequest request) {
         return R.ok(productService.changeStatus(id, request.getProductStatus()));
+    }
+
+    @GetMapping("/spus/page")
+    public R<PageVO<SpuSummaryVO>> pageSpu(@RequestParam int page,
+                                           @RequestParam int size,
+                                           @RequestParam(required = false) String keyword,
+                                           @RequestParam(defaultValue = "false") boolean onlyEnabled) {
+        return R.ok(productService.pageSpu(page, size, keyword, onlyEnabled));
+    }
+
+    @GetMapping("/spus/{spuId}")
+    public R<SpuDetailVO> getSpuDetail(@PathVariable Long spuId) {
+        return R.ok(productService.getSpuDetail(spuId));
+    }
+
+    @PostMapping("/spus")
+    public R<SpuDetailVO> createSpu(@Valid @RequestBody SpuSaveRequest request) {
+        return R.ok(productService.createSpu(request));
+    }
+
+    @PutMapping("/spus/{spuId}")
+    public R<SpuDetailVO> updateSpu(@PathVariable Long spuId, @Valid @RequestBody SpuSaveRequest request) {
+        return R.ok(productService.updateSpu(spuId, request));
+    }
+
+    @PutMapping("/spus/{spuId}/status")
+    public R<SpuDetailVO> changeSpuStatus(@PathVariable Long spuId, @Valid @RequestBody ProductStatusRequest request) {
+        return R.ok(productService.changeSpuStatus(spuId, request.getProductStatus()));
     }
 
     @GetMapping("/query/{id}")

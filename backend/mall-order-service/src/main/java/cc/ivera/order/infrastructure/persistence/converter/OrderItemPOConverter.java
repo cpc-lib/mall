@@ -19,8 +19,10 @@ public final class OrderItemPOConverter {
         po.setId(domain.getId());
         po.setOrderId(domain.getOrderId());
         po.setOrderNo(domain.getOrderNo());
+        po.setSpuId(domain.getSpuId());
         po.setProductId(domain.getProductId());
         po.setProductTitle(domain.getProductTitle());
+        po.setSkuSpecText(domain.getSkuSpecText());
         po.setUnitPrice(domain.getUnitPrice());
         po.setQuantity(domain.getQuantity());
         po.setDealUnitAmount(domain.getDealUnitAmount());
@@ -45,8 +47,10 @@ public final class OrderItemPOConverter {
         domain.setId(po.getId());
         domain.setOrderId(po.getOrderId());
         domain.setOrderNo(po.getOrderNo());
+        domain.setSpuId(po.getSpuId());
         domain.setProductId(po.getProductId());
         domain.setProductTitle(po.getProductTitle());
+        domain.setSkuSpecText(po.getSkuSpecText());
         domain.setUnitPrice(po.getUnitPrice());
         domain.setQuantity(po.getQuantity());
         domain.setDealUnitAmount(po.getDealUnitAmount());

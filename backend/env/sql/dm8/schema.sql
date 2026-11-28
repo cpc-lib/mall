@@ -74,6 +74,10 @@ DROP TABLE IF EXISTS t_payment_info CASCADE;
 DROP TABLE IF EXISTS t_order_info CASCADE;
 DROP TABLE IF EXISTS t_payment_app CASCADE;
 DROP TABLE IF EXISTS t_product CASCADE;
+DROP TABLE IF EXISTS t_product_spec_value CASCADE;
+DROP TABLE IF EXISTS t_product_spec_group CASCADE;
+DROP TABLE IF EXISTS t_product_spu_attr CASCADE;
+DROP TABLE IF EXISTS t_product_spu CASCADE;
 DROP TABLE IF EXISTS t_payment_channel CASCADE;
 DROP TABLE IF EXISTS t_reconciliation_discrepancy CASCADE;
 DROP TABLE IF EXISTS t_reconciliation_detail CASCADE;
@@ -384,12 +388,125 @@ END;
 /
 
 -- ----------------------------
--- t_product 商品表
+-- t_product_spu 标准商品单元表（SPU）
+-- ----------------------------
+CREATE TABLE t_product_spu
+(
+    id             BIGINT IDENTITY(1, 1) NOT NULL,
+    spu_code       VARCHAR(64),
+    title          VARCHAR(256)                    NOT NULL,
+    subtitle       VARCHAR(256),
+    category_name  VARCHAR(64),
+    brand_name     VARCHAR(64),
+    main_image     VARCHAR(512),
+    description    CLOB,
+    spec_mode      VARCHAR(16) DEFAULT 'SINGLE'    NOT NULL,
+    spu_status     VARCHAR(16) DEFAULT 'ENABLED'   NOT NULL,
+    min_price      INT         DEFAULT 1           NOT NULL,
+    max_price      INT         DEFAULT 1           NOT NULL,
+    default_sku_id BIGINT,
+    create_time    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    update_time    TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_product_spu PRIMARY KEY (id)
+);
+CREATE INDEX idx_product_spu_status_time ON t_product_spu (spu_status, create_time DESC);
+
+COMMENT
+ON TABLE t_product_spu IS '标准商品单元表（SPU）：聚合商品公共展示信息、价格区间与默认SKU，不直接持有物理库存桶';
+COMMENT
+ON COLUMN t_product_spu.spec_mode IS '规格模式：SINGLE-单规格，MULTI-多规格';
+COMMENT
+ON COLUMN t_product_spu.spu_status IS 'SPU状态：ENABLED-上架，DISABLED-下架（下架后下属全部SKU不可售）';
+COMMENT
+ON COLUMN t_product_spu.min_price IS '下属有效SKU最低售价(分)';
+COMMENT
+ON COLUMN t_product_spu.max_price IS '下属有效SKU最高售价(分)';
+COMMENT
+ON COLUMN t_product_spu.default_sku_id IS '默认选中的SKU ID（指向 t_product.id）';
+
+CREATE
+OR REPLACE TRIGGER trg_product_spu_uptime
+BEFORE
+UPDATE ON t_product_spu
+    FOR EACH ROW
+BEGIN
+  :NEW
+.update_time := CURRENT_TIMESTAMP;
+END;
+/
+
+-- ----------------------------
+-- t_product_spu_attr 商品基础展示属性表（SPU公共参数，不拆SKU）
+-- ----------------------------
+CREATE TABLE t_product_spu_attr
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    spu_id      BIGINT                NOT NULL,
+    attr_name   VARCHAR(64)           NOT NULL,
+    attr_value  VARCHAR(256)          NOT NULL,
+    sort_order  INT       DEFAULT 0   NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_product_spu_attr PRIMARY KEY (id),
+    CONSTRAINT uk_product_spu_attr UNIQUE (spu_id, attr_name)
+);
+CREATE INDEX idx_spu_attr_spu_sort ON t_product_spu_attr (spu_id, sort_order, id);
+
+COMMENT
+ON TABLE t_product_spu_attr IS '商品基础展示属性表：如品牌、产地、材质、讲师等SPU级公共参数，不参与SKU组合';
+
+-- ----------------------------
+-- t_product_spec_group 商品销售规格组表（决定SKU组合的维度，如颜色、容量）
+-- ----------------------------
+CREATE TABLE t_product_spec_group
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    spu_id      BIGINT                NOT NULL,
+    spec_name   VARCHAR(64)           NOT NULL,
+    sort_order  INT       DEFAULT 0   NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_product_spec_group PRIMARY KEY (id),
+    CONSTRAINT uk_product_spec_group UNIQUE (spu_id, spec_name)
+);
+CREATE INDEX idx_spec_group_spu_sort ON t_product_spec_group (spu_id, sort_order, id);
+
+COMMENT
+ON TABLE t_product_spec_group IS '商品销售规格组表：同一多规格SPU下支持1~3组销售规格维度';
+
+-- ----------------------------
+-- t_product_spec_value 商品销售规格值表（如黑色、256GB）
+-- ----------------------------
+CREATE TABLE t_product_spec_value
+(
+    id          BIGINT IDENTITY(1, 1) NOT NULL,
+    spu_id      BIGINT                NOT NULL,
+    group_id    BIGINT                NOT NULL,
+    spec_value  VARCHAR(64)           NOT NULL,
+    sort_order  INT       DEFAULT 0   NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_product_spec_value PRIMARY KEY (id),
+    CONSTRAINT uk_product_spec_value UNIQUE (group_id, spec_value)
+);
+CREATE INDEX idx_spec_value_spu_group ON t_product_spec_value (spu_id, group_id, sort_order, id);
+
+COMMENT
+ON TABLE t_product_spec_value IS '商品销售规格值表：规格维度下的可选规格值';
+
+-- ----------------------------
+-- t_product 商品SKU表（最小库存与交易计价单元）
 -- ----------------------------
 CREATE TABLE t_product
 (
     id              BIGINT IDENTITY(1, 1) NOT NULL,
-    title           VARCHAR(256)                NOT NULL,
+    spu_id          BIGINT                        NOT NULL,
+    sku_code        VARCHAR(64),
+    title           VARCHAR(256)                  NOT NULL,
+    spec_key        VARCHAR(256) DEFAULT 'DEFAULT' NOT NULL,
+    spec_text       VARCHAR(256),
+    spec_json       VARCHAR(1000),
+    is_default      CHAR(1)     DEFAULT '1'       NOT NULL,
     price           INT         DEFAULT 1         NOT NULL,
     available_stock INT         DEFAULT 100       NOT NULL,
     locked_stock    INT         DEFAULT 0         NOT NULL,
@@ -398,15 +515,29 @@ CREATE TABLE t_product
     product_status  VARCHAR(16) DEFAULT 'ENABLED' NOT NULL,
     create_time     TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
     update_time     TIMESTAMP   DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_product PRIMARY KEY (id)
+    CONSTRAINT pk_product PRIMARY KEY (id),
+    CONSTRAINT uk_product_spu_spec UNIQUE (spu_id, spec_key)
 );
+CREATE INDEX idx_product_spu_status ON t_product (spu_id, product_status);
 
 COMMENT
-ON TABLE t_product IS '商品表：库存单元（本系统无独立 SKU 维度，product_id 兼作文档模型中的 sku_id）';
+ON TABLE t_product IS '商品SKU表：最小计价与四桶库存单元（id 即 sku_id，向下游保持 product_id 命名兼容）';
 COMMENT
-ON COLUMN t_product.id IS '商品id';
+ON COLUMN t_product.id IS 'SKU id（下游交易与库存表中的 product_id）';
 COMMENT
-ON COLUMN t_product.title IS '商品名称';
+ON COLUMN t_product.spu_id IS '所属SPU id（关联 t_product_spu.id）';
+COMMENT
+ON COLUMN t_product.sku_code IS '商家SKU编码';
+COMMENT
+ON COLUMN t_product.title IS '商品名称（冗余SPU标题）';
+COMMENT
+ON COLUMN t_product.spec_key IS '规范化规格组合签名：单规格固定 DEFAULT，多规格按 group_id 升序拼接 g1:v1;g2:v2';
+COMMENT
+ON COLUMN t_product.spec_text IS '可读规格摘要（如 标准版 / 永久有效）';
+COMMENT
+ON COLUMN t_product.spec_json IS '规格键值JSON数组';
+COMMENT
+ON COLUMN t_product.is_default IS '是否默认SKU：1-是，0-否';
 COMMENT
 ON COLUMN t_product.price IS '售价(分)';
 COMMENT
@@ -418,7 +549,7 @@ ON COLUMN t_product.sold_stock IS '已售库存：确认收货结转的数量（
 COMMENT
 ON COLUMN t_product.lost_stock IS '丢失/货损库存：仅退款不退货核销的数量（locked/sold 转入，货物不回仓）';
 COMMENT
-ON COLUMN t_product.product_status IS '商品状态：ENABLED/DISABLED';
+ON COLUMN t_product.product_status IS 'SKU状态：ENABLED/DISABLED';
 
 CREATE
 OR REPLACE TRIGGER trg_product_uptime
@@ -581,8 +712,10 @@ CREATE TABLE t_order_item
     id                    BIGINT IDENTITY(1, 1) NOT NULL,
     order_id              BIGINT              NOT NULL,
     order_no              VARCHAR(50)         NOT NULL,
+    spu_id                BIGINT,
     product_id            BIGINT              NOT NULL,
     product_title         VARCHAR(256),
+    sku_spec_text         VARCHAR(256),
     unit_price            INT                 NOT NULL,
     quantity              INT                 NOT NULL,
     deal_unit_amount      INT,
@@ -610,9 +743,13 @@ ON COLUMN t_order_item.order_id IS '订单id';
 COMMENT
 ON COLUMN t_order_item.order_no IS '商户订单编号';
 COMMENT
-ON COLUMN t_order_item.product_id IS '商品id（兼作库存单元/sku_id）';
+ON COLUMN t_order_item.spu_id IS '下单时所属SPU id快照';
+COMMENT
+ON COLUMN t_order_item.product_id IS 'SKU id（库存单元/sku_id）';
 COMMENT
 ON COLUMN t_order_item.product_title IS '商品名称快照';
+COMMENT
+ON COLUMN t_order_item.sku_spec_text IS '下单时SKU规格文案快照（如 标准版 / 永久有效）';
 COMMENT
 ON COLUMN t_order_item.unit_price IS '成交单价(分)快照';
 COMMENT
@@ -1321,7 +1458,19 @@ FROM t_payment_channel
 WHERE channel_code IN ('WXPAY', 'ALIPAY');
 DELETE
 FROM t_product
-WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程');
+WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程', '云原生微服务架构实战');
+DELETE
+FROM t_product_spec_value
+WHERE spu_id IN (SELECT id FROM t_product_spu WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程', '云原生微服务架构实战'));
+DELETE
+FROM t_product_spec_group
+WHERE spu_id IN (SELECT id FROM t_product_spu WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程', '云原生微服务架构实战'));
+DELETE
+FROM t_product_spu_attr
+WHERE spu_id IN (SELECT id FROM t_product_spu WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程', '云原生微服务架构实战'));
+DELETE
+FROM t_product_spu
+WHERE title IN ('Java课程', '大数据课程', '前端课程', 'UI课程', '云原生微服务架构实战');
 
 INSERT INTO t_payment_channel (channel_name, channel_code, channel_status, channel_desc, config_params, appid, mch_id,
                                mch_serial_no, private_key, api_v3_key, partner_key, sort_order, create_time,
@@ -1353,14 +1502,120 @@ VALUES ('支付宝沙箱默认应用', 'ALIPAY_SANDBOX_DEFAULT', 'ENABLED',
         (SELECT id FROM t_payment_channel WHERE channel_code = 'ALIPAY'), '支付宝沙箱默认应用（商户参数见ALIPAY渠道）',
         20, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
-INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time)
-VALUES ('Java课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
-INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time)
-VALUES ('大数据课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
-INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time)
-VALUES ('前端课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
-INSERT INTO t_product (title, price, available_stock, locked_stock, product_status, create_time, update_time)
-VALUES ('UI课程', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+-- 4 门既有单规格商品：SPU + 默认 SKU + 基础属性
+INSERT INTO t_product_spu (spu_code, title, subtitle, category_name, brand_name, spec_mode, spu_status, min_price, max_price, create_time, update_time)
+VALUES ('SPU-JAVA-01', 'Java课程', 'Java 21 后端全栈核心实战', '后端开发', '极客学堂', 'SINGLE', 'ENABLED', 1, 1, TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product_spu (spu_code, title, subtitle, category_name, brand_name, spec_mode, spu_status, min_price, max_price, create_time, update_time)
+VALUES ('SPU-BIGDATA-01', '大数据课程', '实时数仓与流批一体工程实战', '数据工程', '极客学堂', 'SINGLE', 'ENABLED', 1, 1, TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product_spu (spu_code, title, subtitle, category_name, brand_name, spec_mode, spu_status, min_price, max_price, create_time, update_time)
+VALUES ('SPU-FE-01', '前端课程', 'React 18 + Vite 现代前端工程化', '前端开发', '极客学堂', 'SINGLE', 'ENABLED', 1, 1, TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product_spu (spu_code, title, subtitle, category_name, brand_name, spec_mode, spu_status, min_price, max_price, create_time, update_time)
+VALUES ('SPU-UI-01', 'UI课程', '移动端与中后台设计系统实战', '设计体验', '极客学堂', 'SINGLE', 'ENABLED', 1, 1, TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, is_default, price, available_stock, locked_stock, product_status, create_time, update_time)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-JAVA-01'), 'SKU-JAVA-DEFAULT', 'Java课程', 'DEFAULT', '1', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, is_default, price, available_stock, locked_stock, product_status, create_time, update_time)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-BIGDATA-01'), 'SKU-BIGDATA-DEFAULT', '大数据课程', 'DEFAULT', '1', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, is_default, price, available_stock, locked_stock, product_status, create_time, update_time)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-FE-01'), 'SKU-FE-DEFAULT', '前端课程', 'DEFAULT', '1', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, is_default, price, available_stock, locked_stock, product_status, create_time, update_time)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-UI-01'), 'SKU-UI-DEFAULT', 'UI课程', 'DEFAULT', '1', 1, 100, 0, 'ENABLED', TIMESTAMP '2023-02-04 23:34:20', TIMESTAMP '2023-02-04 23:34:20');
+
+UPDATE t_product_spu s
+SET default_sku_id = (SELECT MIN(p.id) FROM t_product p WHERE p.spu_id = s.id)
+WHERE s.spu_code IN ('SPU-JAVA-01', 'SPU-BIGDATA-01', 'SPU-FE-01', 'SPU-UI-01');
+
+-- 1 款多规格 SPU 示例商品（含基础展示属性 + 2 组销售规格：版本 × 有效期）
+INSERT INTO t_product_spu (spu_code, title, subtitle, category_name, brand_name, description, spec_mode, spu_status, min_price, max_price, create_time, update_time)
+VALUES ('SPU-ARCH-01', '云原生微服务架构实战', '含源码、架构图解与一对一答疑', '架构课程', '极客学堂',
+        '系统讲解 DDD 限界上下文拆分、四桶库存模型、分布式锁围栏、Outbox 与 Seata Saga 交易一致性。',
+        'MULTI', 'ENABLED', 1, 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+
+INSERT INTO t_product_spu_attr (spu_id, attr_name, attr_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'), '出品方', '极客学堂', 10);
+INSERT INTO t_product_spu_attr (spu_id, attr_name, attr_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'), '技术栈', 'Spring Boot 3.5 / DM8 / Redis / RabbitMQ', 20);
+INSERT INTO t_product_spu_attr (spu_id, attr_name, attr_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'), '交付形式', '高清视频 + 完整源码仓库 + 架构文档', 30);
+
+INSERT INTO t_product_spec_group (spu_id, spec_name, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'), '版本', 10);
+INSERT INTO t_product_spec_group (spu_id, spec_name, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'), '有效期', 20);
+
+INSERT INTO t_product_spec_value (spu_id, group_id, spec_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+        (SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本'),
+        '标准版', 10);
+INSERT INTO t_product_spec_value (spu_id, group_id, spec_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+        (SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本'),
+        '旗舰答疑版', 20);
+INSERT INTO t_product_spec_value (spu_id, group_id, spec_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+        (SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期'),
+        '一年期', 10);
+INSERT INTO t_product_spec_value (spu_id, group_id, spec_value, sort_order)
+VALUES ((SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+        (SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期'),
+        '永久有效', 20);
+
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, spec_text, spec_json, is_default, price, available_stock, locked_stock, product_status)
+VALUES (
+    (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+    'ARCH-STD-1Y',
+    '云原生微服务架构实战',
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '标准版') AS VARCHAR(20)) || ';' ||
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '一年期') AS VARCHAR(20)),
+    '标准版 / 一年期',
+    '[{"name":"版本","value":"标准版"},{"name":"有效期","value":"一年期"}]',
+    '1', 1, 80, 0, 'ENABLED'
+);
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, spec_text, spec_json, is_default, price, available_stock, locked_stock, product_status)
+VALUES (
+    (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+    'ARCH-STD-LIFE',
+    '云原生微服务架构实战',
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '标准版') AS VARCHAR(20)) || ';' ||
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '永久有效') AS VARCHAR(20)),
+    '标准版 / 永久有效',
+    '[{"name":"版本","value":"标准版"},{"name":"有效期","value":"永久有效"}]',
+    '0', 2, 60, 0, 'ENABLED'
+);
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, spec_text, spec_json, is_default, price, available_stock, locked_stock, product_status)
+VALUES (
+    (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+    'ARCH-PRO-1Y',
+    '云原生微服务架构实战',
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '旗舰答疑版') AS VARCHAR(20)) || ';' ||
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '一年期') AS VARCHAR(20)),
+    '旗舰答疑版 / 一年期',
+    '[{"name":"版本","value":"旗舰答疑版"},{"name":"有效期","value":"一年期"}]',
+    '0', 2, 40, 0, 'ENABLED'
+);
+INSERT INTO t_product (spu_id, sku_code, title, spec_key, spec_text, spec_json, is_default, price, available_stock, locked_stock, product_status)
+VALUES (
+    (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01'),
+    'ARCH-PRO-LIFE',
+    '云原生微服务架构实战',
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '版本') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '旗舰答疑版') AS VARCHAR(20)) || ';' ||
+    CAST((SELECT id FROM t_product_spec_group WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_name = '有效期') AS VARCHAR(20)) || ':' ||
+    CAST((SELECT id FROM t_product_spec_value WHERE spu_id = (SELECT id FROM t_product_spu WHERE spu_code = 'SPU-ARCH-01') AND spec_value = '永久有效') AS VARCHAR(20)),
+    '旗舰答疑版 / 永久有效',
+    '[{"name":"版本","value":"旗舰答疑版"},{"name":"有效期","value":"永久有效"}]',
+    '0', 3, 30, 0, 'ENABLED'
+);
+
+UPDATE t_product_spu
+SET default_sku_id = (SELECT MIN(id) FROM t_product WHERE sku_code = 'ARCH-STD-1Y')
+WHERE spu_code = 'SPU-ARCH-01';
 
 -- =====================================================================
 -- 本地消息表（事务性发件箱）：业务事务内落库 PENDING，事务提交后投递 MQ；

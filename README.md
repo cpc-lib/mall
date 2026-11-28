@@ -33,8 +33,8 @@ interfaces → application → domain ← infrastructure
 - 用户注册、登录、退出、Access/Refresh 双 Token 刷新。
 - 会话治理：一次登录一个会话（`sid`），支持按设备查看、踢单设备、踢全部；退出只下线当前设备。
 - 登录失败保护：同一用户名连续输错密码达到阈值后短时锁定。
-- 商品列表（服务端分页）、商品库存展示。
-- 购物车（DM8 `t_cart_item`，由购物车服务统一持久化）。
+- 商品列表（SPU 服务端分页、关键字搜索、单规格/多规格价格区间展示）、商品详情与参数/销售规格选择、SKU 库存展示。
+- 购物车（DM8 `t_cart_item`，由购物车服务统一持久化，展示所选 SKU 规格摘要与双层可售校验）。
 - 收货地址 CRUD、默认地址、三级行政区划级联。
 - 多商品结算、订单快照价、订单查询。
 - 微信支付 V3 Native 扫码支付、JSAPI 能力、回调、主动查单、退款、账单相关接口。
@@ -51,7 +51,7 @@ interfaces → application → domain ← infrastructure
 - 待发货订单（服务端分页）、模拟发货。
 - 强制关单、渠道查单、标记线下已付款。
 - 支付尝试记录查看（订单详情内按需加载）。
-- 商品 CRUD、上下架、单个/批量库存调整，商品列表支持服务端分页。
+- 商品 SPU（基础展示属性、销售规格组与多规格 SKU 矩阵）与 SKU 四桶库存管理、上下架、单个/批量库存调整，均支持服务端分页。
 - 库存流水分页与审计。
 - Excel 库存导入、编辑、确认入库。
 - Excel 文件支持本地磁盘或 MinIO 存储。
@@ -382,13 +382,17 @@ mall/
 backend/env/sql/dm8/schema.sql
 ```
 
-当前脚本创建 25 张业务表：
+当前脚本创建 29 张业务表：
 
 ```text
 t_payment_channel
 t_payment_app
 t_order_info
 t_payment_info
+t_product_spu
+t_product_spu_attr
+t_product_spec_group
+t_product_spec_value
 t_product
 t_refund_info
 t_user
@@ -1210,13 +1214,17 @@ PO 属于数据库适配层，不是跨领域数据契约。
 
 ### 15.4 核心数据模型
 
-统一脚本 `backend/env/sql/dm8/schema.sql` 当前创建 25 张表。
+统一脚本 `backend/env/sql/dm8/schema.sql` 当前创建 29 张表。
 
 | 表 | 说明 |
 |---|---|
-| `t_product` | 商品、价格、四桶库存 |
+| `t_product_spu` | 商品 SPU（标准产品单元、单/多规格模式、价格区间与默认 SKU） |
+| `t_product_spu_attr` | SPU 基础展示属性（品牌/参数键值，不拆分库存） |
+| `t_product_spec_group` | SPU 销售规格组（如版本、有效期，最多 3 组） |
+| `t_product_spec_value` | SPU 销售规格值（组内唯一） |
+| `t_product` | 商品 SKU 物理表（归属 `spu_id`、`spec_key` 唯一组合、价格与四桶库存） |
 | `t_order_info` | 主订单、legacy 状态与多维状态 |
-| `t_order_item` | 订单明细和商品快照 |
+| `t_order_item` | 订单明细和商品/SKU 规格快照（含 `spu_id`、`sku_spec_text`） |
 | `t_payment_order` | 本地支付尝试单 |
 | `t_payment_deal` | 支付成交事实，`order_no` / `payment_no` 双唯一，订单 1 笔有效成交的最终权威 |
 | `t_payment_info` | 渠道成交支付记录 |
@@ -2486,15 +2494,15 @@ Elasticsearch 以单节点、关闭安全认证运行，仅用于本地开发。
 
 ### 15.19 测试基线
 
-后端 **103 条全绿**：
+后端 **110 条全绿**：
 
-- **纯域策略**（零依赖 JUnit）：`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
+- **纯域策略**（零依赖 JUnit）：`mall-product-service` `SpuSpecPolicyTest`（6 条 SPU/属性/销售规格规范化、价格区间与上架守卫）、`mall-refund-service` `RefundPolicyTest`（8 条尾差与防超退不变量）、`mall-bill-service` `BillBalancedRuleTest`（9 条 balanced 规则：6 条件全满足 + 禁止仅凭净额为 0 判平账）
 - **领域基础设施与鉴权拦截**（Mockito mock 协作对象）：`mall-common` `FenceTokenHolderTest`（5 条 ThreadLocal 栈语义）、`AuthInterceptorTest`（4 条白名单默认拒绝、账单与渠道退款查询仅管理员、支付回调免登录）；`mall-infra` `RedissonDistributedLockTemplateTest`（6 条锁获取/释放与异常兜底）、`LocalMessageSendJobTest`（3 条域隔离锁键）、`LocalMessageServiceImplTest`（4 条指数退避、超限 FAILED 与 ACK 后 SENT）
 - **应用服务状态机与访问守卫**（Mockito mock 多依赖）：`mall-product-service` `InventoryServiceImplTest`（16 条）、`mall-payment-service` `PaymentSuccessServiceImplTest`（4 条）、`PaymentChannelServiceImplTest`（3 条凭据脱敏）、`OrderAccessGuardTest`（5 条支付侧订单归属校验）、`mall-user-service` `AuthServiceImplRefreshTest`（7 条，含修改密码后全设备下线）、`mall-bill-service` `BillReconcileServiceImplTest`（5 条：1:N 支付逐笔匹配、双向单边账、金额/状态差异、上海日切与 OPEN 差异防误判平账）
-- **定时任务、Saga 定义/历史清理与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`CheckoutSagaDefinitionTest`（1 条预占前移顺序）、`SagaHistoryCleanupServiceImplTest`（4 条：空候选短路、先删状态明细再删实例、终态 CAS 数量不一致抛异常回滚、非空批次循环直到查空）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（2 条批量快照）
+- **定时任务、Saga 定义/历史清理与 MQ 消费者**：`mall-order-service` `AutoReceiptSchedulerTest`（2 条单批失败隔离）、`CheckoutSagaDefinitionTest`（1 条预占前移顺序）、`SagaHistoryCleanupServiceImplTest`（4 条：空候选短路、先删状态明细再删实例、终态 CAS 数量不一致抛异常回滚、非空批次循环直到查空）、`PaymentSucceededConsumerTest`（1 条已关单晚到支付及业务→去重→ACK 顺序）；`mall-cart-service` `CartServiceImplTest`（3 条批量快照、规格透传与父 SPU 下架不可售拦截）
 - **架构守护**：7 个领域服务各有 `*DomainArchitectureTest`（各 2 条 ArchUnit 规则，domain 隔离 + application 不反向依赖）
 
-前端逻辑测试 **16 条全绿**：`user-ui` 9 条（refresh-single-flight、refund-quota、auth-store）；`admin-ui` 7 条（refresh-single-flight、库存 Excel AOA 校验与 Luckysheet 转换）。
+前端逻辑测试 **22 条全绿**：`user-ui` 13 条（refresh-single-flight、refund-quota、auth-store、sku-spec 规格匹配）；`admin-ui` 9 条（refresh-single-flight、库存 Excel AOA 校验与 Luckysheet 转换、spu-matrix 多规格矩阵生成）。
 
 命令：
 

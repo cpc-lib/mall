@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Cascader, Empty, Form, Input, Modal, message } from 'antd'
+import { Button, Cascader, Empty, Form, Input, Modal, Tag, message } from 'antd'
 import { Link } from 'react-router-dom'
 import cartApi from '@/api/cart'
 import checkoutApi from '@/api/checkout'
@@ -111,8 +111,11 @@ export default function Cart() {
             <img src={mallImg(r.productId)} alt={r.title} onError={onMallImgError} />
           </div>
           <div className="tb-cart-info">
-            <div className="tb-goods-title">{r.title}</div>
-            <div className="tb-cart-sub">{r.available ? `可售 · 库存 ${r.availableStock}` : '库存不足'}</div>
+            <div className="tb-goods-title">
+              {r.title}
+              {r.specText && <Tag style={{ marginLeft: 8, fontWeight: 400 }}>{r.specText}</Tag>}
+            </div>
+            <div className="tb-cart-sub">{r.available ? `可售 · 库存 ${r.availableStock}` : '缺货或已下架'}</div>
             <div className="tb-cart-meta">
               <span className="tb-cart-price">¥{((r.latestPrice || 0) / 100).toFixed(2)}</span>
               <span className="tb-cart-del" role="button" tabIndex={0} aria-label={`删除 ${r.title}`}

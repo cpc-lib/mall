@@ -4,7 +4,8 @@
 
   <!-- 显式列清单：available_stock 起别名 stock，对齐 ProductPO 的 @TableField 映射 -->
   <sql id="productColumns">
-    id, title, price, available_stock AS stock, locked_stock, sold_stock, lost_stock,
+    id, spu_id, sku_code, title, spec_key, spec_text, spec_json, is_default,
+    price, available_stock AS stock, locked_stock, sold_stock, lost_stock,
     product_status, create_time, update_time
   </sql>
 

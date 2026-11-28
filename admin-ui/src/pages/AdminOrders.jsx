@@ -143,7 +143,7 @@ export default function AdminOrders() {
   const allOrderCols = [
     { title: '订单号', render: (_, d) => <a onClick={() => openDetail(d)}>{d.order.orderNo}</a> },
     { title: '用户ID', render: (_, d) => d.order.userId },
-    { title: '商品', render: (_, d) => d.items.map(i => <div key={i.id}>{i.productTitle} × {i.quantity}</div>) },
+    { title: '商品', render: (_, d) => d.items.map(i => <div key={i.id}>{i.productTitle}{i.skuSpecText && <Tag style={{ marginLeft: 4 }}>{i.skuSpecText}</Tag>} × {i.quantity}</div>) },
     { title: '金额', render: (_, d) => `¥${((d.order.totalFee || 0) / 100).toFixed(2)}` },
     { title: '支付状态', render: (_, d) => <Tag color={PAY_COLOR[d.order.payStatus] || 'orange'}>{PAY_LABEL[d.order.payStatus] || d.order.payStatus}</Tag> },
     { title: '订单状态', render: (_, d) => d.order.orderStatus },
@@ -164,7 +164,10 @@ export default function AdminOrders() {
     }
   ]
   const itemCols = [
-    { title: '商品', dataIndex: 'productTitle' },
+    {
+      title: '商品 / 规格', dataIndex: 'productTitle',
+      render: (t, i) => <span>{t}{i.skuSpecText && <Tag color="blue" style={{ marginLeft: 6 }}>{i.skuSpecText}</Tag>}</span>
+    },
     { title: '数量', dataIndex: 'quantity', width: 80 },
     { title: '快照单价(分)', dataIndex: 'unitPrice', width: 110 },
     { title: '小计(分)', render: (_, i) => (Number(i.unitPrice || 0) * Number(i.quantity || 0)) }

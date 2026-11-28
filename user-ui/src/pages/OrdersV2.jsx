@@ -159,7 +159,7 @@ export default function OrdersV2() {
               <span className="m-list-amount">¥{((o.totalFee || 0) / 100).toFixed(2)}</span>
             </div>
             <div className="m-list-items">
-              {d.items.map(i => <div key={i.id}>{i.productTitle} <span className="m-list-item-sub">× {i.quantity} @ ¥{((i.unitPrice || 0) / 100).toFixed(2)}；已退 {i.refundedQty || 0}{(i.refundFrozenQty || 0) > 0 ? `，冻结 ${i.refundFrozenQty}` : ''}</span></div>)}
+              {d.items.map(i => <div key={i.id}>{i.productTitle}{i.skuSpecText && <Tag style={{ marginLeft: 6 }}>{i.skuSpecText}</Tag>} <span className="m-list-item-sub">× {i.quantity} @ ¥{((i.unitPrice || 0) / 100).toFixed(2)}；已退 {i.refundedQty || 0}{(i.refundFrozenQty || 0) > 0 ? `，冻结 ${i.refundFrozenQty}` : ''}</span></div>)}
             </div>
             <div className="m-list-actions">
               {canPay && <Button type="primary" onClick={() => pay(d)}>支付</Button>}
@@ -187,7 +187,7 @@ export default function OrdersV2() {
         : '仅退款商品无需退回，计入商家货损（丢失库存）。'} />}
       {target?.items.map(i => {
         const max = availableRefundQuantity(i)
-        return <div key={i.id} className="m-modal-line"><b>{i.productTitle}</b><InputNumber min={0} max={max} value={qty[i.id] || 0} disabled={max <= 0} onChange={v => setQty({ ...qty, [i.id]: Math.min(max, Number(v || 0)) })} /><span className="m-modal-hint">可退 {max} 件，快照价 ¥{((i.unitPrice || 0) / 100).toFixed(2)}</span></div>
+        return <div key={i.id} className="m-modal-line"><b>{i.productTitle}</b>{i.skuSpecText && <Tag style={{ marginLeft: 4 }}>{i.skuSpecText}</Tag>}<InputNumber min={0} max={max} value={qty[i.id] || 0} disabled={max <= 0} onChange={v => setQty({ ...qty, [i.id]: Math.min(max, Number(v || 0)) })} /><span className="m-modal-hint">可退 {max} 件，快照价 ¥{((i.unitPrice || 0) / 100).toFixed(2)}</span></div>
       })}
       <Input value={reason} onChange={e => setReason(e.target.value)} placeholder="退款原因" maxLength={255} />
       <div style={{ marginTop: 12 }}>预估退款：<b>¥{(estimateTotal / 100).toFixed(2)}</b>（以服务端核算为准）</div>

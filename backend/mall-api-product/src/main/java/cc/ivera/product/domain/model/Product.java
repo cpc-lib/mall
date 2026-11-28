@@ -18,7 +18,21 @@ public class Product {
 
     private Long id;
 
-    private String title; //商品名称
+    private Long spuId; //所属SPU ID
+
+    private String spuStatus; //所属SPU状态（ENABLED / DISABLED；未填充时兼容视同 ENABLED）
+
+    private String skuCode; //商家SKU编码
+
+    private String title; //商品名称（冗余SPU标题）
+
+    private String specKey; //规范化规格组合签名（单规格为 DEFAULT）
+
+    private String specText; //可读规格摘要（如 标准版 / 永久有效）
+
+    private String specJson; //规格键值JSON数组
+
+    private Boolean isDefault; //是否默认SKU
 
     private Integer price; //价格（分）
 
@@ -42,13 +56,25 @@ public class Product {
     public static Product create(String title, Integer price, Integer stock) {
         Product product = new Product();
         product.setTitle(title);
+        product.setSpecKey("DEFAULT");
+        product.setIsDefault(true);
         product.setPrice(price);
         product.setStock(stock);
         product.setLockedStock(0);
         product.setSoldStock(0);
         product.setLostStock(0);
         product.setProductStatus(CommonStatus.ENABLED.getType());
+        product.setSpuStatus(CommonStatus.ENABLED.getType());
         return product;
+    }
+
+    /**
+     * 双层可售性判定：SKU 自身启用，且所属 SPU 未下架（spuStatus 为空时兼容按 ENABLED 处理）。
+     */
+    public boolean isEffectivelyEnabled() {
+        boolean skuEnabled = CommonStatus.ENABLED.getType().equals(productStatus);
+        boolean spuEnabled = spuStatus == null || CommonStatus.ENABLED.getType().equals(spuStatus);
+        return skuEnabled && spuEnabled;
     }
 
     private static int stock(Integer value) {

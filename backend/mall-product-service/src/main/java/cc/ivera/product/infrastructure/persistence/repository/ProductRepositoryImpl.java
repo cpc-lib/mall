@@ -5,6 +5,7 @@ import cc.ivera.product.domain.repository.ProductRepository;
 import cc.ivera.product.infrastructure.persistence.converter.ProductPOConverter;
 import cc.ivera.product.infrastructure.persistence.mapper.ProductMapper;
 import cc.ivera.product.infrastructure.persistence.po.ProductPO;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import org.springframework.stereotype.Repository;
 
@@ -32,6 +33,32 @@ public class ProductRepositoryImpl implements ProductRepository {
             return List.of();
         }
         return productMapper.selectBatchIds(ids).stream()
+            .map(ProductPOConverter::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Product> findBySpuId(Long spuId) {
+        if (spuId == null) {
+            return List.of();
+        }
+        return productMapper.selectList(new LambdaQueryWrapper<ProductPO>()
+                .eq(ProductPO::getSpuId, spuId)
+                .orderByAsc(ProductPO::getId))
+            .stream()
+            .map(ProductPOConverter::toDomain)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<Product> findBySpuIds(Collection<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return List.of();
+        }
+        return productMapper.selectList(new LambdaQueryWrapper<ProductPO>()
+                .in(ProductPO::getSpuId, spuIds)
+                .orderByAsc(ProductPO::getId))
+            .stream()
             .map(ProductPOConverter::toDomain)
             .collect(Collectors.toList());
     }

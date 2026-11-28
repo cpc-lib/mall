@@ -18,9 +18,13 @@ public class OrderItem {
 
     private String orderNo;
 
+    private Long spuId;
+
     private Long productId;
 
     private String productTitle;
+
+    private String skuSpecText;
 
     private Integer unitPrice;
 
@@ -53,11 +57,19 @@ public class OrderItem {
      */
     public static OrderItem createSnapshot(Long orderId, String orderNo, Long productId, String productTitle,
                                            Integer unitPrice, Integer quantity) {
+        return createSnapshot(orderId, orderNo, null, productId, productTitle, null, unitPrice, quantity);
+    }
+
+    public static OrderItem createSnapshot(Long orderId, String orderNo, Long spuId, Long productId,
+                                           String productTitle, String skuSpecText,
+                                           Integer unitPrice, Integer quantity) {
         OrderItem item = new OrderItem();
         item.setOrderId(orderId);
         item.setOrderNo(orderNo);
+        item.setSpuId(spuId);
         item.setProductId(productId);
         item.setProductTitle(productTitle);
+        item.setSkuSpecText(skuSpecText);
         item.setUnitPrice(unitPrice);
         item.setQuantity(quantity);
         item.setDealUnitAmount(unitPrice);

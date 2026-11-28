@@ -17,7 +17,13 @@ public final class ProductPOConverter {
         }
         ProductPO po = new ProductPO();
         po.setId(domain.getId());
+        po.setSpuId(domain.getSpuId());
+        po.setSkuCode(domain.getSkuCode());
         po.setTitle(domain.getTitle());
+        po.setSpecKey(domain.getSpecKey());
+        po.setSpecText(domain.getSpecText());
+        po.setSpecJson(domain.getSpecJson());
+        po.setIsDefault(Boolean.TRUE.equals(domain.getIsDefault()) ? "1" : "0");
         po.setPrice(domain.getPrice());
         po.setStock(domain.getStock());
         po.setLockedStock(domain.getLockedStock());
@@ -35,7 +41,13 @@ public final class ProductPOConverter {
         }
         Product domain = new Product();
         domain.setId(po.getId());
+        domain.setSpuId(po.getSpuId());
+        domain.setSkuCode(po.getSkuCode());
         domain.setTitle(po.getTitle());
+        domain.setSpecKey(po.getSpecKey());
+        domain.setSpecText(po.getSpecText());
+        domain.setSpecJson(po.getSpecJson());
+        domain.setIsDefault("1".equals(po.getIsDefault()));
         domain.setPrice(po.getPrice());
         domain.setStock(po.getStock());
         domain.setLockedStock(po.getLockedStock());

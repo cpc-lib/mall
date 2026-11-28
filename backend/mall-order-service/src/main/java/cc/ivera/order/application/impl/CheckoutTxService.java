@@ -97,14 +97,16 @@ public class CheckoutTxService {
         List<Map<String, Object>> items = new ArrayList<>();
         for (CartItemVO cart : selected) {
             Product p = productById.get(cart.getProductId());
-            if (p == null || !CommonStatus.ENABLED.getType().equals(p.getProductStatus()))
+            if (p == null || !p.isEffectivelyEnabled())
                 throw new BizException("商品不可售，productId=" + cart.getProductId());
             if (p.getStock() == null || p.getStock() < cart.getQuantity())
                 throw new BizException("当前库存不足，productId=" + cart.getProductId());
             total = Math.addExact(total, Math.multiplyExact(p.getPrice(), cart.getQuantity()));
             Map<String, Object> line = new LinkedHashMap<>();
+            line.put("spuId", p.getSpuId());
             line.put("productId", p.getId());
             line.put("title", p.getTitle());
+            line.put("skuSpecText", p.getSpecText());
             line.put("price", p.getPrice());
             line.put("quantity", cart.getQuantity());
             items.add(line);
@@ -174,7 +176,9 @@ public class CheckoutTxService {
                 for (Object raw : asList(checkout.get("items"))) {
                     Map<?, ?> line = (Map<?, ?>) raw;
                     OrderItem item = OrderItem.createSnapshot(order.getId(), orderNo,
+                        asLong(line.get("spuId")),
                         asLong(line.get("productId")), asString(line.get("title")),
+                        asString(line.get("skuSpecText")),
                         asInt(line.get("price")), asInt(line.get("quantity")));
                     orderRepository.saveItem(item);
                     items.add(item);

@@ -107,7 +107,7 @@ export default function StockMaintenance() {
       const XLSX = await import('xlsx')
       const products = await loadAllProducts()
       const ws = XLSX.utils.json_to_sheet(
-        products.map(p => ({ 商品ID: p.id, 商品名称: p.title, 调整量: null })),
+        products.map(p => ({ 商品ID: p.id, 商品名称: p.specText ? `${p.title} [${p.specText}]` : p.title, 调整量: null })),
         { header: HEADER }
       )
       const wb = XLSX.utils.book_new()
@@ -137,7 +137,7 @@ export default function StockMaintenance() {
           const ids = [...new Set((res.data?.results || []).map(v => v.productId).filter(v => v != null))]
           if (ids.length) {
             stockApi.productsByIds(ids)
-              .then(r => setTitles(Object.fromEntries((r.data || []).map(p => [p.id, p.title]))))
+              .then(r => setTitles(Object.fromEntries((r.data || []).map(p => [p.id, p.specText ? `${p.title} [${p.specText}]` : p.title]))))
               .catch(() => {})
           }
           message.success(res.message || '确认入库完成')
